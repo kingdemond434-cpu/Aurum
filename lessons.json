@@ -2,10 +2,10 @@
  "days": {
   "2026-08-13": {
    "lens_states": {
-    "ALIGNED": 13,
-    "ALL_WAITING": 15
+    "ALIGNED": 3752,
+    "ALL_WAITING": 4206
    },
-   "n_states": 29317
+   "n_states": 86927
   }
  }
 }
