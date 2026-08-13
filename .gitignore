@@ -1,0 +1,14 @@
+# Nothing secret should ever be in this folder, but the repo is going public-ish
+# (other AIs and you both write to it), so the guard is explicit rather than assumed.
+*.key
+*.token
+*.env
+secrets/
+credentials*
+*_token*
+*_password*
+
+# Local scratch
+.DS_Store
+Thumbs.db
+*.tmp
