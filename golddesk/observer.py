@@ -45,6 +45,47 @@ class Trigger(str, Enum):
 
 
 @dataclass(frozen=True)
+class WakePolicy:
+    """When the expensive brain is allowed to think. This is ECONOMIC POLICY.
+
+    Every value here decides whether a reconsideration happens at all. Raise
+    `giveback_fraction` and the desk stops noticing that a runner is bleeding
+    out; raise `reconsider_cost_r` and it stops reconsidering cheap-looking but
+    decisive moments. Either way the change alters realised capture without
+    changing a single line of trading logic, which is exactly the kind of silent
+    objective redefinition the constitution forbids.
+
+    They were previously bare defaults on TradeObserver and bare literals inside
+    observe(). They are now named, versioned, stamped onto every wake, and
+    registered as a discretionary restriction so the ablation ladder and the
+    anti-drift auditor can both see them.
+
+    NONE of these is a selectivity dial to be tuned upward for tidiness. They
+    are a cost model, and the only evidence that may move them is measured
+    forgone capture during unwoken periods.
+    """
+    version: str = "wake-2026-08-14-a"
+    # Cost of one reconsideration in R: model call cost / account risk per trade.
+    reconsider_cost_r: float = 0.01
+    # Share of MFE surrendered before giveback is material.
+    giveback_fraction: float = 0.33
+    # Re-arm the giveback trigger once price recovers to this share of the band.
+    giveback_rearm: float = 0.5
+    # How close to stop/target counts as "close", in R.
+    proximity_r: float = 0.25
+    # New favourable ground must exceed this, in R, to be more than noise.
+    mfe_step_r: float = 0.25
+    # Velocity multiples that count as acceleration / deceleration.
+    accel_multiple: float = 2.0
+    decel_multiple: float = 0.25
+    # Adverse velocity, in R per minute, that counts as an impulse against.
+    adverse_r_per_min: float = -1.0
+
+    def stamp(self) -> dict:
+        return {"wake_policy": self.version}
+
+
+@dataclass(frozen=True)
 class Wake:
     ts: datetime
     triggers: tuple[Trigger, ...]
@@ -67,12 +108,7 @@ class TradeObserver:
     risk_price: float
     opened: datetime
 
-    # cost of one reconsideration, expressed in R so it compares to stake.
-    # Derived: model call cost / (account risk per trade). Set from config;
-    # it is a COST, not a selectivity dial.
-    reconsider_cost_r: float = 0.01
-    giveback_fraction: float = 0.33     # share of MFE surrendered to matter
-    proximity_r: float = 0.25           # how close to stop/target is "close"
+    wake: "WakePolicy" = field(default_factory=lambda: WakePolicy())
 
     mfe_r: float = 0.0
     mae_r: float = 0.0
@@ -115,6 +151,7 @@ class TradeObserver:
                 heartbeat: timedelta = timedelta(minutes=30),
                 bar_closed: bool = False) -> Optional[Wake]:
         """One tick. Cheap. Returns a Wake only when thinking is worth paying for."""
+        w = self.wake
         self.ticks += 1
         r = self.r_at(price)
         self.path.append((ts, round(r, 4)))
@@ -131,7 +168,7 @@ class TradeObserver:
         if r > self.mfe_r + 1e-9:
             prev = self.mfe_r
             self.mfe_r, self.t_mfe = r, ts
-            if r >= prev + 0.25:                 # material new ground, not noise
+            if r >= prev + w.mfe_step_r:         # material new ground, not noise
                 triggers.append(Trigger.MFE_EXTENSION)
                 detail.append(f"MFE {prev:+.2f}->{r:+.2f}R")
         if r < self.mae_r - 1e-9:
@@ -140,29 +177,29 @@ class TradeObserver:
         # surrendered a material share of the best it achieved
         if self.mfe_r > 0.5:
             given = self.mfe_r - r
-            if given >= self.mfe_r * self.giveback_fraction and "gb" not in self._fired:
+            if given >= self.mfe_r * w.giveback_fraction and "gb" not in self._fired:
                 triggers.append(Trigger.GIVEBACK)
                 self._fired.add("gb")
                 detail.append(f"gave back {given:+.2f}R of {self.mfe_r:+.2f}R MFE")
-            elif given < self.mfe_r * self.giveback_fraction * 0.5:
+            elif given < self.mfe_r * w.giveback_fraction * w.giveback_rearm:
                 self._fired.discard("gb")        # re-arm after recovery
 
         to_stop = abs(r - self.r_at(self.stop))
         to_target = abs(self.r_at(self.target) - r)
-        if to_stop <= self.proximity_r:
+        if to_stop <= w.proximity_r:
             triggers.append(Trigger.STOP_PROXIMITY)
             detail.append(f"{to_stop:.2f}R from stop")
-        if to_target <= self.proximity_r:
+        if to_target <= w.proximity_r:
             triggers.append(Trigger.TARGET_PROXIMITY)
             detail.append(f"{to_target:.2f}R from target")
 
         if self.prev_velocity and self.velocity_r_per_min > 0:
-            if self.velocity_r_per_min > 2.0 * abs(self.prev_velocity):
+            if self.velocity_r_per_min > w.accel_multiple * abs(self.prev_velocity):
                 triggers.append(Trigger.ACCELERATION)
                 detail.append(f"{self.velocity_r_per_min:.2f}R/min")
-            elif abs(self.velocity_r_per_min) < 0.25 * abs(self.prev_velocity):
+            elif abs(self.velocity_r_per_min) < w.decel_multiple * abs(self.prev_velocity):
                 triggers.append(Trigger.DECELERATION)
-        if self.velocity_r_per_min < -1.0:
+        if self.velocity_r_per_min < w.adverse_r_per_min:
             triggers.append(Trigger.ADVERSE_IMPULSE)
             detail.append(f"{self.velocity_r_per_min:.2f}R/min against")
 
@@ -177,7 +214,7 @@ class TradeObserver:
 
         # Economic gate: what is the decision worth revisiting?
         stake = self._value_at_stake(r)
-        if stake < self.reconsider_cost_r:
+        if stake < w.reconsider_cost_r:
             return None
         self.last_wake = ts
         return Wake(ts, tuple(triggers), stake, "; ".join(detail) or "state change")
@@ -192,7 +229,8 @@ class TradeObserver:
         return max(at_risk, remaining)
 
     def snapshot(self) -> dict:
-        return {"observer_version": OBSERVER_VERSION, "ticks": self.ticks,
+        return {"observer_version": OBSERVER_VERSION,
+                "wake_policy": self.wake.version, "ticks": self.ticks,
                 "mfe_r": round(self.mfe_r, 4), "mae_r": round(self.mae_r, 4),
                 "t_mfe": self.t_mfe.isoformat() if self.t_mfe else None,
                 "t_mae": self.t_mae.isoformat() if self.t_mae else None,

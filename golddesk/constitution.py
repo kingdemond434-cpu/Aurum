@@ -151,6 +151,21 @@ REGISTRY: list[Restriction] = [
                 "management actions not selected by the active policy",
                 "a preference order is a hypothesis about capture, nothing more"),
 
+    Restriction("risk.one_position", "live:LiveDesk.on_bar", Kind.DISCRETIONARY,
+                "every new opportunity arriving while a trade is open",
+                "the portfolio-heat engine already supports several concurrent "
+                "exposures, so holding exactly one is a CHOICE. It discards "
+                "independent, add-on and opposite opportunities wholesale. Its "
+                "forgone value is journalled on every blocked state and must "
+                "exceed the correlated risk it avoids, or it goes",
+                review_days=30),
+    Restriction("wake.policy_constants", "observer:WakePolicy", Kind.DISCRETIONARY,
+                "reconsideration when the wake policy judges it not worth paying for",
+                "giveback, proximity, velocity and MFE-step thresholds decide "
+                "WHEN the expensive brain thinks, so they alter realised capture "
+                "without touching trading logic. Versioned and ablatable",
+                review_days=30),
+
     # ---- integrity guards: refuse to act on data that cannot be trusted ----
     Restriction("integrity.path_stable", "ledger:verify_path_stable", Kind.HARD_RISK,
                 "evaluation against a forward path whose content hash moved",
@@ -178,6 +193,8 @@ DECLARED_SITES = {
     "analyse",
     # constructs a Refusal; it is the reporting mechanism, not a restriction
     "refuse",
+    # venue legality — a fact about the broker, not a discretionary gate
+    "stop_is_legal",
     # portfolio heat — the executable half of risk.portfolio_heat
     "room_for",
     # integrity and evidence guards, registered above as HARD_RISK
@@ -295,6 +312,7 @@ DEFAULT_REASON_MAP = {
     "risk:": "risk.portfolio_heat",
     "stale tick": "risk.stale_tick",
     "NO_SETUP": "entry.novel_shadow",
+    "one-position constraint": "risk.one_position",
 }
 
 

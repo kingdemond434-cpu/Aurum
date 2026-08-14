@@ -53,6 +53,59 @@ class Swing:
 # Primitives
 # --------------------------------------------------------------------------
 
+def aggregate(bars: Sequence[Bar], factor: int, *,
+              align: bool = True) -> list[Bar]:
+    """Build true higher-timeframe candles from a finer series.
+
+    SAMPLING IS NOT AGGREGATION. Taking every 16th M15 bar yields a series of
+    fifteen-minute candles spaced four hours apart: its highs and lows are those
+    of one M15 bar, not of the four-hour range. Handing that to a model labelled
+    "H4" misrepresents both the volatility and the structure of the higher
+    timeframe, and every swing, sweep and displacement read off it is wrong.
+
+    A real H4 candle takes the FIRST open, the MAX high, the MIN low and the
+    LAST close of its constituent bars.
+
+    `align` snaps groups to wall-clock boundaries (an H4 candle starts at an
+    hour divisible by four) rather than to an arbitrary offset from the start of
+    the array, so the same bar always lands in the same higher-timeframe candle
+    regardless of how much history happens to be loaded. Without that, the H4
+    series silently changes shape as the window grows.
+
+    The final group is INCOMPLETE by construction — it is the higher-timeframe
+    candle still forming. It is returned, because refusing to show the current
+    partial candle hides where price is right now, and callers that need only
+    closed candles drop the last element.
+    """
+    if factor <= 1 or not bars:
+        return list(bars)
+    groups: list[list[Bar]] = []
+    key = None
+    for b in bars:
+        if align:
+            step_s = int((bars[1].ts - bars[0].ts).total_seconds()) if len(bars) > 1 else 60
+            span = step_s * factor
+            k = int(b.ts.timestamp()) // span
+        else:
+            k = len(groups) - 1 if groups and len(groups[-1]) < factor else len(groups)
+        if k != key:
+            groups.append([])
+            key = k
+        groups[-1].append(b)
+
+    out: list[Bar] = []
+    for g in groups:
+        if not g:
+            continue
+        out.append(Bar(
+            ts=g[0].ts, open=g[0].open,
+            high=max(x.high for x in g), low=min(x.low for x in g),
+            close=g[-1].close,
+            volume=sum((x.volume or 0.0) for x in g),
+            spread=g[-1].spread))
+    return out
+
+
 def atr(bars: Sequence[Bar], period: int = 14) -> list[Optional[float]]:
     """Wilder ATR. Index-aligned; None until enough history exists."""
     out: list[Optional[float]] = [None] * len(bars)

@@ -19,10 +19,12 @@ and each seam is observable in the ledger:
   * TradeObserver is instantiated per open position and driven by on_tick().
     Between M15 closes the desk was blind; a trade could run +2R and give it
     all back while the code managing it waited for a candle.
-  * Exit resolution now uses observed ordering whenever a finer series exists.
-    Where it does not, the pessimistic assumption REMAINS but is stamped
-    resolution=M15_PESSIMISTIC_UNCERTAIN on the record, because an assumed fill
-    and an observed one must never aggregate into the same number silently.
+  * Exit resolution uses observed ordering whenever a finer series exists, and
+    every close is stamped with HOW it was determined. A bar in which only one
+    of stop/target was touched is BAR_UNAMBIGUOUS — coarse but not assumed; a
+    bar that touched both is BAR_ASSUMED_STOP_FIRST and is the only uncertain
+    category. An assumed fill and an observed one must never aggregate into the
+    same number silently.
   * Management is a named policy resolved from durable PolicyState, with the
     losing arms evaluated on the identical option set so the comparison is
     paired rather than anecdotal.
@@ -50,8 +52,8 @@ from .features import Bar, StructureState, atr, classify, session_of, swings
 from .hypothesis import HypothesisBook
 from .ledger import (Bar as LBar, DecisionKind, DecisionRecord, Ledger, PathRef,
                      resolve_forward)
-from .management import (Action, Anchor, Excursion, ManagementPolicy, Position,
-                         ThesisState, apply_option, enumerate_options)
+from .management import (Action, Anchor, BrokerLimits, Excursion, ManagementPolicy,
+                         Position, ThesisState, apply_option, enumerate_options)
 from .notify import Sink, build_sink
 from .observer import TradeObserver, Trigger, Wake, resolve_intrabar
 from .policies import (ContextualChooser, HeuristicChooser, ManagementChooser,
@@ -86,10 +88,37 @@ class Vision(str, Enum):
 
 
 class Resolution(str, Enum):
-    """How an exit price was determined. Aggregating these together is a lie."""
-    TICK_OBSERVED = "TICK_OBSERVED"                  # ordering seen at tick level
-    M1_OBSERVED = "M1_OBSERVED"                      # ordering seen at M1
-    M15_PESSIMISTIC_UNCERTAIN = "M15_PESSIMISTIC_UNCERTAIN"  # assumed stop-first
+    """How an exit price was determined. Aggregating these together is a lie.
+
+    The previous version had three values and used one of them dishonestly: a
+    close derived from nothing finer than the entry timeframe's OHLC was stamped
+    M1_OBSERVED, which asserts that an M1 series was consulted when none existed.
+    A provenance label that can be wrong about its own provenance is worse than
+    no label, because it survives into the evidence table looking authoritative.
+
+    The categories now distinguish RESOLUTION (what data decided it) from
+    AMBIGUITY (whether ordering mattered at all):
+
+      TICK_OBSERVED        ordering seen in a tick stream
+      M1_OBSERVED          ordering seen in a real M1 series
+      BAR_UNAMBIGUOUS      only one of stop/target was touched in the deciding
+                           bar, so ordering could not have changed the outcome.
+                           Coarse data, but the answer is not an assumption.
+      BAR_ASSUMED_STOP_FIRST
+                           the deciding bar touched BOTH. Stop-first is assumed.
+                           This is the only genuinely uncertain category and it
+                           must never be averaged into the others silently.
+      MANAGED_EXIT         closed by a management decision at a known price.
+    """
+    TICK_OBSERVED = "TICK_OBSERVED"
+    M1_OBSERVED = "M1_OBSERVED"
+    BAR_UNAMBIGUOUS = "BAR_UNAMBIGUOUS"
+    BAR_ASSUMED_STOP_FIRST = "BAR_ASSUMED_STOP_FIRST"
+    MANAGED_EXIT = "MANAGED_EXIT"
+
+    @property
+    def is_assumption(self) -> bool:
+        return self is Resolution.BAR_ASSUMED_STOP_FIRST
 
 
 @dataclass
@@ -146,8 +175,11 @@ class LiveStats:
     mgmt_reconsiderations: int = 0
     exits_tick_resolved: int = 0
     exits_m1_resolved: int = 0
+    exits_bar_unambiguous: int = 0
     exits_assumed: int = 0
+    exits_managed: int = 0
     hypothesis_vetoes: int = 0
+    states_blocked_position_open: int = 0
 
 
 class LiveDesk:
@@ -169,7 +201,11 @@ class LiveDesk:
                  reentry_policies: Optional[dict[str, ReentryPolicy]] = None,
                  shadow_management: bool = True,
                  shadow_contextual: bool = False,
-                 observer_heartbeat: timedelta = timedelta(minutes=30)):
+                 observer_heartbeat: timedelta = timedelta(minutes=30),
+                 broker: BrokerLimits = BrokerLimits(),
+                 fine_resolution: Resolution = Resolution.M1_OBSERVED,
+                 htf_factor: int = 16,
+                 measure_position_constraint: bool = True):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
@@ -207,6 +243,19 @@ class LiveDesk:
         self.open: Optional[OpenTrade] = None
         self.prior: Optional[PriorTrade] = None
         self.stats = LiveStats()
+        # Live quote and venue limits, so management legality is a property of
+        # NOW rather than of the entry. Kept as the last observed values because
+        # a management step can fire on a tick between bars.
+        self.broker = broker
+        self.last_bid: Optional[float] = None
+        self.last_ask: Optional[float] = None
+        self.last_spread: Optional[float] = None
+        # What a fine series, if one is attached, is honestly called.
+        self._fine_resolution = fine_resolution
+        # How many entry-timeframe bars make one HTF candle. 16 M15 = H4.
+        # Used for TRUE OHLC aggregation, never for sampling.
+        self.htf_factor = htf_factor
+        self.measure_position_constraint = measure_position_constraint
         self._last_state: Optional[StructureState] = None
         self._last_bars: Optional[Sequence[Bar]] = None
         self._last_idx: int = 0
@@ -307,6 +356,30 @@ class LiveDesk:
 
         if self.open is not None:
             self._manage(bars, i, st, intrabar)
+            # ONE-POSITION CONSTRAINT — registered as risk.one_position and
+            # measured, not assumed. The portfolio-heat engine already supports
+            # several concurrent exposures, so holding exactly one is a policy
+            # choice that silently discards every independent, add-on and
+            # opposite opportunity arriving while a trade is open.
+            #
+            # No analyst call is made here: the brief is built deterministically
+            # and journalled as a refusal carrying its forward path, so the
+            # constraint's forgone value is observed rather than modelled, and
+            # it costs nothing in inference to keep measuring it.
+            if self.measure_position_constraint:
+                self.stats.states_blocked_position_open += 1
+                bid, ask, age = quote
+                try:
+                    b2 = build_brief(bars, i, st, sw, bid, ask, age, htf_state,
+                                     timeline, timeframe=ENTRY_TF)
+                    self._record(bars, i, b2, DecisionKind.REFUSAL_COMPILER, "POLICY",
+                                 {"declined": "UNEVALUATED",
+                                  "constraint": "one_position"},
+                                 "one-position constraint: a trade is already open",
+                                 "LONG" if st.trend_direction == "UP" else "SHORT",
+                                 st.atr)
+                except Exception as e:                # measurement must never break management
+                    log.debug("could not journal position-constraint cost: %s", e)
             return
 
         w = self.watcher.observe(st, session_of(ts), ts)
@@ -323,6 +396,8 @@ class LiveDesk:
                 self.prior = None            # context gone; ordinary trading resumes
 
         bid, ask, age = quote
+        self.last_bid, self.last_ask = bid, ask
+        self.last_spread = max(0.0, ask - bid)
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             timeframe=ENTRY_TF)
         try:
@@ -406,12 +481,24 @@ class LiveDesk:
         if self.vision is Vision.NUMERIC_ONLY:
             return ()
         from .chart import Bar as CB, render_clean_chart
+        from .features import aggregate
         out = []
-        for tf, step, n in (("H4-context", 16, 90), ("M15-entry", 1, 120)):
-            win = bars[max(0, i - step * n):i + 1:step][-n:]
+        # TRUE higher-timeframe aggregation. The previous version sliced every
+        # 16th M15 bar, which produces fifteen-minute candles spaced four hours
+        # apart and labels them H4 — misstating the higher timeframe's range,
+        # and therefore its swings, sweeps and displacement, on every chart.
+        for label, factor, n in ((f"{HTF}-context", self.htf_factor, 90),
+                                 ("H1-context", self.htf_factor // 4, 90),
+                                 (f"{ENTRY_TF}-entry", 1, 120)):
+            if factor < 1:
+                continue
+            # Only closed source bars, and enough of them to fill the window.
+            src = bars[max(0, i - factor * (n + 2)):i + 1]
+            agg = aggregate(src, factor) if factor > 1 else list(src)
+            win = agg[-n:]
             if len(win) >= 30:
                 out.append(render_clean_chart([CB(b.open, b.high, b.low, b.close)
-                                               for b in win], tf))
+                                               for b in win], label))
         if not out:
             raise AnalystError(
                 f"vision={self.vision.value} requires charts but none rendered at "
@@ -472,21 +559,27 @@ class LiveDesk:
                 ev = resolve_intrabar(intrabar, pos.entry, pos.current_stop,
                                       t.signal.tp2, pos.direction, pos.risk_price)
                 if ev is not None:
-                    res = (Resolution.M1_OBSERVED if len(intrabar) <= 15
-                           else Resolution.TICK_OBSERVED)
                     reason = ("TARGET" if ev.kind == "TARGET" else
                               ("PROFITABLE_STOP" if ev.r > 0 else "STOP"))
-                    self._close(ev.ts, ev.r, reason, st, res)
+                    self._close(ev.ts, ev.r, reason, st, self._fine_resolution)
                     return
-            # No finer series exists. Keep the pessimistic assumption AND say so.
+            if stop_hit and tp_hit:
+                # The deciding bar touched both and nothing finer exists. The
+                # stop is assumed to have come first, and the record says so —
+                # this is the ONLY uncertain category.
+                r = pos.r_at(pos.current_stop)
+                self._close(b.ts, r, "PROFITABLE_STOP" if r > 0 else "STOP", st,
+                            Resolution.BAR_ASSUMED_STOP_FIRST)
+                return
+            # Exactly one side was touched, so ordering could not have changed
+            # the outcome. Coarse, but not an assumption.
             if stop_hit:
                 r = pos.r_at(pos.current_stop)
                 self._close(b.ts, r, "PROFITABLE_STOP" if r > 0 else "STOP", st,
-                            Resolution.M15_PESSIMISTIC_UNCERTAIN if tp_hit
-                            else Resolution.M1_OBSERVED)
+                            Resolution.BAR_UNAMBIGUOUS)
                 return
             self._close(b.ts, pos.r_at(t.signal.tp2), "TARGET", st,
-                        Resolution.M1_OBSERVED)
+                        Resolution.BAR_UNAMBIGUOUS)
             return
 
         self._management_step(b.ts, b.close, st, source="bar_close")
@@ -525,8 +618,12 @@ class LiveDesk:
         if st.trigger_price is not None:
             anchors.append(Anchor("A_TRG", "RECLAIM", st.trigger_price, ENTRY_TF, True))
 
-        opts = enumerate_options(pos, thesis, exc, anchors, st.atr, 0.48,
-                                 self.policy, self.cost_model)
+        spread = self.last_spread if self.last_spread is not None else 0.48
+        bid = self.last_bid if self.last_bid is not None else price - spread / 2
+        ask = self.last_ask if self.last_ask is not None else price + spread / 2
+        opts = enumerate_options(pos, thesis, exc, anchors, st.atr, spread,
+                                 self.policy, self.cost_model,
+                                 bid=bid, ask=ask, broker=self.broker)
         if not opts:
             return "no_legal_options"
 
@@ -572,8 +669,7 @@ class LiveDesk:
 
         if choice.action is Action.EXIT:
             self._close(ts, exc.r_open_now, "EXIT_THESIS", st,
-                        Resolution.TICK_OBSERVED if source.startswith("observer")
-                        else Resolution.M1_OBSERVED)
+                        Resolution.MANAGED_EXIT)
             return "EXIT"
         if choice.action is Action.PARTIAL:
             t.partials.append((choice.partial_fraction or 0.0, price))
@@ -602,7 +698,7 @@ class LiveDesk:
     # -- exit --------------------------------------------------------------
     def _close(self, ts: datetime, realised_r: float, reason: str,
                st: Optional[StructureState],
-               resolution: Resolution = Resolution.M15_PESSIMISTIC_UNCERTAIN) -> None:
+               resolution: Resolution = Resolution.BAR_ASSUMED_STOP_FIRST) -> None:
         t = self.open
         total = t.position.banked_r + realised_r * t.position.remaining_fraction
         if self.risk.open_risks:
@@ -614,11 +710,16 @@ class LiveDesk:
             self.stats.exits_tick_resolved += 1
         elif resolution is Resolution.M1_OBSERVED:
             self.stats.exits_m1_resolved += 1
+        elif resolution is Resolution.BAR_UNAMBIGUOUS:
+            self.stats.exits_bar_unambiguous += 1
+        elif resolution is Resolution.MANAGED_EXIT:
+            self.stats.exits_managed += 1
         else:
             self.stats.exits_assumed += 1
 
-        flag = ("\n_exit price ASSUMED (stop-first on a spanning M15 bar) — "
-                "uncertain_" if resolution is Resolution.M15_PESSIMISTIC_UNCERTAIN else "")
+        flag = ("\n_exit price ASSUMED (deciding bar touched both stop and "
+                "target; stop-first assumed) — uncertain_"
+                if resolution.is_assumption else "")
         self._notify(
             f"*EXIT* {t.position.direction} {t.signal.setup.value} — {reason}\n"
             f"realised `{total:+.2f}R` (banked `{t.position.banked_r:+.2f}R` + "

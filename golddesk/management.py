@@ -27,7 +27,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Literal, Optional, Sequence
+from typing import Any, Literal, Optional, Sequence
 
 from .costs import CostModel, round_trip_cost
 
@@ -162,6 +162,55 @@ class ManagementOption:
         return f"  {self.id}  {self.action.value:<8} {self.facts}"
 
 
+@dataclass(frozen=True)
+class BrokerLimits:
+    """Venue constraints on where a stop may legally sit, in PRICE units.
+
+    These are not policy and never appear in the constitution's discretionary
+    registry: they are facts about the venue. Offering a model an option the
+    broker will reject is worse than offering none, because the desk then
+    believes it is protected when the order was never accepted.
+
+    min_stop_distance : broker SYMBOL_TRADE_STOPS_LEVEL, converted to price.
+                        A stop closer than this to the market is rejected.
+    freeze_distance   : broker SYMBOL_TRADE_FREEZE_LEVEL, converted to price.
+                        Inside this band the order cannot be modified at all.
+    """
+    min_stop_distance: float = 0.0
+    freeze_distance: float = 0.0
+
+    @classmethod
+    def from_symbol_info(cls, info: Any, point: Optional[float] = None) -> "BrokerLimits":
+        p = point if point is not None else getattr(info, "point", 0.01)
+        return cls(min_stop_distance=getattr(info, "trade_stops_level", 0) * p,
+                   freeze_distance=getattr(info, "trade_freeze_level", 0) * p)
+
+
+def stop_is_legal(pos: Position, cand: float, bid: float, ask: float,
+                  limits: BrokerLimits) -> tuple[bool, str]:
+    """Can this stop actually be placed, right now, at this quote?
+
+    A LONG stop is triggered on the BID and must sit below it; a SHORT stop is
+    triggered on the ASK and must sit above it. Both must clear the venue's
+    minimum distance, and neither may sit inside the freeze band. Checked
+    against the CURRENT quote rather than the entry price, because the market
+    has moved since the entry and legality is a property of now.
+    """
+    trigger = bid if pos.long else ask
+    gap = (trigger - cand) if pos.long else (cand - trigger)
+    if gap <= 0:
+        return False, (f"stop {cand:.2f} is through the market "
+                       f"({'bid' if pos.long else 'ask'} {trigger:.2f}) — "
+                       f"that is an exit, not a stop")
+    if limits.min_stop_distance and gap < limits.min_stop_distance:
+        return False, (f"stop {cand:.2f} is {gap:.2f} from {trigger:.2f}, inside the "
+                       f"broker minimum {limits.min_stop_distance:.2f}")
+    if limits.freeze_distance and gap < limits.freeze_distance:
+        return False, (f"stop {cand:.2f} is inside the freeze band "
+                       f"{limits.freeze_distance:.2f} — the order cannot be modified")
+    return True, "placeable"
+
+
 def enumerate_options(
     pos: Position,
     thesis: ThesisState,
@@ -171,12 +220,28 @@ def enumerate_options(
     spread: float,
     policy: ManagementPolicy = ManagementPolicy(),
     cost_model: CostModel = CostModel(),
+    *,
+    bid: Optional[float] = None,
+    ask: Optional[float] = None,
+    broker: BrokerLimits = BrokerLimits(),
 ) -> list[ManagementOption]:
     """Build the legal move set. Deterministic — no model involvement.
 
     Anything not in this list cannot happen. If the list is just [HOLD], then
     HOLD is the only outcome regardless of what any intelligence prefers.
+
+    `bid`/`ask`/`broker` make legality a property of the CURRENT market rather
+    than of the entry: a stop candidate is only offered if it can actually be
+    placed at this quote under the venue's minimum-distance and freeze rules.
+    When no quote is supplied the mid is reconstructed from the spread, so the
+    check degrades to "not through the market" rather than disappearing.
     """
+    if bid is None or ask is None:
+        # Reconstruct a quote around the stop's reference price so the
+        # through-the-market test still applies. Never silently skip legality.
+        mid = pos.entry + exc.r_open_now * pos.risk_price * (1 if pos.long else -1)
+        half = (spread or 0.0) / 2.0
+        bid, ask = mid - half, mid + half
     opts: list[ManagementOption] = [
         ManagementOption("M1", Action.HOLD, None, None, None,
                          f"leave stop at {pos.current_stop:.2f}; "
@@ -194,9 +259,13 @@ def enumerate_options(
         improves = cand > pos.current_stop if pos.long else cand < pos.current_stop
         if not improves:
             continue
-        # Must not sit through price — that is an exit, not a stop.
-        if (pos.long and cand >= pos.entry + (0.0)) and cand >= _live_floor(pos, cand):
-            pass
+        # VENUE LEGALITY, checked against the CURRENT quote. Previously this was
+        # a no-op conditional guarding a placeholder that returned its argument,
+        # so structurally sensible but unplaceable stops reached the model.
+        ok, why = stop_is_legal(pos, cand, bid, ask, broker)
+        if not ok:
+            log.debug("stop candidate from %s rejected: %s", a.id, why)
+            continue
         locked_after = pos.banked_r + pos.r_at(cand) * pos.remaining_fraction
         action = Action.PROTECT if locked_after >= 0 else Action.TRAIL
         opts.append(ManagementOption(
@@ -207,21 +276,44 @@ def enumerate_options(
         ))
         n += 1
 
-    # --- Partial: fraction is SOLVED so the residual becomes risk-free.
-    # Bank f such that  f * r_open  >=  (1-f) * residual_risk
-    #   =>  f >= risk / (r_open + risk)
+    # --- Partial: the fraction is SOLVED, not chosen, so the WHOLE POSITION
+    # becomes risk-free — accounting for what is already banked.
+    #
+    # The previous solve was f = risk / (r_open + risk), which ignored
+    # pos.banked_r entirely. After one partial the position already carries
+    # realised profit, so a smaller fraction suffices to reach risk-free; solving
+    # as if banked_r were zero over-banks on every subsequent wake and
+    # progressively suffocates the runner. With repeated wakes that compounds.
+    #
+    # Let  B = banked_r, M = remaining_fraction, O = r_open, S = r_at(stop) (<=0).
+    # Guaranteed R after banking fraction f of the remainder:
+    #     L(f) = B + M*f*O + M*(1-f)*S
+    # Risk-free means L(f) >= 0, so:
+    #     f >= -(B + M*S) / (M*(O - S))
+    # If B + M*S >= 0 the position is ALREADY risk-free and f = 0 — no partial is
+    # offered, because banking more would only shrink the runner for nothing.
     r_open = exc.r_open_now
-    residual_risk = max(0.0, -pos.r_at(pos.current_stop))
-    if r_open > 0 and residual_risk > 0:
-        f = residual_risk / (r_open + residual_risk)
-        if (1.0 - f) * pos.remaining_fraction >= policy.min_runner_fraction and f > 0:
-            opts.append(ManagementOption(
-                f"M{n}", Action.PARTIAL, None, round(f, 3), None,
-                f"bank {f:.0%} at {r_open:+.2f}R open -> residual carries "
-                f"{(1 - f) * residual_risk:.2f}R risk against "
-                f"{f * r_open:.2f}R banked (risk-free or better)"
-            ))
-            n += 1
+    s_r = pos.r_at(pos.current_stop)                 # <= 0 while risk remains
+    m = pos.remaining_fraction
+    guaranteed_now = pos.banked_r + m * s_r          # == pos.locked_r
+    if r_open > 0 and (r_open - s_r) > 0 and m > 0:
+        if guaranteed_now >= -1e-9:
+            pass                                     # already risk-free
+        else:
+            f = -guaranteed_now / (m * (r_open - s_r))
+            f = min(max(f, 0.0), 1.0)
+            runner_after = m * (1.0 - f)
+            if 0.0 < f < 1.0 and runner_after >= policy.min_runner_fraction:
+                banked_now = f * m * r_open
+                opts.append(ManagementOption(
+                    f"M{n}", Action.PARTIAL, None, round(f, 4), None,
+                    f"bank {f:.1%} of the remaining {m:.0%} at {r_open:+.2f}R open "
+                    f"-> guaranteed {guaranteed_now:+.2f}R becomes "
+                    f"{guaranteed_now + banked_now - f * m * s_r:+.2f}R "
+                    f"(already banked {pos.banked_r:+.2f}R accounted); "
+                    f"runner {runner_after:.0%} survives"
+                ))
+                n += 1
 
     # --- Exit: only offered when the thesis is measurably dead.
     dead = []
@@ -241,10 +333,6 @@ def enumerate_options(
         ))
 
     return opts
-
-
-def _live_floor(pos: Position, cand: float) -> float:
-    return cand   # placeholder for a venue min-stop-distance rule
 
 
 # --------------------------------------------------------------------------

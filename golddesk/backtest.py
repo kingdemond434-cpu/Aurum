@@ -51,7 +51,7 @@ import statistics
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Sequence
+from typing import Any, Callable, Iterable, Optional, Sequence
 
 from .analyst import Refusal, Setup, Thresholds, compile_signal
 from .costs import CostModel
@@ -72,6 +72,223 @@ from .runner import RiskLimits, build_brief
 log = logging.getLogger(__name__)
 
 BACKTEST_VERSION = "backtest-2026-08-14-a"
+
+
+def state_id(symbol: str, timeframe: str, t0: Any) -> str:
+    """The canonical identity of a MARKET STATE — never of a decision.
+
+    Two arms looking at the same bar of the same instrument are looking at the
+    same state, whatever they each decided about it. Anything arm-specific in
+    this string destroys pairing silently, and a broken pairing does not raise:
+    it reports a confident null result over an empty intersection.
+    """
+    ts = t0.isoformat() if hasattr(t0, "isoformat") else str(t0)
+    return f"{symbol}|{timeframe}|{ts}"
+
+
+@dataclass(frozen=True)
+class PairingCheck:
+    """Did the arms actually pair? Answered before any delta is believed."""
+    ok: bool
+    expected: int
+    shared: int
+    per_arm: dict
+    detail: str
+
+    def render(self) -> str:
+        head = "PASS" if self.ok else "FAIL"
+        return (f"PAIRING {head}: {self.shared} shared states vs {self.expected} "
+                f"expected — {self.detail}\n"
+                + "\n".join(f"    {k}: {v} states" for k, v in sorted(self.per_arm.items())))
+
+
+def check_pairing(arms: dict[str, Sequence[StateOutcome]],
+                  min_fraction: float = 0.90) -> PairingCheck:
+    """Assert the arms genuinely share states, and FAIL loudly when they do not.
+
+    `compare()` pairs by intersecting state_id sets and silently returns a null
+    result when the intersection is empty. Without this check a completely
+    broken evaluation is indistinguishable from an honest "no difference
+    detected", and it would first be noticed after paying for a full multi-arm
+    model run.
+    """
+    if len(arms) < 2:
+        return PairingCheck(True, 0, 0, {k: len(v) for k, v in arms.items()},
+                            "single arm — nothing to pair")
+    sets = {k: {o.state_id for o in v} for k, v in arms.items()}
+    shared = set.intersection(*sets.values())
+    expected = min(len(s) for s in sets.values())
+    per_arm = {k: len(v) for k, v in sets.items()}
+    if not shared:
+        return PairingCheck(False, expected, 0, per_arm,
+                            "ZERO shared state ids — every paired delta would be "
+                            "computed over an empty set and report a false null")
+    frac = len(shared) / max(expected, 1)
+    if frac < min_fraction:
+        return PairingCheck(False, expected, len(shared), per_arm,
+                            f"only {frac:.1%} of the smaller arm's states pair "
+                            f"(need {min_fraction:.0%}) — arms saw different states")
+    return PairingCheck(True, expected, len(shared), per_arm,
+                        f"{frac:.1%} of the smaller arm's states pair")
+
+
+def assert_arms_differ(arms: Sequence["Arm"]) -> list[str]:
+    """Adjacent rungs must differ in EXACTLY the capability they claim to add.
+
+    Two arms with identical configuration execute identical code and produce
+    identical outcomes, so their delta is exactly zero by construction. Reported
+    as an incremental-value finding that would be a lie, and paid for twice.
+    """
+    # Explicit label -> field map. A substring test between the human label and
+    # the field name is not a check: "charts" and "vision" name the same
+    # capability and share no substring, so a naive comparison reports a
+    # well-formed ladder as broken and would train the reader to ignore it.
+    LABEL_FIELD = {
+        "analyst": "analyst",
+        "charts": "vision",
+        "router": "router",
+        "management": "management",
+        "observation": "observation",
+        "reentry": "reentry",
+        "adaptation": "adaptation",
+    }
+    problems: list[str] = []
+    fields = tuple(dict.fromkeys(LABEL_FIELD.values()))
+    for prev, cur in zip(arms, arms[1:]):
+        diff = [f for f in fields if getattr(prev, f) != getattr(cur, f)]
+        if not diff:
+            problems.append(f"{prev.name} and {cur.name} are configured IDENTICALLY "
+                            f"— they cannot measure the value of '{cur.adds}'")
+            continue
+        if len(diff) > 1:
+            problems.append(f"{prev.name} -> {cur.name} claims to add '{cur.adds}' "
+                            f"but changes {len(diff)} things: {diff} — the delta is "
+                            f"not attributable to one capability")
+            continue
+        want = LABEL_FIELD.get(cur.adds)
+        if want is None:
+            problems.append(f"{cur.name} adds '{cur.adds}', which maps to no known "
+                            f"capability field — the ladder cannot be audited")
+        elif diff[0] != want:
+            problems.append(f"{prev.name} -> {cur.name} is labelled '{cur.adds}' "
+                            f"(field {want!r}) but the field that changed is "
+                            f"{diff[0]!r}")
+    return problems
+
+
+@dataclass
+class FineCoverage:
+    """What fraction of the entry series actually has finer observations.
+
+    Reported per split rather than globally, because tick history is typically
+    much shorter than bar history: a run can be tick-resolved in its last fold
+    and bar-resolved in its first, and averaging those into one number would
+    describe neither.
+    """
+    kind: str                      # "M1" or "TICK"
+    entry_bars: int
+    covered_bars: int
+    observations: int
+    first: Optional[datetime]
+    last: Optional[datetime]
+    problems: list = field(default_factory=list)
+
+    @property
+    def fraction(self) -> float:
+        return self.covered_bars / max(self.entry_bars, 1)
+
+    @property
+    def usable(self) -> bool:
+        return not self.problems and self.fraction > 0.0
+
+    def render(self) -> str:
+        head = "USABLE" if self.usable else "NOT USABLE"
+        return (f"FINE SERIES {self.kind}: {head} — {self.covered_bars}/"
+                f"{self.entry_bars} entry bars covered ({self.fraction:.1%}), "
+                f"{self.observations:,} observations, "
+                f"{self.first} .. {self.last}"
+                + ("\n    " + "\n    ".join(self.problems) if self.problems else ""))
+
+
+def load_fine_series(path: Path, entry_bars: Sequence[Bar], *,
+                     kind: str = "M1") -> tuple[dict, FineCoverage]:
+    """Map real M1 bars or ticks causally into the entry bar that contains them.
+
+    An entry bar with timestamp T spans [T, T + step). Every finer observation
+    whose own timestamp falls inside that half-open interval belongs to it, and
+    to no other. Observations outside the entry series' span are dropped rather
+    than attached to the nearest bar, because attaching them would place data
+    from one bar inside another and silently create lookahead.
+
+    NOTHING IS SYNTHESISED. If a bar has no finer data it gets no entry in the
+    returned map, the desk falls back to bar resolution for that bar, and the
+    close is stamped BAR_UNAMBIGUOUS or BAR_ASSUMED_STOP_FIRST accordingly. A
+    gap in the fine series must show up as coarser provenance, never as invented
+    prices.
+    """
+    import pandas as pd
+
+    problems: list[str] = []
+    df = pd.read_parquet(path)
+    if df.index.name is None and "utc" in df.columns:
+        df = df.set_index("utc")
+    idx = pd.to_datetime(df.index, utc=True)
+
+    if kind == "TICK":
+        if {"bid", "ask"}.issubset(df.columns):
+            price = ((df["bid"].astype(float) + df["ask"].astype(float)) / 2.0).to_numpy()
+            crossed = int((df["ask"].astype(float) < df["bid"].astype(float)).sum())
+            if crossed:
+                problems.append(f"{crossed} crossed quotes (ask < bid) in the tick file")
+        elif "last" in df.columns:
+            price = df["last"].astype(float).to_numpy()
+        else:
+            problems.append(f"tick file has neither bid/ask nor last: {list(df.columns)}")
+            price = None
+        series = list(zip(idx.to_pydatetime(), price)) if price is not None else []
+    else:
+        need = {"open", "high", "low", "close"}
+        if not need.issubset(df.columns):
+            problems.append(f"M1 file missing OHLC columns: {sorted(need - set(df.columns))}")
+            series = []
+        else:
+            # Present each M1 bar as open then close. Its own high/low ordering
+            # is unknown, and inventing one would recreate at M1 exactly the
+            # ambiguity that carrying M1 exists to remove.
+            series = []
+            for t, o, c in zip(idx.to_pydatetime(), df["open"].astype(float),
+                               df["close"].astype(float)):
+                series.append((t, float(o)))
+                series.append((t, float(c)))
+
+    if len(entry_bars) < 2:
+        problems.append("entry series too short to infer its step")
+        return {}, FineCoverage(kind, len(entry_bars), 0, 0, None, None, problems)
+    step = entry_bars[1].ts - entry_bars[0].ts
+    if step <= timedelta(0):
+        problems.append(f"entry series step is not positive: {step}")
+        return {}, FineCoverage(kind, len(entry_bars), 0, 0, None, None, problems)
+
+    edges = [b.ts for b in entry_bars]
+    out: dict[int, list] = {}
+    import bisect
+    for t, px in series:
+        j = bisect.bisect_right(edges, t) - 1
+        if j < 0 or j >= len(entry_bars):
+            continue
+        if t >= edges[j] + step:
+            continue                     # inside a gap, belongs to no bar
+        out.setdefault(j, []).append((t, px))
+    for v in out.values():
+        v.sort(key=lambda x: x[0])
+
+    cov = FineCoverage(kind, len(entry_bars), len(out), sum(len(v) for v in out.values()),
+                       series[0][0] if series else None,
+                       series[-1][0] if series else None, problems)
+    if cov.fraction == 0.0:
+        cov.problems.append("no entry bar received a single finer observation — "
+                            "the fine series does not overlap the entry series")
+    return out, cov
 
 
 class NullSink(Sink):
@@ -206,8 +423,20 @@ class Backtest:
                  cost_model: CostModel = CostModel(),
                  limits: RiskLimits = RiskLimits(),
                  thresholds: Thresholds = Thresholds(),
-                 warmup: int = 260):
+                 warmup: int = 260,
+                 timeframe: str = "M15",
+                 fine_resolution: Optional[Resolution] = None,
+                 broker: Optional[Any] = None,
+                 adapt_every: int = 25):
         self.bars = list(bars)
+        self.timeframe = timeframe
+        # What an attached fine series is honestly called. None means no fine
+        # series exists, and arm F is not runnable.
+        self.fine_resolution = fine_resolution
+        self.broker = broker
+        self.adapt_every = adapt_every
+        self.adapt_cycles = 0
+        self.adapt_moves = 0
         self.out = Path(out)
         self.out.mkdir(parents=True, exist_ok=True)
         self.provider_factory = provider_factory
@@ -223,6 +452,7 @@ class Backtest:
                 book: Optional[HypothesisBook] = None) -> ArmRun:
         run = ArmRun(arm, split)
         tag = f"{arm.name}-{split.name}"
+        self.adapt_cycles = self.adapt_moves = 0
         ledger = Ledger(self.out / f"ledger-{tag}.jsonl")
         if ledger.path.exists():
             ledger.path.unlink()
@@ -246,7 +476,10 @@ class Backtest:
             cohorts=cohorts if arm.router or cohorts else cohorts,
             book=book if arm.router else None,
             policy_state=pstate,
-            shadow_management=True, shadow_contextual=False)
+            shadow_management=True, shadow_contextual=False,
+            **({"broker": self.broker} if self.broker is not None else {}),
+            **({"fine_resolution": self.fine_resolution}
+               if self.fine_resolution is not None else {}))
 
         for i in range(split.lo, split.hi):
             b = self.bars[i]
@@ -271,6 +504,15 @@ class Backtest:
             if not arm.reentry:
                 desk.prior = None          # re-entry capability withheld on this rung
 
+            # BOUNDED ADAPTATION (arm H). Runs inside the test window using ONLY
+            # rows already written, so every update is causal: knowledge at bar i
+            # is derived from outcomes resolved at or before bar i. `adaptation`
+            # was previously a label on the Arm dataclass that nothing read, so
+            # arm H executed byte-identical logic to arm G and its "incremental
+            # value" was zero by construction.
+            if arm.adaptation and (i - split.lo) > 0 and (i - split.lo) % self.adapt_every == 0:
+                self._adapt_step(desk, ledger, book, on=b.ts.date())
+
         rows = ledger.read_all()
         run.stats = asdict(desk.stats)
         run.trades = [r for r in rows if r.get("kind") == "TRADE_CLOSED"]
@@ -278,7 +520,28 @@ class Backtest:
             k = r.get("resolution", "UNKNOWN")
             run.resolutions[k] = run.resolutions.get(k, 0) + 1
         run.outcomes = self._outcomes(rows, arm.name)
+        run.stats["adapt_cycles"] = self.adapt_cycles
+        run.stats["adapt_moves"] = self.adapt_moves
         return run
+
+    def _adapt_step(self, desk: LiveDesk, ledger: Ledger,
+                    book: Optional[HypothesisBook], on: date) -> None:
+        """One bounded adaptation cycle on information available so far.
+
+        Deliberately narrow. It refreshes cohort statistics — which is pure
+        measurement and immediately changes what the expectancy gate takes — and
+        lets sealed hypotheses accrue post-seal evidence and be adjudicated. It
+        does NOT rebind policies mid-window, because a policy that changes
+        halfway through a test makes the arm a mixture of two systems and its
+        result attributable to neither.
+        """
+        rows = ledger.read_all()
+        desk.cohorts = build_cohorts(rows)
+        self.adapt_cycles += 1
+        if book is not None:
+            book.accrue(rows)
+            moves = book.adjudicate(on=on)
+            self.adapt_moves += len(moves)
 
     def _outcomes(self, rows: Sequence[dict], arm: str) -> list[StateOutcome]:
         """Every decided state, acted or not — refusals carry their counterfactual.
@@ -286,6 +549,14 @@ class Backtest:
         A refusal with a forward path is an observation about a decision, not an
         absence of one. Dropping them is how a system convinces itself that
         being inactive is free.
+
+        STATE IDs ARE CANONICAL AND ARM-INDEPENDENT. They previously carried an
+        `{arm}-` prefix, which meant `compare()` — which pairs by intersecting
+        state_id sets — found an empty intersection for every pair. Every paired
+        delta was computed over zero states: mean 0.0, CI [0,0], p=1.0, and it
+        looked like a legitimate "no significant difference" result rather than
+        the total failure to pair that it was. A canonical id is the market
+        state, which is exactly what must be identical across arms.
         """
         out: list[StateOutcome] = []
         closed = {r.get("entry_t0"): r for r in rows if r.get("kind") == "TRADE_CLOSED"}
@@ -297,12 +568,13 @@ class Backtest:
             ts = datetime.fromisoformat(t0) if isinstance(t0, str) else t0
             fwd = r.get("outcome") or {}
             best = float(fwd.get("best_achievable_r") or 0.0)
+            sid = state_id(r.get("symbol", "XAUUSD"), self.timeframe, t0)
             if kind == "SIGNAL":
                 c = closed.get(t0)
                 net = float(c["realised_r"]) if c else 0.0
-                out.append(StateOutcome(f"{arm}-{t0}", ts, True, net, best))
+                out.append(StateOutcome(sid, ts, True, net, best))
             elif kind.startswith("REFUSAL"):
-                out.append(StateOutcome(f"{arm}-{t0}", ts, False, 0.0, best))
+                out.append(StateOutcome(sid, ts, False, 0.0, best))
         return out
 
     # -- leakage -----------------------------------------------------------
@@ -410,10 +682,14 @@ def resolution_note(runs: Sequence[ArmRun]) -> str:
     if not n:
         return "no closed trades — resolution mix undefined"
     parts = ", ".join(f"{k}={v} ({v/n:.0%})" for k, v in sorted(tot.items()))
-    assumed = tot.get(Resolution.M15_PESSIMISTIC_UNCERTAIN.value, 0)
-    verdict = ("every fill observed" if not assumed else
-               f"{assumed/n:.0%} of fills ASSUMED — that fraction of the result "
-               f"is a modelling choice, not a measurement")
+    assumed = tot.get(Resolution.BAR_ASSUMED_STOP_FIRST.value, 0)
+    fine = (tot.get(Resolution.TICK_OBSERVED.value, 0)
+            + tot.get(Resolution.M1_OBSERVED.value, 0))
+    verdict = (f"{fine/n:.0%} resolved on a fine series; "
+               + ("no fill assumed" if not assumed else
+                  f"{assumed/n:.0%} of fills ASSUMED (deciding bar touched both "
+                  f"stop and target) — that fraction is a modelling choice, not "
+                  f"a measurement"))
     return f"{parts}   [{verdict}]"
 
 
@@ -426,8 +702,17 @@ def full_report(runs: Sequence[ArmRun], prereg: Preregistration,
         arms.setdefault(r.arm.name, []).extend(r.outcomes)
     for v in arms.values():
         v.sort(key=lambda o: o.ts)
-    mets = [metrics(name, o) for name, o in arms.items()]
-    comps = compare(arms, prereg) if len(arms) > 1 else []
+
+    # compare() returns a 3-tuple (metrics, comparisons, verdicts). It was
+    # previously assigned whole to `comps` and handed to report() as if it were
+    # the comparisons list, so the report rendered a tuple where the paired
+    # deltas belonged and the verdicts were dropped entirely. It did not raise,
+    # because report() iterates whatever it is given.
+    pairing = check_pairing(arms)
+    if len(arms) > 1:
+        mets, comps, verdicts = compare(arms, prereg)
+    else:
+        mets, comps, verdicts = [metrics(n, o) for n, o in arms.items()], [], []
     lines = [
         "=" * 92,
         f"AURUM WALK-FORWARD REPORT  ({BACKTEST_VERSION})",
@@ -440,6 +725,9 @@ def full_report(runs: Sequence[ArmRun], prereg: Preregistration,
         "RESOLUTION PROVENANCE",
         f"  {resolution_note(runs)}",
         "",
+        "PAIRING",
+        *[f"  {ln}" for ln in pairing.render().splitlines()],
+        "",
         "PREREGISTRATION",
         f"  hash {prereg.content_hash()}  frozen {prereg.frozen_at}",
         f"  holdout {prereg.holdout_start} .. {prereg.holdout_end}",
@@ -447,7 +735,7 @@ def full_report(runs: Sequence[ArmRun], prereg: Preregistration,
         f"{prereg.effective_trials} after inflation",
         "",
     ]
-    lines.append(report(mets, comps, []))
+    lines.append(report(mets, comps, verdicts))
 
     # Fold-level agreement. A total that is driven by one fold is a different
     # claim from one that holds across all of them, and the aggregate hides it.

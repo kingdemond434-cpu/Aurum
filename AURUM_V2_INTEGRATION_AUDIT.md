@@ -201,6 +201,67 @@ now narrowly exempted) and `0.6` in `review._same_claim` (a genuine magic number
 now hoisted to a named `CLAIM_SIMILARITY`). Current state: **0 undeclared
 thresholds, 0 silent restrictions, 18 registered restrictions.**
 
+## Round 3 — independent audit findings, all confirmed and fixed
+
+Ten defects were reported by an independent code audit. **All ten reproduced.**
+Fixed, each with an integration test that fails if it regresses.
+
+| # | Defect | Why it mattered |
+|---|---|---|
+| 1 | `_outcomes()` prefixed state IDs with the arm name, while `compare()` pairs by intersecting ID sets | **Every paired delta was computed over an empty intersection.** It did not raise — it reported mean 0.0, CI [0,0], p=1.0, which reads as an honest "no significant difference". The entire multi-arm evaluation was inert. |
+| 2 | `compare()` returns `(metrics, comparisons, verdicts)`; `full_report()` assigned the whole tuple to `comps` | Report rendered a tuple where paired deltas belonged and dropped verdicts entirely. Would have first been seen after paying for a full model run. |
+| 3 | `fit_knowledge()` existed but nothing called it; `arm.adaptation` was a label nothing read | Arm D never received fitted router knowledge and arm H executed **byte-identical** logic to arm G — its "incremental value" was zero by construction. |
+| 4 | `has_ticks=False` hardcoded | Arm F could never run, and there was no path to feed real M1/ticks in. |
+| 5 | No production runner | Components existing is not a deployed desk. |
+| 6 | "H4" chart was every 16th M15 candle | Sampling is not aggregation: those candles carry the range of **one** M15 bar, so every swing, sweep and displacement read off the "H4" chart was wrong. |
+| 7 | One-position constraint was implicit | The heat engine supports concurrent exposure; holding one was an undeclared policy discarding every opportunity during an open trade. |
+| 8 | `_live_floor()` returned its argument; its conditional was `if (...): pass` | **A no-op guarding a placeholder.** Structurally sensible but unplaceable stops reached the model. |
+| 9 | Partial fraction solved as `risk/(r_open+risk)`, ignoring `banked_r` | Over-banked on every repeated wake and progressively suffocated the runner. |
+| 10 | Bar-only resolution stamped `M1_OBSERVED`; wake constants were bare literals | A provenance label that lies about its own provenance survives into the evidence table looking authoritative. Wake constants decide when the brain thinks — that is economic policy. |
+
+### Fixes
+
+- **Canonical `state_id(symbol, timeframe, t0)`** plus `check_pairing()`, which
+  **fails loudly** rather than reporting a confident null over an empty set.
+- **`assert_arms_differ()`** with an explicit label→field map, refusing to run a
+  malformed ladder. (My first version used a substring test between label and
+  field name — `"charts"` vs `"vision"` share no substring — and reported a
+  well-formed ladder as broken. Caught by its own test.)
+- **`_adapt_step()`** — bounded, causal adaptation inside the test window, using
+  only rows already written. Verified: `cycles=11`.
+- **`load_fine_series()`** — maps real M1/ticks into the containing entry bar on
+  a half-open interval; observations outside the span are **dropped, never
+  reattached**. Nothing is synthesised: a gap surfaces as coarser provenance.
+- **`golddesk/service.py`** — supervised 24/5 loop: reconnect with bounded
+  backoff, stale-feed suspension, checkpoint after every state change,
+  rehydration before the first tick, bars processed exactly once on close.
+- **`features.aggregate()`** — true OHLC on wall-clock-aligned boundaries.
+- **`risk.one_position`** registered; every blocked state journals its forward
+  path so the constraint's forgone value is observed.
+- **`BrokerLimits` + `stop_is_legal()`** — candidates validated against the
+  **current** bid/ask, min-stop and freeze distances before the model sees them.
+- **Partial solve** `f ≥ −(B + M·S) / (M·(O − S))` — accounts for banked profit,
+  remaining size and locked R. Once risk-free, **no further partial is offered.**
+- **`WakePolicy`** — versioned, stamped, registered. **`Resolution`** split into
+  `BAR_UNAMBIGUOUS` (coarse but not assumed) vs `BAR_ASSUMED_STOP_FIRST` (the
+  only uncertain category).
+
+### Pre-flight test result
+
+`test_integration.py` — **48 checks, 0 failures**, no API calls. The two-arm A/B
+through the real harness with a provider double proves:
+
+```
+[PASS] NON-ZERO shared paired state IDs      shared=136 per_arm={'A':137,'B':147}
+[PASS] pairing check passes                  99.3% of the smaller arm's states pair
+[PASS] paired delta over a real intersection n_paired=136
+[PASS] full_report() completes               renders comparisons, not a tuple repr
+[PASS] arm D CONSULTED the fitted book       vetoes=3 (arm B had 0)
+[PASS] arm H RAN adaptation cycles           cycles=11
+[PASS] arm F consumed REAL fine observations ticks=7 observer_wakes=4
+[PASS] NO second partial once risk-free      runner preserved at 80%
+```
+
 ## What must happen next, in order
 
 1. Supply `ANTHROPIC_API_KEY` → the analyst arm becomes real.
