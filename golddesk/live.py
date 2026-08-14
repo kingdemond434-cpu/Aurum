@@ -66,6 +66,29 @@ from .watcher import Watcher
 
 log = logging.getLogger(__name__)
 
+
+def _downsample_path(path: Sequence, cap: int = 400) -> list:
+    """Keep the shape and both extremes, bound the size.
+
+    A tick-driven trade can accumulate tens of thousands of points and the
+    ledger has to stay readable. Evenly sampling loses exactly the turning
+    points a counterfactual needs, so the min and max are pinned in explicitly
+    rather than left to chance.
+    """
+    if not path:
+        return []
+    pts = [(ts.isoformat() if hasattr(ts, "isoformat") else str(ts), round(float(r), 4))
+           for ts, r in path]
+    if len(pts) <= cap:
+        return pts
+    step = len(pts) / cap
+    keep = {0, len(pts) - 1}
+    keep.add(max(range(len(pts)), key=lambda i: pts[i][1]))   # MFE
+    keep.add(min(range(len(pts)), key=lambda i: pts[i][1]))   # MAE
+    keep.update(int(i * step) for i in range(cap))
+    return [pts[i] for i in sorted(keep) if i < len(pts)]
+
+
 ENTRY_TF = "M15"
 HTF = "H4"
 
@@ -206,7 +229,8 @@ class LiveDesk:
                  fine_resolution: Resolution = Resolution.M1_OBSERVED,
                  htf_factor: int = 16,
                  measure_position_constraint: bool = True,
-                 concurrency_ceiling: int = 4):
+                 concurrency_ceiling: int = 4,
+                 universe_mode: bool = False):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
@@ -266,6 +290,13 @@ class LiveDesk:
         # quota on opportunity: heat is the economic limit and normally binds
         # first. This only stops a pathological state opening dozens.
         self.concurrency_ceiling = concurrency_ceiling
+        # Ask for the whole opportunity set rather than a single best trade.
+        # OFF by default: it changes what the analyst is asked, so it is an ARM
+        # to be measured against the single-read arm on identical states, not an
+        # improvement to be assumed. Every provider supports it — the base class
+        # wraps a single read into a one-candidate universe — so switching arms
+        # never changes which providers are available.
+        self.universe_mode = universe_mode
         self._last_state: Optional[StructureState] = None
         self._last_bars: Optional[Sequence[Bar]] = None
         self._last_idx: int = 0
@@ -462,6 +493,15 @@ class LiveDesk:
                             timeframe=ENTRY_TF)
         try:
             imgs = self._render_charts(bars, i)
+        except AnalystError as e:
+            self.stats.analyst_errors += 1
+            log.warning("charts unavailable at %s: %s", ts, e)
+            return
+
+        if self.universe_mode:
+            return self._decide_universe(bars, i, brief, imgs, ts, st)
+
+        try:
             pr = self.provider.read(brief, imgs)
             self.stats.reads += 1
         except AnalystError as e:
@@ -529,6 +569,122 @@ class LiveDesk:
 
         self._enter(bars, i, brief, res, pr, len(imgs))
 
+    # -- the opportunity universe -----------------------------------------
+    def _decide_universe(self, bars, i, brief, imgs, ts, st) -> None:
+        """Enumerate everything available, then decide as a portfolio.
+
+        The single-read path asks "what is the trade" and acts on the answer.
+        This path asks "what is available", compiles every proposition through
+        the identical gates, and lets portfolio economics choose. The material
+        difference is not that it takes more trades — usually it takes the same
+        one — it is that what it did NOT take is written down with geometry and
+        resolved forward, so the cost of selecting is measurable for the first
+        time.
+        """
+        from .universe import Selection, compile_universe, select, MAX_CANDIDATES
+        from .opportunity import Heat
+        from .providers import ProviderRead
+
+        try:
+            stamp, uni = self.provider.survey(brief, imgs)
+            self.stats.reads += 1
+        except AnalystError as e:
+            self.stats.analyst_errors += 1
+            log.warning("analyst unavailable at %s: %s", ts, e)
+            return
+
+        cands = compile_universe(brief, uni, self.thresholds, self.cost_model,
+                                 self.cohorts)
+        heat = Heat(max_open_risk_r=self.limits.max_open_risk_r,
+                    correlation_haircut=self.limits.correlation_haircut,
+                    max_daily_loss_r=self.limits.max_daily_loss_r)
+        sel = select(cands, heat,
+                     open_risks=self.risk.open_risks,
+                     open_directions=self.risk.open_directions,
+                     day_loss_r=self.risk.day_loss_r,
+                     max_concurrent=self.max_concurrent(),
+                     cap_filled=len(uni.candidates) >= MAX_CANDIDATES)
+
+        # The survey itself is journalled BEFORE anything is entered, so the
+        # record of what was available does not depend on what was taken.
+        self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL, "MODEL",
+                     {"universe": sel.to_journal(), "survey": uni.survey,
+                      "dominant_context": uni.dominant_context,
+                      "vision": self.vision.value, "charts_sent": len(imgs),
+                      **stamp.stamp()},
+                     f"universe: {len(cands)} enumerated, {len(sel.taken)} selected",
+                     "LONG", brief.atr, suffix="universe")
+
+        # NOTE: there is deliberately no `if not sel.taken: return` here. A
+        # moment where the desk enumerated live propositions and took NONE of
+        # them is the single most valuable refusal in the ledger — it is the
+        # daily-loss limit, or the ceiling, or heat, turning away everything
+        # that was available. Returning early there would discard precisely the
+        # evidence those restrictions are supposed to be reviewed against.
+        for c in sel.taken:
+            pr = ProviderRead(c.read, stamp.provider, stamp.model,
+                              stamp.latency_ms, dict(stamp.usage))
+            sig = c.compiled
+
+            # Re-entry, hypothesis veto and solvency apply PER CANDIDATE. A
+            # candidate that clears selection has not thereby cleared the gates
+            # the single-read path applies after compilation.
+            if self.prior is not None and sig.direction == self.prior.direction:
+                rp = self.active_reentry()
+                v = rp.evaluate(self.prior, st, ts)
+                if not v.allowed:
+                    self.stats.reentry_blocked += 1
+                    c.disposition, c.disposition_reason = "GATED", f"re-entry: {v.reason}"
+                    self._record(bars, i, brief, DecisionKind.REFUSAL_COMPILER, "POLICY",
+                                 {"declined": sig.direction, "candidate": c.to_journal(),
+                                  "reentry_policy": rp.version, **stamp.stamp()},
+                                 f"re-entry blocked: {v.reason}", sig.direction,
+                                 brief.atr, suffix=f"c{c.index}")
+                    continue
+
+            if self.book is not None:
+                veto = self.book.veto(dict(brief.context.__dict__),
+                                      {"setup": sig.setup.value,
+                                       "direction": sig.direction}, on=ts.date())
+                if veto is not None:
+                    self.stats.hypothesis_vetoes += 1
+                    c.disposition = "GATED"
+                    c.disposition_reason = f"enforcing hypothesis {veto.hid}"
+                    self._record(bars, i, brief, DecisionKind.REFUSAL_ROUTER, "ROUTER",
+                                 {"declined": sig.direction, "candidate": c.to_journal(),
+                                  "hypothesis": veto.hid,
+                                  "hypothesis_hash": veto.content_hash(), **stamp.stamp()},
+                                 f"enforcing hypothesis {veto.hid}: {veto.statement}",
+                                 sig.direction, sig.risk, suffix=f"c{c.index}")
+                    continue
+
+            ok, why = risk_check(sig, self.risk, self.limits)
+            if not ok:
+                c.disposition, c.disposition_reason = "GATED", f"risk: {why}"
+                self._record(bars, i, brief, DecisionKind.REFUSAL_COMPILER, "POLICY",
+                             {"declined": sig.direction, "candidate": c.to_journal(),
+                              **stamp.stamp()},
+                             f"risk: {why}", sig.direction, sig.risk,
+                             suffix=f"c{c.index}")
+                continue
+
+            self._enter(bars, i, brief, sig, pr, len(imgs), suffix=f"c{c.index}")
+
+        # Every candidate that survived its gates but lost a budget contest is
+        # journalled with full geometry. This is the measurement that makes the
+        # selection rule accountable: resolve_forward runs on each one, so a
+        # month later the ledger can say what deferring cost.
+        for c in sel.candidates:
+            if c.disposition != "DEFERRED":
+                continue
+            self._record(bars, i, brief, DecisionKind.REFUSAL_COMPILER, "POLICY",
+                         {"declined": c.direction, "candidate": c.to_journal(),
+                          "budget_bound": sel.budget_bound,
+                          "tiebreak_used": sel.tiebreak_used, **stamp.stamp()},
+                         f"deferred: {c.disposition_reason}", c.direction,
+                         c.compiled.risk if c.compiled else brief.atr,
+                         suffix=f"d{c.index}")
+
     def _render_charts(self, bars, i):
         """Synchronised multi-timeframe visual context.
 
@@ -568,7 +724,7 @@ class LiveDesk:
 
     # -- entry -------------------------------------------------------------
     def _enter(self, bars, i, brief, sig: CompiledSignal, pr: ProviderRead,
-               n_charts: int = 0) -> None:
+               n_charts: int = 0, suffix: str = "") -> None:
         pos = Position(sig.direction, sig.entry, sig.stop, sig.stop, sig.risk,
                        1.0, 0.0, bars[i].ts, sig.setup.value)
         obs = TradeObserver(direction=sig.direction, entry=sig.entry, stop=sig.stop,
@@ -588,7 +744,8 @@ class LiveDesk:
                       "vision": self.vision.value, "charts_sent": n_charts,
                       "management_policy": self.active_chooser().name,
                       **pr.stamp()},
-                     f"ENTRY {sig.direction} rr {sig.rr_tp2:.2f}", sig.direction, sig.risk)
+                     f"ENTRY {sig.direction} rr {sig.rr_tp2:.2f}", sig.direction,
+                     sig.risk, suffix=suffix)
         self._notify(
             f"*ENTRY {sig.direction} {brief.symbol}*\n"
             f"`entry  {sig.entry:.2f}`\n`SL     {sig.stop:.2f}`  ({sig.risk:.2f} risk)\n"
@@ -828,6 +985,12 @@ class LiveDesk:
             "mfe_r": round(t.mfe_r, 4), "mae_r": round(t.mae_r, 4),
             "forgone_r": round(max(0.0, t.mfe_r - total), 4),
             "observations": t.observer.ticks,
+            # The excursion PATH, downsampled. Without it a management
+            # counterfactual is impossible: the shadow log records what each
+            # policy would have CHOSEN, and only the path says what that choice
+            # would have PRODUCED. Extremes are always kept so the replay cannot
+            # miss the moment a level was crossed.
+            "path": _downsample_path(t.observer.path),
             "management": t.mgmt_log,
             "management_policy": self.active_chooser().name,
             "reentry_policy": self.active_reentry().version,
@@ -842,11 +1005,17 @@ class LiveDesk:
             self.open_trades.remove(t)
 
     # -- journalling -------------------------------------------------------
-    def _record(self, bars, i, brief, kind, by, decision, reason, direction, risk_price):
+    def _record(self, bars, i, brief, kind, by, decision, reason, direction,
+                risk_price, suffix: str = ""):
+        # `suffix` keeps decision ids unique when one bar produces several
+        # records — the universe path emits one per candidate at the same
+        # timestamp, and a colliding id would silently overwrite the very
+        # counterfactuals it exists to preserve.
+        did = f"{brief.symbol}-{bars[i].ts.isoformat()}" + (f"-{suffix}" if suffix else "")
         fwd = bars[i:i + 61]
         lb = [LBar(b.ts, b.open, b.high, b.low, b.close) for b in fwd]
         self.ledger.append(DecisionRecord(
-            decision_id=f"{brief.symbol}-{bars[i].ts.isoformat()}", kind=kind,
+            decision_id=did, kind=kind,
             t0=bars[i].ts, symbol=brief.symbol,
             context=dict(brief.context.__dict__) | {"session": brief.session},
             brief_render=brief.render(), decided_by=by, decision=decision,

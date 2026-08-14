@@ -70,6 +70,23 @@ class AnalystProvider(abc.ABC):
             f"provider {self.name!r} does not implement choose_option; it cannot "
             f"be used as a contextual management brain")
 
+    def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
+        """Every proposition available now, not just the best one.
+
+        The default wraps read() into a one-candidate universe, so every
+        provider — replay, deterministic, and any future vendor — works in
+        universe mode without changes. That default is honest about itself: a
+        single-read provider returns one candidate because that is what its
+        interface can express, and the wrapper's survey text says so rather than
+        letting a downstream reader conclude only one opportunity existed.
+
+        A provider that can genuinely enumerate should override this. Returns
+        (ProviderRead-like stamp, AnalystUniverse).
+        """
+        from .universe import as_universe
+        pr = self.read(brief, charts)
+        return pr, as_universe(pr.read)
+
     def describe(self) -> dict:
         return {"provider": self.name, "model": self.model}
 
@@ -133,6 +150,63 @@ class AnthropicAnalyst(AnalystProvider):
                             {"in": resp.usage.input_tokens,
                              "cache_read": resp.usage.cache_read_input_tokens,
                              "out": resp.usage.output_tokens})
+
+    def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
+        """A real enumeration, not a wrapped single read.
+
+        Same cached system prefix as read(); the universe addendum is a second,
+        uncached system block, so a universe run and a single-read run share the
+        cache entry for everything before it.
+        """
+        import anthropic
+        from .universe import (MAX_CANDIDATES, UNIVERSE_ADDENDUM, UNIVERSE_SCHEMA,
+                               AnalystUniverse)
+        client = self._lazy_client()
+        content: list[dict] = []
+        for c in charts:
+            content.append({"type": "text", "text": f"Chart — {c.timeframe}, closed bars:"})
+            content.append({"type": "image", "source": {
+                "type": "base64", "media_type": "image/png",
+                "data": base64.standard_b64encode(c.png).decode("ascii")}})
+        content.append({"type": "text", "text": brief.render()})
+
+        t0 = time.monotonic()
+        try:
+            resp = client.messages.create(
+                model=self.model, max_tokens=self.max_tokens * 2,
+                system=[{"type": "text", "text": ANALYST_SYSTEM,
+                         "cache_control": {"type": "ephemeral"}},
+                        {"type": "text",
+                         "text": UNIVERSE_ADDENDUM.format(cap=MAX_CANDIDATES)}],
+                output_config={"effort": self.effort,
+                               "format": {"type": "json_schema",
+                                          "schema": UNIVERSE_SCHEMA}},
+                messages=[{"role": "user", "content": content}])
+        except anthropic.RateLimitError as e:
+            raise AnalystError(f"rate limited: {e}") from e
+        except anthropic.APIStatusError as e:
+            raise AnalystError(f"api {e.status_code}: {e.message}") from e
+        except anthropic.APIConnectionError as e:
+            raise AnalystError(f"connection: {e}") from e
+        dt = (time.monotonic() - t0) * 1000
+
+        if resp.stop_reason == "refusal":
+            raise AnalystError("declined the universe request")
+        if resp.stop_reason == "max_tokens":
+            raise AnalystError("universe truncated — raise max_tokens or lower the cap")
+        text = next((b.text for b in resp.content if b.type == "text"), None)
+        if not text:
+            raise AnalystError("no text block")
+        uni = AnalystUniverse.model_validate_json(text)
+        # The stamp carries the FIRST candidate purely so provenance has a read
+        # to attach to; selection does not privilege it in any way.
+        head = uni.candidates[0] if uni.candidates else None
+        stamp = ProviderRead(head, self.name, self.model, dt,
+                             {"in": resp.usage.input_tokens,
+                              "cache_read": resp.usage.cache_read_input_tokens,
+                              "out": resp.usage.output_tokens,
+                              "candidates": len(uni.candidates)})
+        return stamp, uni
 
     def choose_option(self, system: str, prompt: str,
                       option_ids: Sequence[str]) -> str:

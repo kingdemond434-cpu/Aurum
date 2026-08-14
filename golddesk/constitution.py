@@ -159,6 +159,35 @@ REGISTRY: list[Restriction] = [
                 "forgone value is journalled on every blocked state and must "
                 "exceed the correlated risk it avoids, or it goes",
                 review_days=30),
+    Restriction("entry.single_read", "live:LiveDesk.on_bar", Kind.DISCRETIONARY,
+                "every opportunity beyond the one the analyst chose to state",
+                "asking for ONE trade caps capture at one thesis per wake and, "
+                "worse, makes the surplus invisible: an unstated proposition is "
+                "never refused, never journalled and never resolved forward, so "
+                "no later analysis can recover it. universe.select() replaces the "
+                "cap with a portfolio question and journals what it leaves",
+                review_days=30),
+    Restriction("entry.universe_cap", "universe:call_universe", Kind.DISCRETIONARY,
+                "propositions beyond the analyst's output-slot limit",
+                "an output-length bound, not a quality standard — but it can "
+                "still discard a real opportunity, so a full slate is flagged "
+                "as CAP BINDING and the bound is raised if that recurs",
+                review_days=30),
+    Restriction("entry.universe_tiebreak", "universe:_sort_key", Kind.DISCRETIONARY,
+                "unmeasured-EV candidates ranked below others when risk is scarce",
+                "ordering cold-start candidates needs a proxy and every proxy "
+                "here is forbidden as a permanent rule. Net R:R is DECLARED, "
+                "used only when a budget binds, flagged when load-bearing, and "
+                "the candidates it defers keep their geometry so its cost is "
+                "recoverable from the forward record",
+                review_days=14),
+    Restriction("entry.universe_redundancy", "universe:redundancy", Kind.DISCRETIONARY,
+                "a second candidate whose band overlaps one already taken",
+                "same-direction overlap is one idea sized twice while the ledger "
+                "counts it as two observations; opposite-direction overlap is "
+                "two spreads for near-zero net exposure. Non-overlapping pairs "
+                "are untouched, and the 60% overlap threshold is a guess",
+                review_days=30),
     Restriction("wake.policy_constants", "observer:WakePolicy", Kind.DISCRETIONARY,
                 "reconsideration when the wake policy judges it not worth paying for",
                 "giveback, proximity, velocity and MFE-step thresholds decide "
@@ -197,6 +226,9 @@ DECLARED_SITES = {
     "stop_is_legal",
     # portfolio heat — the executable half of risk.portfolio_heat
     "room_for",
+    # the opportunity universe: enumeration, selection and redundancy, each
+    # registered above and each journalling what it left behind
+    "select", "redundancy", "compile_universe", "_sort_key",
     # integrity and evidence guards, registered above as HARD_RISK
     "verify_path_stable", "sufficient_to_enforce",
     # `may_reenter` is deliberately ABSENT. The free function it named carried
