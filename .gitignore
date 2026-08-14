@@ -12,3 +12,13 @@ credentials*
 .DS_Store
 Thumbs.db
 *.tmp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local run artifacts — never evidence, never committed
+acceptance_out/
+state/
+*.jsonl
