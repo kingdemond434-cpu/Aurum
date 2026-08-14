@@ -261,13 +261,14 @@ class LiveDesk:
         self._last_idx: int = 0
 
     def _provider_can_choose(self) -> bool:
-        try:
-            self.provider.choose_option("", "", ["probe"])
-        except NotImplementedError:
-            return False
-        except Exception:
-            return True          # it tried — it is a real implementation
-        return True
+        """Does this provider implement management choice? Checked by INTERFACE.
+
+        The previous version answered by calling choose_option() with a dummy
+        prompt, which for a real vendor is a billed network round trip issued at
+        construction time purely to discover whether a method was overridden.
+        Capability is a property of the class, so read it from the class.
+        """
+        return type(self.provider).choose_option is not AnalystProvider.choose_option
 
     # -- active policy resolution ----------------------------------------
     def active_chooser(self) -> ManagementChooser:
@@ -299,7 +300,9 @@ class LiveDesk:
     # TICK PATH — continuous observation between bar closes
     # ====================================================================
     def on_tick(self, price: float, ts: datetime, *,
-                bar_closed: bool = False) -> Optional[str]:
+                bar_closed: bool = False,
+                bid: Optional[float] = None,
+                ask: Optional[float] = None) -> Optional[str]:
         """One tick or M1 close. Cheap, and the position's real sense organ.
 
         Returns a short string when the tick caused something, for tracing.
@@ -317,12 +320,22 @@ class LiveDesk:
         # OBSERVED here — this is the production half of the intrabar problem.
         pos = t.position
         long = pos.long
-        if (price <= pos.current_stop) if long else (price >= pos.current_stop):
+        # EXECUTION SIDE. A long is closed by SELLING at the bid; a short by
+        # BUYING at the ask. Evaluating either against the mid delays adverse
+        # stop touches by half a spread and brings targets forward by the same
+        # amount — a bias that flatters every result and is largest exactly
+        # where the spread is widest.
+        if bid is not None and ask is not None:
+            self.last_bid, self.last_ask = bid, ask
+            self.last_spread = max(0.0, ask - bid)
+        exit_px = (bid if bid is not None else price) if long else (
+            ask if ask is not None else price)
+        if (exit_px <= pos.current_stop) if long else (exit_px >= pos.current_stop):
             r = pos.r_at(pos.current_stop)
             self._close(ts, r, "PROFITABLE_STOP" if r > 0 else "STOP",
                         self._last_state, Resolution.TICK_OBSERVED)
             return "EXIT_STOP"
-        if (price >= t.signal.tp2) if long else (price <= t.signal.tp2):
+        if (exit_px >= t.signal.tp2) if long else (exit_px <= t.signal.tp2):
             self._close(ts, pos.r_at(t.signal.tp2), "TARGET",
                         self._last_state, Resolution.TICK_OBSERVED)
             return "EXIT_TARGET"
@@ -700,7 +713,16 @@ class LiveDesk:
                st: Optional[StructureState],
                resolution: Resolution = Resolution.BAR_ASSUMED_STOP_FIRST) -> None:
         t = self.open
-        total = t.position.banked_r + realised_r * t.position.remaining_fraction
+        # NET of execution cost. Position.r_at() is pure price movement over the
+        # risk unit, so everything downstream of it was gross. The compiler
+        # already priced the round trip once, on mid, at compile time — that is
+        # `signal.cost_r` — and it is charged here so the number the ledger calls
+        # realised R is the number the account would actually see. Comparing
+        # arms that differ by hundredths of an R against a gross P&L decides
+        # which component "wins" on accounting error.
+        gross = t.position.banked_r + realised_r * t.position.remaining_fraction
+        cost_r = float(getattr(t.signal, "cost_r", 0.0) or 0.0)
+        total = gross - cost_r
         if self.risk.open_risks:
             self.risk.open_risks.pop()
             self.risk.open_directions.pop()
@@ -722,8 +744,8 @@ class LiveDesk:
                 if resolution.is_assumption else "")
         self._notify(
             f"*EXIT* {t.position.direction} {t.signal.setup.value} — {reason}\n"
-            f"realised `{total:+.2f}R` (banked `{t.position.banked_r:+.2f}R` + "
-            f"runner `{realised_r * t.position.remaining_fraction:+.2f}R`)\n"
+            f"realised `{total:+.2f}R` net (gross `{gross:+.2f}R` - cost "
+            f"`{cost_r:.3f}R`)\n"
             f"MFE `{t.mfe_r:+.2f}R` · MAE `{t.mae_r:+.2f}R` · "
             f"capture `{(total / t.mfe_r if t.mfe_r > 0 else 0):.0%}` of MFE\n"
             f"resolution `{resolution.value}` · {t.observer.ticks} observations"
@@ -734,7 +756,8 @@ class LiveDesk:
             "entry_t0": t.position.opened_utc.isoformat(),
             "context": t.entry_context, "mechanism_name": t.mechanism_name,
             "direction": t.position.direction, "setup": t.signal.setup.value,
-            "realised_r": round(total, 4), "reason": reason,
+            "realised_r": round(total, 4), "gross_r": round(gross, 4),
+            "cost_r": round(cost_r, 4), "reason": reason,
             "resolution": resolution.value,
             "mfe_r": round(t.mfe_r, 4), "mae_r": round(t.mae_r, 4),
             "forgone_r": round(max(0.0, t.mfe_r - total), 4),

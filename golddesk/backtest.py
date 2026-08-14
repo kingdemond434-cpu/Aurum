@@ -411,7 +411,7 @@ class ArmRun:
         tot = sum(self.resolutions.values())
         if not tot:
             return 0.0
-        return self.resolutions.get(Resolution.M15_PESSIMISTIC_UNCERTAIN.value, 0) / tot
+        return self.resolutions.get(Resolution.BAR_ASSUMED_STOP_FIRST.value, 0) / tot
 
 
 class Backtest:

@@ -108,6 +108,7 @@ class DeskService:
         self._bars: list[Bar] = []
         self._sw: list = []
         self._atrs: list = []
+        self._rehydrated = False
         self.cfg.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     # -- lifecycle -------------------------------------------------------
@@ -146,55 +147,100 @@ class DeskService:
         the ones immediately before a crash.
         """
         t = self.desk.open
+        # The COMPILED SIGNAL is checkpointed in full, not just its tp2. Without
+        # it a restart cannot rebuild an OpenTrade at all, and the previous
+        # version silently didn't — it reconstructed a Position and an observer,
+        # never assigned desk.open, and then appended to the risk ledger anyway.
+        # The result was the worst possible state: the risk engine believed a
+        # trade existed, LiveDesk believed none did, and nothing managed the
+        # position that was actually live at the broker.
         self.state.open_trade = None if t is None else {
-            "direction": t.position.direction, "entry": t.position.entry,
-            "stop": t.position.current_stop, "initial_stop": t.position.initial_stop,
-            "risk_price": t.position.risk_price,
-            "remaining_fraction": t.position.remaining_fraction,
-            "banked_r": t.position.banked_r,
-            "opened_utc": t.position.opened_utc.isoformat(),
-            "setup": t.position.setup, "tp2": t.signal.tp2,
+            "position": {
+                "direction": t.position.direction, "entry": t.position.entry,
+                "initial_stop": t.position.initial_stop,
+                "current_stop": t.position.current_stop,
+                "risk_price": t.position.risk_price,
+                "remaining_fraction": t.position.remaining_fraction,
+                "banked_r": t.position.banked_r,
+                "opened_utc": t.position.opened_utc.isoformat(),
+                "setup": t.position.setup},
+            "signal": {k: (v.value if hasattr(v, "value") else
+                           (v.isoformat() if hasattr(v, "isoformat") else v))
+                       for k, v in t.signal.__dict__.items()},
+            "opened_idx": t.opened_idx,
             "mechanism_name": t.mechanism_name,
-            "mfe_r": t.mfe_r, "mae_r": t.mae_r}
+            "entry_context": t.entry_context,
+            "observer": {"mfe_r": t.observer.mfe_r, "mae_r": t.observer.mae_r,
+                         "ticks": t.observer.ticks},
+            "mgmt_log": t.mgmt_log}
         tmp = self.cfg.state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(asdict(self.state), indent=2, default=str))
         os.replace(tmp, self.cfg.state_path)
 
     def rehydrate(self) -> bool:
-        """Rebuild an open position from the checkpoint BEFORE consuming ticks.
+        """Restore the open position INTO LiveDesk, exactly once.
 
-        Returns True when a position was restored. The observer is recreated
-        from the stored levels; its excursion history is lost, which is stated
-        rather than faked — MFE before the restart is restored from the
-        checkpoint, and the tick path resumes from the current price.
+        "Exactly once" is load-bearing. rehydrate() is called after every
+        successful reconnect, and the previous version appended to the risk
+        ledger on each call, so a flapping connection inflated open risk without
+        opening a single trade.
+
+        Excursion history before the restart is restored from the checkpoint;
+        the tick-by-tick path is genuinely lost and is not fabricated.
         """
+        if self._rehydrated:
+            return self.desk.open is not None
         raw = self.state.open_trade
         if not raw:
+            self._rehydrated = True
             return False
+
+        from .analyst import CompiledSignal, Setup
+        from .live import OpenTrade
         from .management import Position
         from .observer import TradeObserver
-        from .live import OpenTrade
 
-        pos = Position(
-            direction=raw["direction"], entry=raw["entry"],
-            initial_stop=raw["initial_stop"], current_stop=raw["stop"],
-            risk_price=raw["risk_price"],
-            remaining_fraction=raw["remaining_fraction"],
-            banked_r=raw["banked_r"],
-            opened_utc=datetime.fromisoformat(raw["opened_utc"]),
-            setup=raw.get("setup", "UNKNOWN"))
-        obs = TradeObserver(pos.direction, pos.entry, pos.current_stop,
-                            raw["tp2"], pos.risk_price, pos.opened_utc)
-        obs.mfe_r, obs.mae_r = raw.get("mfe_r", 0.0), raw.get("mae_r", 0.0)
-        sig = self.desk.open.signal if self.desk.open else None
-        if sig is None:
-            log.error("checkpoint holds a position but no compiled signal survived "
-                      "the restart; managing on stored levels only")
-        log.warning("REHYDRATED %s from %.2f, stop %.2f, tp2 %.2f, %.0f%% remaining",
-                    pos.direction, pos.entry, pos.current_stop, raw["tp2"],
-                    pos.remaining_fraction * 100)
+        try:
+            pr = raw["position"]
+            pos = Position(
+                direction=pr["direction"], entry=pr["entry"],
+                initial_stop=pr["initial_stop"], current_stop=pr["current_stop"],
+                risk_price=pr["risk_price"],
+                remaining_fraction=pr["remaining_fraction"],
+                banked_r=pr["banked_r"],
+                opened_utc=datetime.fromisoformat(pr["opened_utc"]),
+                setup=pr.get("setup", "UNKNOWN"))
+            sg = dict(raw["signal"])
+            sg["setup"] = Setup(sg["setup"])
+            sg["brief_as_of"] = datetime.fromisoformat(sg["brief_as_of"])
+            sig = CompiledSignal(**sg)
+            obs = TradeObserver(pos.direction, pos.entry, pos.current_stop,
+                                sig.tp2, pos.risk_price, pos.opened_utc)
+            ob = raw.get("observer") or {}
+            obs.mfe_r = ob.get("mfe_r", 0.0)
+            obs.mae_r = ob.get("mae_r", 0.0)
+            self.desk.open = OpenTrade(
+                pos, sig, raw.get("opened_idx", 0), obs,
+                entry_context=raw.get("entry_context") or {},
+                mechanism_name=raw.get("mechanism_name", "unnamed"),
+                mgmt_log=list(raw.get("mgmt_log") or []))
+        except (KeyError, TypeError, ValueError) as e:
+            # A position that cannot be rebuilt must NOT leave a phantom risk
+            # entry behind. Say so loudly — there may be a live trade at the
+            # broker that this process can no longer manage.
+            log.error("checkpoint present but unrestorable (%s). If a position is "
+                      "open at the broker, THIS PROCESS IS NOT MANAGING IT.", e)
+            self._rehydrated = True
+            return False
+
         self.desk.risk.open_risks.append(1.0)
         self.desk.risk.open_directions.append(pos.direction)
+        self._rehydrated = True
+        log.warning("REHYDRATED %s from %.2f, stop %.2f, tp2 %.2f, %.0f%% remaining, "
+                    "banked %+.2fR", pos.direction, pos.entry, pos.current_stop,
+                    sig.tp2, pos.remaining_fraction * 100, pos.banked_r)
+        self._notify(f"*RESUMED* {pos.direction} from {pos.entry:.2f}, "
+                     f"SL {pos.current_stop:.2f}, {pos.remaining_fraction:.0%} left")
         return True
 
     # -- the loop --------------------------------------------------------
@@ -245,11 +291,13 @@ class DeskService:
             if max_seconds and (time.monotonic() - started) > max_seconds:
                 return
             # ---- staleness: the failure that looks like success ----------
-            if self.feed.tick_is_stale():
+            stale, tick_age = self.feed.tick_is_stale()
+            if stale:
                 self.state.stale_suspensions += 1
                 if self.state.stale_suspensions % 60 == 1:
-                    log.warning("tick is stale — management SUSPENDED; the desk "
-                                "will not act on a price that stopped advancing")
+                    log.warning("tick is stale (%.1fs) — management SUSPENDED; the "
+                                "desk will not act on a price that stopped advancing",
+                                tick_age)
                     self._notify("*FEED STALE* management suspended until the "
                                  "quote advances")
                 time.sleep(self.cfg.poll_seconds)
@@ -274,7 +322,10 @@ class DeskService:
 
             # ---- TICK PATH: continuous observation of an open position ---
             if self.desk.open is not None:
-                out = self.desk.on_tick(price, datetime.now(timezone.utc))
+                # bid/ask, not mid: the desk evaluates a long's exits on the bid
+                # and a short's on the ask.
+                out = self.desk.on_tick(price, datetime.now(timezone.utc),
+                                        bid=bid, ask=ask)
                 if out:
                     self.checkpoint()
 
@@ -300,11 +351,15 @@ class DeskService:
         bars = self.feed.bars(self.cfg.entry_tf, self.cfg.history_bars)
         if len(bars) < 2:
             return
-        # The last element is the FORMING bar; the one before it just closed.
-        closed = bars[-2]
+        # LiveFeed.bars() drops the forming bar itself and documents that it
+        # returns CLOSED bars only, so bars[-1] IS the most recent closed bar.
+        # Taking bars[-2] dropped it a second time and analysed the one before,
+        # leaving the desk a full entry-timeframe candle behind the market while
+        # every timestamp still looked correct.
+        closed = bars[-1]
         if self.state.last_bar_ts == closed.ts.isoformat():
             return
-        self._bars = list(bars[:-1])
+        self._bars = list(bars)
         self._sw = swings(self._bars)
         self._atrs = atr(self._bars)
         i = len(self._bars) - 1
@@ -326,7 +381,10 @@ class DeskService:
             htf_bars = self.feed.bars(self.cfg.htf, 200)
             if len(htf_bars) < 30:
                 return None
-            closed = list(htf_bars[:-1])
+            # Same contract, same fix. Dropping one more here made the higher
+            # timeframe a whole H4 candle stale — worse than supplying no HTF
+            # state at all, because it is convincingly formatted and wrong.
+            closed = list(htf_bars)
             hsw, hatrs = swings(closed), atr(closed)
             return classify(closed, len(closed) - 1, visible_swings(hsw, len(closed) - 1),
                             hatrs)
@@ -346,7 +404,8 @@ class DeskService:
 def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   provider_spec: str = "anthropic:claude-opus-5",
                   vision: Vision = Vision.NUMERIC_PLUS_CHARTS,
-                  cfg: Optional[ServiceConfig] = None) -> DeskService:
+                  cfg: Optional[ServiceConfig] = None,
+                  secrets_dir: str = "secrets") -> DeskService:
     """Wire the real client, feed, desk and sink. One call, one deployed desk."""
     from .providers import build_provider
     cfg = cfg or ServiceConfig(symbol=symbol)
@@ -364,6 +423,13 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     except Exception as e:
         log.warning("could not read symbol limits (%s) — stop legality will use "
                     "the through-the-market test only", e)
+    # A REAL sink. build_sink(None) returns a null sink, so the one-call
+    # constructor produced a desk that could never notify anything — including
+    # with shadow=False, where silence is the last thing you want. build_sink
+    # reads secrets/telegram_token and secrets/telegram_chat_id and degrades to
+    # null on its own if they are absent, so passing the path is safe either way.
+    sink = build_sink(secrets_dir)
     desk = LiveDesk(build_provider(provider_spec), Ledger(cfg.ledger_path),
-                    build_sink(None), shadow=shadow, vision=vision, broker=broker)
+                    sink, shadow=shadow, vision=vision, broker=broker)
+    log.info("notification sink: %s", type(sink).__name__)
     return DeskService(desk, feed, cfg)

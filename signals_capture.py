@@ -292,6 +292,11 @@ async def run_capture(channels: list[str], log: SignalLog, quotes: QuoteSource,
              "UNAVAILABLE — post-hoc reconstruction will be needed")
     print(f"quotes at receipt: {qmode}")
 
+    chan_by_id: dict = {}
+
+    def _resolve_channel(chat_id) -> str:
+        return chan_by_id.get(chat_id, str(chat_id))
+
     def base(ev_kind: str, msg: Any, chan: str) -> dict:
         return {"event": ev_kind,
                 "received_utc": datetime.now(timezone.utc).isoformat(),
@@ -304,6 +309,7 @@ async def run_capture(channels: list[str], log: SignalLog, quotes: QuoteSource,
     @client.on(events.NewMessage(chats=channels))
     async def on_new(ev):
         chan = getattr(ev.chat, "username", None) or str(ev.chat_id)
+        chan_by_id[ev.chat_id] = chan          # so deletions key the same way
         text = ev.message.message or ""
         row = base("message", ev.message, chan)
         row["raw_text"] = text
@@ -319,6 +325,7 @@ async def run_capture(channels: list[str], log: SignalLog, quotes: QuoteSource,
     async def on_edit(ev):
         # THE POINT OF THE WHOLE EXERCISE. The original stays; this is a new row.
         chan = getattr(ev.chat, "username", None) or str(ev.chat_id)
+        chan_by_id[ev.chat_id] = chan
         row = base("edit", ev.message, chan)
         row["edited_text"] = ev.message.message or ""
         row["parsed_after_edit"] = parse_signal(row["edited_text"])
@@ -327,7 +334,12 @@ async def run_capture(channels: list[str], log: SignalLog, quotes: QuoteSource,
 
     @client.on(events.MessageDeleted(chats=channels))
     async def on_delete(ev):
-        chan = str(getattr(ev, "chat_id", "?"))
+        # Deletion events carry only a numeric chat_id while ordinary messages
+        # are keyed by @username, so counting them naively attaches a channel's
+        # deletions to a source id that has none of its messages — the deletion
+        # rate, which is the entire point of this log, silently lands on the
+        # wrong provider. Resolve back to the same key the messages used.
+        chan = _resolve_channel(getattr(ev, "chat_id", None))
         for mid in ev.deleted_ids:
             log.append({"event": "deletion",
                         "received_utc": datetime.now(timezone.utc).isoformat(),
