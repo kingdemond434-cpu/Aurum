@@ -220,7 +220,38 @@ class ReplayAnalyst(AnalystProvider):
         return rec
 
 
-PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst}
+class DeterministicProvider(AnalystProvider):
+    """ARM A. No model at all — the floor every intelligent arm must beat.
+
+    Wraps the rule-based reader so the baseline travels the IDENTICAL LiveDesk
+    path: same compiler, same router, same risk gate, same observer, same
+    management, same ledger. If the baseline ran through a different harness the
+    comparison would be measuring two codebases rather than one decision layer,
+    and every incremental-value claim above it would be uninterpretable.
+
+    It deliberately does NOT implement choose_option: a rule-based entry reader
+    has no opinion about managing an open position, and pretending otherwise
+    would silently give the baseline a capability it does not have.
+    """
+
+    name = "deterministic"
+    model = "rules-v1"
+
+    def __init__(self, inner: Any = None):
+        if inner is None:
+            from .runner import DeterministicAnalyst
+            inner = DeterministicAnalyst()
+        self._inner = inner
+
+    def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        t0 = time.monotonic()
+        r = self._inner.read(brief)
+        return ProviderRead(r, self.name, self.model,
+                            (time.monotonic() - t0) * 1000, {"in": 0, "out": 0})
+
+
+PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
+             "deterministic": DeterministicProvider}
 
 
 def build_provider(spec: str, **kw) -> AnalystProvider:

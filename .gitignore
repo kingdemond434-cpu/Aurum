@@ -22,3 +22,5 @@ __pycache__/
 acceptance_out/
 state/
 *.jsonl
+backtest_out/
+drift_out/

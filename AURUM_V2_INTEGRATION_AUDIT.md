@@ -148,6 +148,59 @@ ability or about edge.**
 
 ---
 
+## Walk-forward harness (added after the seam work)
+
+`golddesk/backtest.py` + `run_backtest.py` replay the **real** `LiveDesk` — same
+compiler, router, risk gate, observer, management engine and ledger. There is no
+simplified Aurum anywhere in it.
+
+- **Splits** are chronological and never shuffled: train `2019-03-20 → 2022-11-27`,
+  calibration `→ 2024-05-21`, OOS `→ 2026-08-11`.
+- **Preregistration** frozen with a content hash before the run; tamper check **PASS**.
+- **Leakage** is proved, not asserted: `leakage_report()` re-derives each decision
+  from a truncated history (`bars[:i+1]`) and demands it match the decision taken
+  with the full array resident. **PASS**, 41 states checked.
+- **Ablation ladder** A→H. Arms whose capability is unavailable are **omitted, not
+  downgraded** — an arm labelled `+charts` that ran without charts would corrupt
+  every comparison above it.
+- **Fold agreement** is reported alongside the aggregate, because a total driven
+  by one fold is a different claim from one that holds across all of them.
+
+### Result actually obtained
+
+Only **arm A** could run — no API key, so B–H were omitted. Arm A is the
+deterministic baseline and contains no model.
+
+| arm | acted | select | net R | R/trade | win | ESS | maxDD | capture |
+|-----|-------|--------|-------|---------|-----|-----|-------|---------|
+| A | 20 | 1.3% | **−7.8** | −0.389 | 10% | 11 | −11.0 | −1% |
+
+Fold agreement: **1/3 folds positive** (`−6.00R/6`, `+5.21R/7`, `−7.00R/7`).
+
+The floor is negative and unstable. That is a useful thing to know and it is the
+only performance number in this repository. It says nothing about Claude.
+
+Resolution provenance: `M1_OBSERVED=19 (95%)`, `M15_PESSIMISTIC_UNCERTAIN=1 (5%)`
+— 5% of fills are a modelling choice rather than a measurement.
+
+## Anti-drift auditor (§14)
+
+`golddesk/drift_audit.py` runs two checks on every meaningful change:
+
+1. **Behavioural diff on frozen states** — a corpus of 367 real decision states,
+   frozen once and never regenerated (regenerating it alongside a change would
+   compare two different questions). Reports newly-refused vs newly-tradeable
+   separately, because a change that only ever removes opportunity is drifting
+   toward conservatism no matter how principled each gate sounded.
+2. **Undeclared threshold detection** — any numeric literal in a comparison
+   inside a function that can refuse is a trading threshold whether or not it
+   was meant as one.
+
+On first run it found two: an HTTP status code in `notify.py` (protocol constant,
+now narrowly exempted) and `0.6` in `review._same_claim` (a genuine magic number,
+now hoisted to a named `CLAIM_SIMILARITY`). Current state: **0 undeclared
+thresholds, 0 silent restrictions, 18 registered restrictions.**
+
 ## What must happen next, in order
 
 1. Supply `ANTHROPIC_API_KEY` → the analyst arm becomes real.

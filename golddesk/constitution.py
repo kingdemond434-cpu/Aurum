@@ -198,7 +198,11 @@ def verify_no_silent_restrictions(pkg_dir: Path) -> tuple[bool, list[str]]:
     """
     problems: list[str] = []
     for path in sorted(Path(pkg_dir).glob("*.py")):
-        if path.name in ("__init__.py", "constitution.py"):
+        # The auditors are excluded from their own scan: their source contains
+        # the very refusal patterns they search for, so including them detects
+        # the detector. This is the only exemption and it is not extensible to
+        # anything that can refuse a trade.
+        if path.name in ("__init__.py", "constitution.py", "drift_audit.py"):
             continue
         try:
             tree = ast.parse(path.read_text())

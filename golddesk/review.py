@@ -271,12 +271,20 @@ class LessonStore:
         ))
 
 
+# Jaccard overlap above which two lesson claims are treated as the same claim.
+# Named rather than inlined because the anti-drift auditor is right that a bare
+# literal in a comparison is a threshold nobody declared. This one governs
+# lesson deduplication, not trading, so it is not a constitutional restriction —
+# but it is still a knob, and a named knob can be found and changed.
+CLAIM_SIMILARITY = 0.6
+
+
 def _same_claim(a: str, b: str) -> bool:
     """Crude dedupe by token overlap. Replace with embeddings if it misfires."""
     ta, tb = set(a.lower().split()), set(b.lower().split())
     if not ta or not tb:
         return False
-    return len(ta & tb) / len(ta | tb) > 0.6
+    return len(ta & tb) / len(ta | tb) > CLAIM_SIMILARITY
 
 
 # --------------------------------------------------------------------------
