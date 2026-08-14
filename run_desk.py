@@ -67,7 +67,19 @@ def assert_no_orders(pkg: Path = Path("golddesk")) -> Check:
                  if not hits else f"ORDER CALLS FOUND: {hits}")
 
 
-def preflight(symbol: str, want_telegram: bool, secrets: Path) -> list[Check]:
+def _telegram_check(want: bool, secrets: Path) -> Check:
+    """Shared by every feed backend. It was previously only reachable on the MT5
+    path, so an OANDA launch could pass preflight with signals going nowhere."""
+    have = (secrets / "telegram_token").exists() and (secrets / "telegram_chat_id").exists()
+    return Check("telegram", have or not want,
+                 f"credentials found in {secrets}/" if have else
+                 (f"missing {secrets}/telegram_token and/or telegram_chat_id — "
+                  f"signals will go nowhere" if want else "not requested"),
+                 fatal=want)
+
+
+def preflight(symbol: str, want_telegram: bool, secrets: Path,
+              feed: str = "mt5", min_stop: float = 0.0) -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
@@ -76,6 +88,28 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path) -> list[Check]:
                         f"set ({len(key)} chars)" if key else
                         "NOT SET — export ANTHROPIC_API_KEY=sk-ant-... "
                         "The desk cannot analyse anything without it"))
+
+    # --- feed ------------------------------------------------------------
+    if feed == "oanda":
+        from golddesk.feed_oanda import OandaClient
+        c = OandaClient()
+        ok = c.initialize()
+        checks.append(Check("OANDA feed", ok,
+                            "authenticated" if ok else
+                            f"{c.last_error()} — export OANDA_TOKEN and OANDA_ACCOUNT"))
+        if ok:
+            t = c.symbol_info_tick(c.instrument)
+            checks.append(Check("live quote", t is not None,
+                                f"bid={t.bid} ask={t.ask} spread=${t.ask-t.bid:.2f}"
+                                if t else f"no price: {c.last_error()}"))
+        checks.append(Check("broker stop limit", bool(min_stop),
+                            f"{min_stop} price units, from your own terminal"
+                            if min_stop else
+                            "NOT SET — pass --min-stop <stops_level * point> read "
+                            "from YOUR MT5. Without it stop legality is weaker "
+                            "than your venue's", fatal=False))
+        checks.append(_telegram_check(want_telegram, secrets))
+        return checks
 
     # --- terminal --------------------------------------------------------
     try:
@@ -107,16 +141,7 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path) -> list[Check]:
                             "MetaTrader5 not installed — pip install MetaTrader5 "
                             "(Windows, same machine as the terminal)"))
 
-    # --- telegram --------------------------------------------------------
-    tok = (secrets / "telegram_token")
-    cid = (secrets / "telegram_chat_id")
-    have = tok.exists() and cid.exists()
-    checks.append(Check("telegram", have or not want_telegram,
-                        f"credentials found in {secrets}/" if have else
-                        (f"missing {secrets}/telegram_token and/or telegram_chat_id — "
-                         f"signals will go nowhere" if want_telegram else
-                         "not requested"),
-                        fatal=want_telegram))
+    checks.append(_telegram_check(want_telegram, secrets))
     return checks
 
 
@@ -131,15 +156,24 @@ def main() -> int:
     ap.add_argument("--numeric-only", action="store_true",
                     help="skip charts (cheaper; changes which arm you are running)")
     ap.add_argument("--max-hours", type=float, default=None)
+    ap.add_argument("--feed", default="mt5", choices=("mt5", "oanda"),
+                    help="where PERCEPTION comes from. oanda runs on Linux with "
+                         "no terminal; cost and stop legality still come from "
+                         "your own broker via --min-stop")
+    ap.add_argument("--min-stop", type=float, default=0.0,
+                    help="your broker's trade_stops_level in PRICE units "
+                         "(stops_level * point). Required with --feed oanda")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
 
     print("=" * 78)
-    print(f"AURUM SIGNAL DESK — {args.symbol} — advisory only, no order placement")
+    print(f"AURUM SIGNAL DESK — {args.symbol} via {args.feed} — advisory only, "
+          f"no order placement")
     print("=" * 78)
-    checks = preflight(args.symbol, not args.no_telegram, Path(args.secrets))
+    checks = preflight(args.symbol, not args.no_telegram, Path(args.secrets),
+                       feed=args.feed, min_stop=args.min_stop)
     for c in checks:
         print(c.render())
     fatal = [c for c in checks if c.fatal and not c.ok]
@@ -167,9 +201,12 @@ def main() -> int:
     print("every decision, refusal, management step and outcome is journalled to")
     print("state/ledger.jsonl — that file IS the forward evidence. Do not delete it.\n")
 
+    from golddesk.management import BrokerLimits
     svc = build_service(symbol=args.symbol, shadow=shadow, vision=vision,
                         cfg=ServiceConfig(symbol=args.symbol),
-                        secrets_dir=args.secrets)
+                        secrets_dir=args.secrets, feed_backend=args.feed,
+                        broker_limits=(BrokerLimits(min_stop_distance=args.min_stop)
+                                       if args.min_stop else None))
     try:
         st = svc.run(max_seconds=(args.max_hours * 3600) if args.max_hours else None)
     except KeyboardInterrupt:

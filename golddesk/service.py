@@ -428,24 +428,42 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   provider_spec: str = "anthropic:claude-opus-5",
                   vision: Vision = Vision.NUMERIC_PLUS_CHARTS,
                   cfg: Optional[ServiceConfig] = None,
-                  secrets_dir: str = "secrets") -> DeskService:
-    """Wire the real client, feed, desk and sink. One call, one deployed desk."""
+                  secrets_dir: str = "secrets",
+                  feed_backend: str = "mt5",
+                  broker_limits: Optional[BrokerLimits] = None) -> DeskService:
+    """Wire the real client, feed, desk and sink. One call, one deployed desk.
+
+    `feed_backend` selects where PERCEPTION comes from. It does not select where
+    cost and stop-legality come from: those are facts about the venue you
+    execute on, and `broker_limits` carries them explicitly precisely so a
+    non-MT5 feed cannot quietly supply its own.
+    """
     from .providers import build_provider
     cfg = cfg or ServiceConfig(symbol=symbol)
-    client = RealMt5Client()
+    if feed_backend == "oanda":
+        from .feed_oanda import OandaClient
+        client = OandaClient(instrument=os.environ.get("OANDA_INSTRUMENT", "XAU_USD"))
+    else:
+        client = RealMt5Client()
     feed = LiveFeed(client, FeedConfig(symbol=symbol,
                                        max_tick_age_s=cfg.max_tick_age_s))
     feed.connect()
-    broker = BrokerLimits()
-    try:
-        info = client.symbol_info(symbol)
-        if info is not None:
-            broker = BrokerLimits.from_symbol_info(info)
-            log.info("broker limits: min stop %.2f, freeze %.2f",
-                     broker.min_stop_distance, broker.freeze_distance)
-    except Exception as e:
-        log.warning("could not read symbol limits (%s) — stop legality will use "
-                    "the through-the-market test only", e)
+    broker = broker_limits
+    if broker is None:
+        try:
+            info = client.symbol_info(symbol)
+            if info is not None:
+                broker = BrokerLimits.from_symbol_info(info)
+        except Exception as e:
+            log.warning("could not read symbol limits (%s)", e)
+        broker = broker or BrokerLimits()
+    if feed_backend != "mt5" and not broker.min_stop_distance:
+        log.warning("feed=%s supplies no venue stop limits and none were passed. "
+                    "Stop legality falls back to the through-the-market test only. "
+                    "Read trade_stops_level from YOUR MT5 terminal and pass "
+                    "broker_limits=BrokerLimits(min_stop_distance=...).", feed_backend)
+    log.info("broker limits: min stop %.2f, freeze %.2f",
+             broker.min_stop_distance, broker.freeze_distance)
     # A REAL sink. build_sink(None) returns a null sink, so the one-call
     # constructor produced a desk that could never notify anything — including
     # with shadow=False, where silence is the last thing you want. build_sink
