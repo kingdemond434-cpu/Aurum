@@ -257,8 +257,52 @@ class RestrictionCost:
                 f"net {self.net_contribution_r:>+8.2f}R   {self.verdict}")
 
 
-def measure(rows: Sequence[dict], reason_to_id: Optional[dict] = None
-            ) -> list[RestrictionCost]:
+def counterfactual_r(outcome: dict, target_r: float = 2.0,
+                     stop_r: float = -1.0) -> Optional[float]:
+    """What the blocked trade would REALLY have produced. First touch, not MFE.
+
+    THE DEFECT THIS REPLACES
+
+    `measure()` previously used `best_achievable_r` as the counterfactual. That
+    field is literally `mfe_r` — the maximum favourable excursion over the whole
+    61-bar forward window. Using it assumes an exit at the exact top of a
+    two-month excursion, which nothing can achieve, and it is essentially never
+    negative. So `avoided_loss` came out 0.0 for every restriction and `net =
+    avoided - forgone` was guaranteed hugely negative. The review could only
+    ever return DEMOTE, for every gate, regardless of merit. A test that cannot
+    fail is not a test, and the verdicts it produced were worthless.
+
+    A blocked trade is now resolved the way a taken trade is: whichever of the
+    stop or the target price touched FIRST, using the excursion timestamps the
+    ledger already records.
+
+    RESIDUAL BIAS, STATED. `time_to_mfe_s` marks the time of the MAXIMUM, not
+    the first moment the target was reached. When both levels are touched, this
+    therefore over-attributes lateness to the target and resolves ambiguous
+    cases toward the stop. The bias is pessimistic — it understates what
+    restrictions forgo — which is the safe direction for a test whose purpose is
+    to justify removing a gate.
+    """
+    mfe, mae = outcome.get("mfe_r"), outcome.get("mae_r")
+    if mfe is None or mae is None:
+        return None
+    t_mfe = outcome.get("time_to_mfe_s")
+    t_mae = outcome.get("time_to_mae_s")
+    hit_stop = mae <= stop_r
+    hit_tp = mfe >= target_r
+    if hit_stop and hit_tp:
+        if t_mae is None or t_mfe is None:
+            return stop_r                     # unknown ordering: pessimistic
+        return stop_r if t_mae <= t_mfe else target_r
+    if hit_stop:
+        return stop_r
+    if hit_tp:
+        return target_r
+    return 0.0                                 # neither level reached in the window
+
+
+def measure(rows: Sequence[dict], reason_to_id: Optional[dict] = None,
+            target_r: float = 2.0) -> list[RestrictionCost]:
     """What did each restriction cost, and what did it save?
 
     Uses the refusal ledger: every blocked decision carries a forward path, so
@@ -275,12 +319,10 @@ def measure(rows: Sequence[dict], reason_to_id: Optional[dict] = None
         if rid is None:
             continue
         out = r.get("outcome") or {}
-        # What the blocked trade would have produced, using the same downstream
-        # management assumption for every arm: first-touch to the objective.
-        best = out.get("best_achievable_r")
-        if best is None:
+        cf = counterfactual_r(out, target_r=target_r)
+        if cf is None:
             continue
-        agg.setdefault(rid, []).append(float(best))
+        agg.setdefault(rid, []).append(float(cf))
 
     costs: list[RestrictionCost] = []
     for rid, vals in sorted(agg.items()):
