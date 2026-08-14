@@ -30,3 +30,4 @@ drift_out/
 # artifact that disagrees with the source is the failure mode this repo has
 # already hit twice.
 aurum_v2.zip
+external/
