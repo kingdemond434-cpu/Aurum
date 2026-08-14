@@ -42,3 +42,4 @@ external/*.session
 external/*.session-journal
 state/
 *.db
+data/
