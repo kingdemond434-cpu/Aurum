@@ -24,3 +24,9 @@ state/
 *.jsonl
 backtest_out/
 drift_out/
+
+# Build artifact — regenerate with ./build_zip.sh, never commit.
+# A committed zip goes stale the moment a module changes, and a packaged
+# artifact that disagrees with the source is the failure mode this repo has
+# already hit twice.
+aurum_v2.zip
