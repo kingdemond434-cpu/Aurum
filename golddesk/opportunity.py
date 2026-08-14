@@ -87,8 +87,16 @@ def resolved_outcomes(rows: Sequence[dict]) -> list[dict]:
                 "realised_r": float(r["realised_r"]),
                 "mfe_r": r.get("mfe_r"), "mae_r": r.get("mae_r"),
                 "forgone_r": r.get("forgone_r"),
+                # Timing of the extremes, the arm that produced it, and the size
+                # it was given. Absent on older rows and passed through as None
+                # rather than defaulted, so a consumer can tell "did not happen"
+                # from "was not recorded".
+                "t_mfe": r.get("t_mfe"), "t_mae": r.get("t_mae"),
+                "vision": r.get("vision"),
+                "risk_r": r.get("risk_r"), "account_r": r.get("account_r"),
                 "resolution": r.get("resolution"),
                 "management_policy": r.get("management_policy"),
+                "management_authority": r.get("management_authority"),
                 "reentry_policy": r.get("reentry_policy")})
         elif kind == "SIGNAL" and dec.get("realised_r") is not None:
             out.append({

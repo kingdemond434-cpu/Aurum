@@ -1162,6 +1162,11 @@ class LiveDesk:
             "resolution": resolution.value,
             "mfe_r": round(t.mfe_r, 4), "mae_r": round(t.mae_r, 4),
             "forgone_r": round(max(0.0, t.mfe_r - total), 4),
+            # WHEN the extremes happened, not just how big they were. Path
+            # prediction needs the ordering and the timing — a trade that peaks
+            # in 20 minutes and one that peaks in 6 hours want different
+            # management, and MFE alone cannot tell them apart.
+            "t_mfe": round(t.t_mfe, 1), "t_mae": round(t.t_mae, 1),
             "observations": t.observer.ticks,
             # The excursion PATH, downsampled. Without it a management
             # counterfactual is impossible: the shadow log records what each
