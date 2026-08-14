@@ -30,4 +30,13 @@ drift_out/
 # artifact that disagrees with the source is the failure mode this repo has
 # already hit twice.
 aurum_v2.zip
-external/
+# External capture. The log is shareable evidence and MAY be committed so it can
+# be analysed elsewhere; the Telethon .session file is a live Telegram
+# CREDENTIAL and must never be. Carved out explicitly rather than ignoring the
+# whole directory, because a blanket ignore silently blocks the one file worth
+# sending and does nothing to stop the one that must not be.
+external/*
+!external/signals.jsonl
+!external/channels.txt
+external/*.session
+external/*.session-journal
