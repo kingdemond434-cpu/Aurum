@@ -159,6 +159,23 @@ REGISTRY: list[Restriction] = [
                 "forgone value is journalled on every blocked state and must "
                 "exceed the correlated risk it avoids, or it goes",
                 review_days=30),
+    Restriction("risk.adaptive_sizing", "live:LiveDesk._enter", Kind.DISCRETIONARY,
+                "the flat 1R risk unit, when a measured edge argues for more or less",
+                "sizing off an estimated edge is how a system turns an unlucky "
+                "streak into a permanent capital reduction. Registered ADVISORY: "
+                "the size is computed and journalled on every entry, and the "
+                "trade still risks 1R, so the counterfactual accumulates before "
+                "anything is staked on it. Promote only when the sizing model "
+                "beats flat 1R out of sample in net log growth",
+                status=Status.ADVISORY, review_days=30),
+    Restriction("entry.execution_style", "live:LiveDesk._enter", Kind.DISCRETIONARY,
+                "a market entry when a limit at the trigger has higher expected value",
+                "the desk is signals-only and a human executes, so this is "
+                "ADVICE printed on the signal rather than a gate. It needs a "
+                "measured edge to be honest — without one, not filling costs "
+                "nothing and a limit always wins — so it stays silent on "
+                "mechanisms with no resolved history rather than guessing",
+                status=Status.ADVISORY, review_days=30),
     Restriction("entry.single_read", "live:LiveDesk.on_bar", Kind.DISCRETIONARY,
                 "every opportunity beyond the one the analyst chose to state",
                 "asking for ONE trade caps capture at one thesis per wake and, "

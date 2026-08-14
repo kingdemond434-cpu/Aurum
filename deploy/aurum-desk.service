@@ -3,29 +3,60 @@
 # The signal desk. Restarts on failure and on reboot, which matters because the
 # checkpoint/rehydrate path can only resume a position if something restarts it.
 #
-#   sudo cp deploy/aurum-desk.service /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable --now aurum-desk
+#   sudo deploy/install.sh          # creates the aurum user, venv and secrets
+#   sudo systemctl enable --now aurum-desk
 #   journalctl -u aurum-desk -f
+#
+# NOTE ON User=. This unit previously said `User=%i`. %i is the INSTANCE
+# specifier and is only substituted in a templated unit (`aurum-desk@.service`,
+# started as `aurum-desk@aurum`). In an ordinary unit it is not a placeholder —
+# systemd reads it as a literal user named "%i", and refuses to start:
+#
+#   systemd-analyze verify deploy/aurum-desk.service
+#   Invalid user/group name or numeric ID
+#   Unit configuration has fatal error, unit will not be started.
+#
+# The account is named explicitly below. deploy/install.sh creates it.
 
 [Unit]
 Description=Aurum XAUUSD signal desk (advisory only)
 After=network-online.target
 Wants=network-online.target
+# StartLimit* are [Unit] directives. They were in [Service], where systemd
+# ignores them — so the restart backoff this file claimed to have did not exist
+# and a crash loop would have hammered the API at RestartSec forever.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=%i
+User=aurum
+Group=aurum
 WorkingDirectory=/opt/aurum
 EnvironmentFile=/opt/aurum/.env
 # --min-stop is YOUR broker's stops_level * point, read once from MT5.
-ExecStart=/usr/bin/python3 /opt/aurum/run_desk.py --shadow --feed oanda --min-stop 0.50
+# --management is an EXPLICIT production decision, not a default to forget:
+# heuristic manages, contextual shadows, so Claude management has to prove it
+# adds money on paired states before it is granted authority.
+ExecStart=/opt/aurum/.venv/bin/python /opt/aurum/run_desk.py \
+    --shadow --feed oanda --min-stop 0.50 \
+    --management heuristic --shadow-management
 Restart=always
 RestartSec=10
-# Never let a restart loop hammer the API; back off if it keeps dying.
-StartLimitIntervalSec=300
-StartLimitBurst=5
 StandardOutput=journal
 StandardError=journal
+
+# Hardening. The desk reads market data and writes its own ledger; it has no
+# business anywhere else on the filesystem, and it never places orders.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/aurum/state /opt/aurum/logs
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target

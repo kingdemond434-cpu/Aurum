@@ -157,6 +157,13 @@ class OpenTrade:
     # learning loop needs no correlation step to know what it is looking at
     entry_context: dict = field(default_factory=dict)
     mechanism_name: str = "unnamed"
+    # SIZE, in risk units. The ledger's realised_r stays POSITION-R — R measured
+    # against this trade's own stop — because every existing comparison, cohort
+    # and hypothesis is denominated that way and redefining it mid-stream would
+    # silently corrupt all of them. Account-level R is position_r * risk_r, and
+    # is written alongside rather than instead.
+    risk_r: float = 1.0
+    sizing_basis: str = "flat 1R"
 
     # excursion is owned by the observer — these read through so the rest of
     # the desk does not care whether ticks or bars produced them
@@ -230,7 +237,10 @@ class LiveDesk:
                  htf_factor: int = 16,
                  measure_position_constraint: bool = True,
                  concurrency_ceiling: int = 4,
-                 universe_mode: bool = False):
+                 universe_mode: bool = False,
+                 calendar=None,
+                 regime_history=None,
+                 entry_urgency: float = 0.5):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
@@ -297,6 +307,19 @@ class LiveDesk:
         # wraps a single read into a one-candidate universe — so switching arms
         # never changes which providers are available.
         self.universe_mode = universe_mode
+        # Event proximity. None means the calendar is not wired, which the
+        # uncertainty decomposition reports as UNKNOWN rather than as "no event"
+        # — those are different claims and only one of them is true.
+        self.calendar = calendar
+        # Resolved history to compare the current state against. None means
+        # novelty is unmeasurable, reported as UNKNOWN for the same reason.
+        self.regime_history = regime_history
+        # How fast the edge decays, for the execution planner. An INPUT, not a
+        # constant discovered by preference — it is stamped on every plan so its
+        # value can be audited against what fills actually happened.
+        self.entry_urgency = entry_urgency
+        # Set by set_management(); None means "use the durable binding".
+        self._management_override: Optional[str] = None
         self._last_state: Optional[StructureState] = None
         self._last_bars: Optional[Sequence[Bar]] = None
         self._last_idx: int = 0
@@ -342,7 +365,10 @@ class LiveDesk:
 
     # -- active policy resolution ----------------------------------------
     def active_chooser(self) -> ManagementChooser:
-        want = self.policy_state.active(SLOT_MGMT)
+        # Operator override wins over the durable binding. Deliberate: the flag
+        # is a production decision made by a human at boot, and it should not be
+        # quietly overturned by an adaptation cycle mid-run.
+        want = self._management_override or self.policy_state.active(SLOT_MGMT)
         ch = self.choosers.get(want)
         if ch is None:
             log.warning("bound management policy %r is not registered — "
@@ -353,6 +379,40 @@ class LiveDesk:
     def active_reentry(self) -> ReentryPolicy:
         want = self.policy_state.active(SLOT_REENTRY)
         return self.reentry_policies.get(want) or next(iter(self.reentry_policies.values()))
+
+    def set_management(self, mode: str) -> str:
+        """Bind who has AUTHORITY over the open position. Explicit, not implicit.
+
+        The desk's most consequential unstated choice was that Claude forms the
+        entry judgement while a deterministic heuristic runs the whole lifecycle
+        after fill. That is a reasonable production stance — contextual
+        management has not beaten the heuristic on paired states, and granting
+        authority before it has is what the evidence standard exists to prevent
+        — but it was inherited from a default rather than decided.
+
+        Raises on `contextual` when the provider cannot actually choose, rather
+        than silently falling back: a run labelled contextual that is quietly
+        heuristic contaminates the arm it is filed under.
+        """
+        alias = {"heuristic": HeuristicChooser.name,
+                 "passive": PassiveChooser.name,
+                 "contextual": ContextualChooser.name}
+        want = alias.get(mode, mode)
+        if want not in self.choosers:
+            if mode == "contextual":
+                raise ValueError(
+                    "--management contextual requires a provider that implements "
+                    "choose_option(); this one does not. Refusing rather than "
+                    "running heuristic under a contextual label.")
+            raise ValueError(f"unknown management mode {mode!r}; "
+                             f"have {sorted(self.choosers)}")
+        # An operator choice is NOT a warranted promotion, and it must not be
+        # written through policy_state.bind(): that path records an evidence
+        # warrant with a TTL, so a flag would masquerade as a proven policy and
+        # then silently lapse mid-run. The override is held separately, claims
+        # no evidence, and is stamped on every row as operator-selected.
+        self._management_override = want
+        return want
 
     # -- notification: never allowed to break anything -------------------
     def _notify(self, text: str) -> None:
@@ -722,9 +782,85 @@ class LiveDesk:
                 f"downgrading this read to numeric-only")
         return tuple(out)
 
+    # -- what the desk knows about a proposal beyond its geometry ----------
+    def _edge_r(self, sig: CompiledSignal, mechanism: str) -> Optional[float]:
+        """Measured expected value for this mechanism, or None.
+
+        None is the common case and the honest one. A mechanism with no resolved
+        history has no edge estimate, and several downstream decisions —
+        execution style above all — are only answerable with one. Returning a
+        made-up number so those decisions always have an input is how a desk
+        ends up with confident arithmetic on top of nothing.
+        """
+        from .opportunity import ev_gate
+        v = ev_gate(sig.rr_tp2, sig.cost_r, mechanism, self.cohorts,
+                    fallback_min_rr=self.thresholds.fallback_min_rr,
+                    min_ev_r=self.thresholds.min_ev_r)
+        if v.basis != "COHORT" or v.ev_r is None:
+            return None
+        import math
+        return None if math.isnan(v.ev_r) else v.ev_r
+
+    def _assess(self, brief, sig: CompiledSignal, mechanism: str,
+                views: Optional[dict] = None):
+        """The six-component uncertainty decomposition for this proposal."""
+        from .uncertainty import assess
+        from .regime import similarity_to_history
+        stat = (self.cohorts or {}).get(mechanism)
+        sim = similarity_to_history(dict(brief.context.__dict__), self.cohorts,
+                                    self.regime_history)
+        ev = self.calendar.next_event(brief.as_of_utc) if self.calendar else None
+        return assess(
+            n_resolved=stat.n if stat else 0,
+            similarity=sim,
+            tick_age_s=brief.tick_age_s,
+            max_age_s=self.thresholds.max_tick_age_s,
+            views=views or {},
+            spread=brief.spread, risk_price=sig.risk,
+            minutes_to_event=ev[0] if ev else None,
+            event_name=ev[1] if ev else "")
+
+    def _size(self, sig: CompiledSignal, mechanism: str):
+        """Allocation for this proposal, and whether it is allowed to bind."""
+        from .allocation import default_size
+        from .constitution import is_enforcing
+        stat = (self.cohorts or {}).get(mechanism)
+        alloc = default_size(
+            cohort_n=stat.n if stat else 0,
+            win_rate=stat.hit_rate_shrunk if stat and stat.n else None,
+            rr=sig.rr_tp2, cost_r=sig.cost_r,
+            open_risk_r=sum(self.risk.open_risks),
+            max_open_risk_r=self.limits.max_open_risk_r,
+            same_direction=sum(1 for d in self.risk.open_directions
+                               if d == sig.direction),
+            haircut=self.limits.correlation_haircut,
+            day_loss_r=self.risk.day_loss_r,
+            max_daily_loss_r=self.limits.max_daily_loss_r)
+        binds = is_enforcing("risk.adaptive_sizing")
+        return alloc, (alloc.risk_r if binds else 1.0), binds
+
+    def _execution(self, brief, sig: CompiledSignal, edge_r: Optional[float]):
+        """How to get in — advice on the signal, never a gate. None when unmeasured."""
+        if edge_r is None or sig.trigger_price is None:
+            return None
+        from .allocation import plan_entry
+        origin = sig.trigger_price
+        drift_r = ((brief.mid - origin) / sig.risk if sig.direction == "LONG"
+                   else (origin - brief.mid) / sig.risk)
+        return plan_entry(spread=brief.spread, risk_price=sig.risk,
+                          drift_r=max(0.0, drift_r), atr=brief.atr,
+                          edge_r=edge_r, trigger_price=origin, mid=brief.mid,
+                          urgency=self.entry_urgency)
+
     # -- entry -------------------------------------------------------------
     def _enter(self, bars, i, brief, sig: CompiledSignal, pr: ProviderRead,
                n_charts: int = 0, suffix: str = "") -> None:
+        mech = pr.read.mechanism_name
+        edge_r = self._edge_r(sig, mech)
+        unc = self._assess(brief, sig, mech)
+        alloc, risk_r, sizing_binds = self._size(sig, mech)
+        plan = self._execution(brief, sig, edge_r)
+
         pos = Position(sig.direction, sig.entry, sig.stop, sig.stop, sig.risk,
                        1.0, 0.0, bars[i].ts, sig.setup.value)
         obs = TradeObserver(direction=sig.direction, entry=sig.entry, stop=sig.stop,
@@ -732,8 +868,9 @@ class LiveDesk:
         self.open_trades.append(OpenTrade(pos, sig, i, obs,
                               entry_context=dict(brief.context.__dict__)
                               | {"session": brief.session},
-                              mechanism_name=pr.read.mechanism_name))
-        self.risk.open_risks.append(1.0)          # each trade risks exactly 1R
+                              mechanism_name=mech,
+                              risk_r=risk_r, sizing_basis=alloc.basis))
+        self.risk.open_risks.append(risk_r)
         self.risk.open_directions.append(sig.direction)
         self.risk.day_signals += 1                # reporting only; never enforced
         self.stats.entries += 1
@@ -743,13 +880,44 @@ class LiveDesk:
                       "cost_r": sig.cost_r, "analyst_read": pr.read.model_dump(),
                       "vision": self.vision.value, "charts_sent": n_charts,
                       "management_policy": self.active_chooser().name,
+                      "edge_r": edge_r,
+                      "uncertainty": unc.to_dict(),
+                      "sizing": {"risk_r": risk_r, "wanted_r": alloc.risk_r,
+                                 "basis": alloc.basis, "capped_by": alloc.capped_by,
+                                 "enforcing": sizing_binds},
+                      "execution": ({"style": plan.style, "price": plan.price,
+                                     "expected_cost_r": plan.expected_cost_r,
+                                     "fill_probability": plan.fill_probability,
+                                     "basis": plan.basis} if plan else None),
                       **pr.stamp()},
                      f"ENTRY {sig.direction} rr {sig.rr_tp2:.2f}", sig.direction,
                      sig.risk, suffix=suffix)
+        # HOW TO GET IN, on the message a human acts on. The desk is advisory,
+        # so "wait at 2003, fills 63% of the time" is the difference between the
+        # signal being actionable and being a direction. Silent when the
+        # mechanism has no measured edge, because without one the comparison
+        # always favours waiting and the advice would be worse than none.
+        if plan is None:
+            how = "\n`HOW    ` at market — no measured edge yet for this mechanism"
+        else:
+            at = f" at {plan.price:.2f}" if plan.price else ""
+            how = (f"\n`HOW    ` {plan.style}{at} · fills {plan.fill_probability:.0%}"
+                   f"\n         _{plan.basis}_")
+        # WHAT IS UNCERTAIN, and which kind. Only the components that are
+        # actually elevated — a list of six LOWs is noise on a phone.
+        hi = unc.highest
+        risk_line = ("\n`RISK   ` " + ", ".join(f"{c.name} {c.level}" for c in hi)
+                     if hi else "")
+        size_line = ""
+        if abs(alloc.risk_r - 1.0) > 0.01:
+            verb = "sized" if sizing_binds else "would size"
+            size_line = (f"\n`SIZE   ` {verb} {alloc.risk_r:.2f}R"
+                         + ("" if sizing_binds else " (advisory — risking 1R)"))
         self._notify(
             f"*ENTRY {sig.direction} {brief.symbol}*\n"
             f"`entry  {sig.entry:.2f}`\n`SL     {sig.stop:.2f}`  ({sig.risk:.2f} risk)\n"
-            f"`TP1    {sig.tp1:.2f}`\n`TP2    {sig.tp2:.2f}`  ({sig.rr_tp2:.2f}R net)\n"
+            f"`TP1    {sig.tp1:.2f}`\n`TP2    {sig.tp2:.2f}`  ({sig.rr_tp2:.2f}R net)"
+            f"{how}{size_line}{risk_line}\n"
             f"conf {sig.confidence}/5 · cost {sig.cost_r:.3f}R · "
             f"breakeven {sig.breakeven_win_rate:.0%}\n\n{sig.read}\n\n"
             f"*Why:* {sig.why}\n*Against:* {sig.why_not}\n*Invalid if:* {sig.invalidation}")
@@ -949,7 +1117,15 @@ class LiveDesk:
         elif self.risk.open_risks:
             self.risk.open_risks.pop()
             self.risk.open_directions.pop()
-        self.risk.day_loss_r += min(0.0, total)
+        # ACCOUNT R vs POSITION R. `total` is R against this trade's own stop and
+        # stays the ledger's realised_r, because every cohort, hypothesis and
+        # arm comparison in the desk is denominated that way. What the account
+        # actually gained or lost is that scaled by the size the trade was given.
+        # The daily-loss limit and portfolio heat are account-level questions, so
+        # they use the scaled figure; a 2R-sized loser must consume 2R of the
+        # day's budget or the limit does not mean what it says.
+        account_r = total * t.risk_r
+        self.risk.day_loss_r += min(0.0, account_r)
         self.stats.exits += 1
         if resolution is Resolution.TICK_OBSERVED:
             self.stats.exits_tick_resolved += 1
@@ -980,6 +1156,8 @@ class LiveDesk:
             "context": t.entry_context, "mechanism_name": t.mechanism_name,
             "direction": t.position.direction, "setup": t.signal.setup.value,
             "realised_r": round(total, 4), "gross_r": round(gross, 4),
+            "account_r": round(account_r, 4), "risk_r": round(t.risk_r, 4),
+            "sizing_basis": t.sizing_basis,
             "cost_r": round(cost_r, 4), "reason": reason,
             "resolution": resolution.value,
             "mfe_r": round(t.mfe_r, 4), "mae_r": round(t.mae_r, 4),
@@ -993,6 +1171,8 @@ class LiveDesk:
             "path": _downsample_path(t.observer.path),
             "management": t.mgmt_log,
             "management_policy": self.active_chooser().name,
+            "management_authority": ("operator" if self._management_override
+                                     else "durable-binding"),
             "reentry_policy": self.active_reentry().version,
             "vision": self.vision.value})
 

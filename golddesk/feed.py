@@ -296,6 +296,7 @@ class LiveFeed:
             ))
         out.sort(key=lambda b: b.ts)
         _assert_no_duplicates(out, timeframe)
+        _assert_plausible_spread(out, timeframe, self.cfg)
         return out
 
     def multi(self, timeframes: Sequence[str], count: int = 500) -> dict[str, list[Bar]]:
@@ -324,6 +325,46 @@ def _assert_no_duplicates(bars: Sequence[Bar], tf: str) -> None:
         if b.ts in seen:
             raise FeedError(f"duplicate {tf} bar at {b.ts} — feed integrity failure")
         seen.add(b.ts)
+
+
+# Plausible XAUUSD spread in PRICE units, per bar. A retail gold spread is
+# roughly $0.12 to $0.60 and widens to a few dollars at the rollover or on a
+# release. Anything far outside that is a UNIT error, not a market condition.
+MIN_PLAUSIBLE_SPREAD = 0.02
+MAX_PLAUSIBLE_SPREAD = 12.00
+
+
+def _assert_plausible_spread(bars: Sequence[Bar], tf: str, cfg) -> None:
+    """Catch a spread expressed in the wrong unit before it reaches economics.
+
+    THE BUG THIS EXISTS FOR. The Mt5Client Protocol says a rates row's `spread`
+    is a count of POINTS, and bars() converts with 10**-digits. The OANDA client
+    emitted DOLLARS, so a real $0.30 gold spread arrived as $0.003 — a hundred
+    times too small, on every historical bar. Live entries take bid/ask straight
+    from the tick and were never wrong, so nothing in trading looked off; what it
+    corrupted was every backtest, cost study and breakeven-win-rate figure
+    computed from bar spreads, all in the flattering direction.
+
+    A wrong unit is not a small error, it is a different quantity, and the only
+    reliable defence against one is a range check at the boundary where the unit
+    is known. This raises rather than warns: a desk whose costs are a hundred
+    times understated will happily take trades that cannot pay, and refusing to
+    start is the cheaper failure.
+    """
+    sp = sorted(b.spread for b in bars if b.spread > 0)
+    if len(sp) < 10:
+        return                       # too few to judge; silence beats a guess
+    med = sp[len(sp) // 2]
+    if MIN_PLAUSIBLE_SPREAD <= med <= MAX_PLAUSIBLE_SPREAD:
+        return
+    scale = "100x too small" if med < MIN_PLAUSIBLE_SPREAD else "far too large"
+    raise FeedError(
+        f"implausible median {tf} spread ${med:.5f} ({scale}). Expected roughly "
+        f"${MIN_PLAUSIBLE_SPREAD:.2f}-${MAX_PLAUSIBLE_SPREAD:.2f} for XAUUSD. "
+        f"This is a UNIT error, not a market condition: rates rows must carry "
+        f"`spread` in POINTS (bars() applies 10**-{cfg.digits}), so a client that "
+        f"emits dollars produces exactly this. Refusing rather than running with "
+        f"costs off by two orders of magnitude.")
 
 
 # --------------------------------------------------------------------------

@@ -1,0 +1,15 @@
+# External-signal collector only. Kept SEPARATE from requirements.txt on
+# purpose: the desk must install and run without it.
+#
+#   pip install -r requirements-capture.txt
+#
+# Telethon authenticates as YOUR Telegram user and writes a *.session file that
+# is a LIVE CREDENTIAL — anyone holding it holds your account. It is hard-ignored
+# in .gitignore and must never be committed, copied into a zip, or pasted.
+#
+# Only read channels you are legitimately a member of and whose terms permit it.
+# Nothing here bypasses authentication, defeats access controls or evades rate
+# limits, and it must not be modified to.
+
+-r requirements.txt
+telethon==1.42.1

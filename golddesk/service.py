@@ -60,6 +60,11 @@ log = logging.getLogger(__name__)
 
 SERVICE_VERSION = "service-2026-08-14-a"
 
+# Entry-timeframe lengths, for clock-gating the bar request. Only used to decide
+# WHETHER to ask; the answer still has to pass the last_bar_ts guard.
+TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240,
+              "D1": 1440}
+
 
 @dataclass
 class ServiceConfig:
@@ -77,6 +82,27 @@ class ServiceConfig:
     # Nothing is looked at while the venue is shut; measured from tick advance,
     # not from a hardcoded calendar, so holidays need no maintenance.
     halt_after_silence_s: float = 900.0
+    # Cadence once the venue is judged shut. Nothing can change until quotes
+    # return, so polling every second all weekend is ~200k requests that cannot
+    # produce information. 60s still notices Sunday open within a minute.
+    closed_poll_seconds: float = 60.0
+    # Cadence with NO position open. The tick path exists to observe an open
+    # position continuously — giveback, profit-lock, trailing, protective moves.
+    # With nothing open there is nothing to observe: entries are decided on bar
+    # close, so a one-second quote poll while flat produces 900 requests per M15
+    # bar to answer a question asked once. Fast polling resumes the instant a
+    # position opens.
+    idle_poll_seconds: float = 15.0
+    # How early to start asking for the next closed bar. Venues publish a candle
+    # a moment after its boundary; asking slightly early is one wasted request,
+    # asking late delays every entry by that much.
+    bar_poll_lead_s: float = 5.0
+    # Higher-timeframe structure is refreshed on its OWN cadence, not on every
+    # entry bar. This must be a meaningful fraction of the HTF PERIOD or it does
+    # nothing: at 300s it expired between every M15 close and saved zero
+    # requests. An hour still refreshes H4 context four times per H4 candle,
+    # which is ample, while cutting the request rate sixteen-fold.
+    htf_cache_seconds: float = 3600.0
     state_path: Path = Path("state/service_state.json")
     ledger_path: Path = Path("state/ledger.jsonl")
     heartbeat_every_s: float = 900.0
@@ -110,6 +136,8 @@ class DeskService:
         self._atrs: list = []
         self._rehydrated = False
         self._venue_shut = False
+        self._htf_cache = None
+        self._htf_cached_at = 0.0
         self.cfg.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     # -- lifecycle -------------------------------------------------------
@@ -291,8 +319,19 @@ class DeskService:
         while not self._stop:
             if max_seconds and (time.monotonic() - started) > max_seconds:
                 return
-            # ---- staleness: the failure that looks like success ----------
-            stale, tick_age = self.feed.tick_is_stale()
+            # ---- ONE quote per iteration -------------------------------
+            #
+            # This used to be `tick_is_stale()` immediately followed by
+            # `quote()` — and tick_is_stale() is implemented AS a quote() call,
+            # so every pass fetched the same tick twice. Against a local MT5
+            # terminal that is a wasted memcpy. Against a remote REST API it is
+            # double the request rate, double the latency exposure and double
+            # the rate-limit budget, forever, for no information.
+            try:
+                bid, ask, tick_age = self.feed.quote()
+            except FeedError:
+                raise
+            stale = tick_age > self.cfg.max_tick_age_s
             if stale:
                 # A CLOSED MARKET AND A BROKEN FEED LOOK IDENTICAL from here:
                 # both are "the tick stopped advancing". They demand opposite
@@ -319,14 +358,20 @@ class DeskService:
                                     "a price that stopped advancing.", tick_age)
                         self._notify("*FEED STALE* management suspended until the "
                                      "quote advances")
-                time.sleep(self.cfg.poll_seconds)
+                # A CLOSED VENUE IS NOT A BUSY LOOP. Polling a REST API once a
+                # second all weekend is ~200k pointless requests between Friday
+                # close and Sunday open. Nothing can change until quotes return,
+                # and quotes returning is not something a faster poll detects
+                # sooner in any way that matters on an M15 desk.
+                time.sleep(self.cfg.closed_poll_seconds if self._venue_shut
+                           else self.cfg.poll_seconds)
                 continue
             if self._venue_shut:
                 self._venue_shut = False
                 log.info("quotes resumed after %.0fs — desk active", tick_age)
                 self._notify("*MARKET OPEN* quotes resumed, desk active")
 
-            bid, ask, age = self.feed.quote()
+            age = tick_age
             price = (bid + ask) / 2.0
             self.desk.last_bid, self.desk.last_ask = bid, ask
             self.desk.last_spread = max(0.0, ask - bid)
@@ -340,7 +385,7 @@ class DeskService:
             if silent > self.cfg.halt_after_silence_s:
                 if self.state.ticks_seen % 300 == 0:
                     log.info("no tick advance for %.0fs — venue appears shut", silent)
-                time.sleep(self.cfg.poll_seconds)
+                time.sleep(self.cfg.closed_poll_seconds)
                 continue
 
             # ---- TICK PATH: continuous observation of an open position ---
@@ -353,14 +398,53 @@ class DeskService:
                     self.checkpoint()
 
             # ---- BAR PATH: exactly once, on close ------------------------
-            self._maybe_close_bar()
+            # Gated on the CLOCK before it is gated on the data. A new M15 bar
+            # can only close at :00/:15/:30/:45, so asking the venue for several
+            # hundred candles at 14:03:07 cannot possibly return one the desk
+            # has not seen. The old loop asked anyway, once a second — the single
+            # largest and least useful request the service made.
+            if self._bar_boundary_passed():
+                self._maybe_close_bar(quote=(bid, ask, age))
 
             if time.monotonic() - self._last_heartbeat > self.cfg.heartbeat_every_s:
                 self._last_heartbeat = time.monotonic()
                 log.info("alive: %d ticks, %d bars, open=%s, spread %.2f",
                          self.state.ticks_seen, self.state.bars_processed,
                          bool(self.desk.open), self.desk.last_spread or 0.0)
-            time.sleep(self.cfg.poll_seconds)
+            # Fast while managing, slow while flat. The one thing that must not
+            # be slowed is observation of an open position, and that is exactly
+            # what this keeps at full rate.
+            time.sleep(self.cfg.poll_seconds if self.desk.open_trades
+                       else self.cfg.idle_poll_seconds)
+
+    def _bar_boundary_passed(self) -> bool:
+        """Could a new entry-timeframe bar plausibly have closed since the last?
+
+        Pure clock arithmetic, no network. Returns True in a short window after
+        each boundary so the venue has time to publish the closed candle, and
+        True whenever the desk has not processed a bar yet.
+
+        Deliberately CONSERVATIVE: it is far better to ask once too often than
+        to miss a close, so the window is generous and the data-level guard in
+        _maybe_close_bar (last_bar_ts) remains the thing that guarantees a bar
+        is processed exactly once. This only removes requests that could not
+        possibly have returned new information.
+        """
+        mins = TF_MINUTES.get(self.cfg.entry_tf)
+        if not mins:
+            return True                       # unknown timeframe: never gate
+        if not self.state.last_bar_ts:
+            return True
+        now = datetime.now(timezone.utc)
+        try:
+            last = datetime.fromisoformat(self.state.last_bar_ts)
+        except ValueError:
+            return True
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        # The close of the bar AFTER the one we last processed.
+        due = last + timedelta(minutes=2 * mins)
+        return now >= due - timedelta(seconds=self.cfg.bar_poll_lead_s)
 
     def _warm(self) -> None:
         self._bars = list(self.feed.bars(self.cfg.entry_tf, self.cfg.history_bars))
@@ -369,8 +453,14 @@ class DeskService:
         log.info("warmed with %d %s bars, last close %s", len(self._bars),
                  self.cfg.entry_tf, self._bars[-1].ts if self._bars else "-")
 
-    def _maybe_close_bar(self) -> None:
-        """Process a bar exactly once, on its close, never while forming."""
+    def _maybe_close_bar(self, quote: Optional[tuple] = None) -> None:
+        """Process a bar exactly once, on its close, never while forming.
+
+        `quote` is the one the loop already fetched this iteration. Passing it
+        avoids a third round trip for a tick that is at most one poll old — on
+        an M15 desk that difference cannot change a decision, and the request
+        cost is paid on every close.
+        """
         bars = self.feed.bars(self.cfg.entry_tf, self.cfg.history_bars)
         if len(bars) < 2:
             return
@@ -387,7 +477,7 @@ class DeskService:
         self._atrs = atr(self._bars)
         i = len(self._bars) - 1
         htf_state = self._htf_state()
-        bid, ask, age = self.feed.quote()
+        bid, ask, age = quote if quote is not None else self.feed.quote()
         try:
             self.desk.on_bar(self._bars, i, visible_swings(self._sw, i), self._atrs,
                              htf_state, (bid, ask, age),
@@ -399,7 +489,18 @@ class DeskService:
         self.checkpoint()
 
     def _htf_state(self):
-        """Higher-timeframe structure from TRUE aggregation, never sampling."""
+        """Higher-timeframe structure from TRUE aggregation, never sampling.
+
+        CACHED. At M15 entry and H4 context, the H4 structure is identical
+        across sixteen consecutive M15 closes, so re-requesting 200 H4 candles
+        each time bought nothing and cost a large request. The cache expires on
+        time rather than on count so an unusual timeframe pairing cannot make it
+        stale by accident.
+        """
+        now = time.monotonic()
+        if (self._htf_cache is not None
+                and now - self._htf_cached_at < self.cfg.htf_cache_seconds):
+            return self._htf_cache
         try:
             htf_bars = self.feed.bars(self.cfg.htf, 200)
             if len(htf_bars) < 30:
@@ -409,10 +510,14 @@ class DeskService:
             # state at all, because it is convincingly formatted and wrong.
             closed = list(htf_bars)
             hsw, hatrs = swings(closed), atr(closed)
-            return classify(closed, len(closed) - 1, visible_swings(hsw, len(closed) - 1),
-                            hatrs)
+            st = classify(closed, len(closed) - 1,
+                          visible_swings(hsw, len(closed) - 1), hatrs)
+            self._htf_cache, self._htf_cached_at = st, now
+            return st
         except Exception as e:
             log.debug("htf state unavailable: %s", e)
+            # Do NOT cache a failure as "no HTF context" — a transient error
+            # would then suppress higher-timeframe state for the whole window.
             return None
 
     def _notify(self, text: str) -> None:
@@ -430,6 +535,11 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   cfg: Optional[ServiceConfig] = None,
                   secrets_dir: str = "secrets",
                   feed_backend: str = "mt5",
+                  management: str = "heuristic",
+                  shadow_management: bool = True,
+                  shadow_contextual: bool = False,
+                  universe_mode: bool = False,
+                  calendar=None,
                   broker_limits: Optional[BrokerLimits] = None) -> DeskService:
     """Wire the real client, feed, desk and sink. One call, one deployed desk.
 
@@ -470,7 +580,40 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     # reads secrets/telegram_token and secrets/telegram_chat_id and degrades to
     # null on its own if they are absent, so passing the path is safe either way.
     sink = build_sink(secrets_dir)
+
+    # Event proximity, computed rather than fetched. Wired here so it is on by
+    # default: uncertainty.event_risk() reported UNKNOWN on every decision the
+    # desk ever made purely because nobody passed it a calendar.
+    if calendar is None:
+        from .calendar import Calendar
+        calendar = Calendar()
+
+    # Novelty needs the desk's own resolved history to compare against. Loaded
+    # once at boot from the ledger; None until there is enough of it, which the
+    # decomposition reports as UNKNOWN rather than as "familiar".
+    history = None
+    try:
+        from .regime import load_history
+        rows = Ledger(cfg.ledger_path).read_all()
+        history = load_history(rows) or None
+        log.info("regime history: %d resolved trades to compare against",
+                 len(history or []))
+    except Exception as e:
+        log.info("no regime history yet (%s) — novelty will read UNKNOWN", e)
+
     desk = LiveDesk(build_provider(provider_spec), Ledger(cfg.ledger_path),
-                    sink, shadow=shadow, vision=vision, broker=broker)
+                    sink, shadow=shadow, vision=vision, broker=broker,
+                    shadow_management=shadow_management,
+                    shadow_contextual=shadow_contextual,
+                    universe_mode=universe_mode,
+                    calendar=calendar, regime_history=history)
+
+    # WHO HAS AUTHORITY over the open position. An explicit production decision:
+    # the desk ships with Claude forming the entry judgement and a deterministic
+    # heuristic running the lifecycle, and that asymmetry should be chosen out
+    # loud rather than inherited from a default nobody revisited.
+    desk.set_management(management)
+    log.info("management authority: %s (shadow=%s, contextual shadowed=%s)",
+             management, shadow_management, shadow_contextual)
     log.info("notification sink: %s", type(sink).__name__)
     return DeskService(desk, feed, cfg)

@@ -52,6 +52,14 @@ log = logging.getLogger(__name__)
 PRACTICE = "https://api-fxpractice.oanda.com"
 LIVE = "https://api-fxtrade.oanda.com"
 
+# Gold's contract facts. DIGITS/POINT are the instrument's, and they are the
+# unit contract for everything this module hands to feed.py: rates rows carry
+# `spread` in POINTS, exactly as MT5 does, and feed.bars() multiplies by
+# 10**-DIGITS to get dollars. One definition, used by both the emitter and the
+# symbol_info, so the two cannot drift apart.
+DIGITS = 2
+POINT = 10 ** -DIGITS
+
 # OANDA granularity strings for the timeframes the desk asks for.
 GRAN = {"M1": "M1", "M5": "M5", "M15": "M15", "M30": "M30",
         "H1": "H1", "H4": "H4", "D1": "D"}
@@ -211,9 +219,19 @@ class OandaClient:
                 mid_h = (float(b["h"]) + float(a["h"])) / 2
                 mid_l = (float(b["l"]) + float(a["l"])) / 2
                 mid_c = (float(b["c"]) + float(a["c"])) / 2
-                spread = float(a["c"]) - float(b["c"])
+                # SPREAD IN POINTS, not dollars. The Mt5Client Protocol's rates
+                # rows carry `spread` the way MT5 does — an integer count of
+                # POINTS — and feed.bars() converts with spread_pts * 10**-digits.
+                # Emitting the dollar figure here meant a real $0.30 gold spread
+                # arrived downstream as $0.003: a hundred times too small, on
+                # every historical bar. The live quote takes bid/ask directly and
+                # was never affected, so the error was invisible in trading and
+                # silently flattered every backtest and cost study that read bar
+                # spreads. Convert once, at the source, where the units are known.
+                spread_price = float(a["c"]) - float(b["c"])
+                spread_pts = int(round(spread_price / POINT))
                 rows.append(_Row(self._ts(c["time"]), mid_o, mid_h, mid_l, mid_c,
-                                 int(c.get("volume", 0)), spread))
+                                 int(c.get("volume", 0)), spread_pts))
             # OANDA returns oldest-first and includes the forming candle last,
             # which is exactly what feed.bars() expects to drop.
             return rows or None
@@ -232,7 +250,7 @@ class OandaClient:
         """
         tick = self.symbol_info_tick(symbol)
         sp = int(round((tick.ask - tick.bid) / 0.01)) if tick else 0
-        return _SymbolInfo(name=symbol, digits=2, point=0.01, spread=sp,
+        return _SymbolInfo(name=symbol, digits=DIGITS, point=POINT, spread=sp,
                            trade_stops_level=0, trade_freeze_level=0)
 
     def account_info(self):

@@ -69,11 +69,18 @@ class FakeFeed:
     """
 
     def __init__(self, series, bid=2000.0, ask=2000.3, stale=False,
-                 fail_first_connect=False):
+                 fail_first_connect=False, max_tick_age_s=30.0):
         self._bars = series
         self.bid, self.ask = bid, ask
         self._stale = stale
-        self.age = 0.001
+        # AGE AND STALENESS ARE THE SAME FACT. LiveFeed.tick_is_stale() is
+        # literally implemented as `quote()` and compares the age it returns, so
+        # a feed reporting "stale" while handing back a 1ms-old quote is a state
+        # the real class cannot reach. The fixture previously did exactly that,
+        # which meant it passed against a loop that called tick_is_stale() and
+        # silently stopped testing anything once the loop derived staleness from
+        # the quote it already had. One source of truth here too.
+        self.age = (max_tick_age_s * 4) if stale else 0.001
         self.connects = 0
         self.fail_first_connect = fail_first_connect
 
@@ -86,8 +93,9 @@ class FakeFeed:
     def quote(self):
         return self.bid, self.ask, self.age
 
-    def tick_is_stale(self):
-        return self._stale, self.age          # the tuple that started it all
+    def tick_is_stale(self, max_age_s=30.0):
+        # Derived from age, exactly as LiveFeed does — not stored separately.
+        return self.age > max_age_s, self.age  # the tuple that started it all
 
     def bars(self, timeframe, count=500):
         return list(self._bars[-count:])

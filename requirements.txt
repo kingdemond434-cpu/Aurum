@@ -1,0 +1,35 @@
+# Aurum — pinned runtime dependencies.
+#
+#   python3 -m venv .venv && . .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# PINNED, not floated. This desk's whole claim is that a result recorded in
+# March can be re-derived in September; a silent minor-version bump in the
+# analyst client or the parquet engine breaks that quietly rather than loudly.
+# Bump deliberately, re-run the suites, and commit the new pin.
+#
+# Versions below are the ones the suites are green against.
+
+# ---- the analyst -------------------------------------------------------
+anthropic==0.122.0
+# Structured-output validation. The analyst's entire output surface is a
+# pydantic model, so this is load-bearing, not a convenience.
+pydantic==2.13.4
+
+# ---- data ---------------------------------------------------------------
+# pandas + pyarrow are the parquet path. WITHOUT pyarrow (or fastparquet)
+# pandas.to_parquet raises at runtime, which is how the integration suite's
+# parquet checks silently could not complete. pyarrow is declared explicitly
+# rather than left to pandas' optional extras for exactly that reason.
+pandas==3.0.5
+pyarrow==25.0.1
+
+# ---- charts -------------------------------------------------------------
+# Only needed for vision arms (NUMERIC_PLUS_CHARTS). chart.py forces the Agg
+# backend, so no display or GUI toolkit is required on the VPS.
+matplotlib==3.11.1
+
+# ---- http ---------------------------------------------------------------
+# feed_oanda uses urllib from the stdlib on purpose, so the price feed has no
+# third-party dependency. requests is used by the auxiliary fetchers.
+requests==2.33.1

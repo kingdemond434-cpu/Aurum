@@ -3,22 +3,40 @@
 # The external-signal collector. Independent of the desk on purpose: it must
 # keep running through weekends and through any desk outage, because the data
 # it captures cannot be recovered later.
+#
+# Same User=%i defect as the desk unit — %i is only substituted in a templated
+# unit, so an ordinary unit takes it as a literal username and refuses to start.
 
 [Unit]
 Description=Aurum external Gold signal capture
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=%i
+User=aurum
+Group=aurum
 WorkingDirectory=/opt/aurum
 EnvironmentFile=/opt/aurum/.env
-ExecStart=/usr/bin/python3 /opt/aurum/signals_capture.py --run
+ExecStart=/opt/aurum/.venv/bin/python /opt/aurum/signals_capture.py --run
 Restart=always
 RestartSec=30
 StandardOutput=journal
 StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# The Telethon .session file is a LIVE Telegram credential. It lives in
+# secrets/ and this is the only unit permitted to write there.
+ReadWritePaths=/opt/aurum/external /opt/aurum/secrets /opt/aurum/logs
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target

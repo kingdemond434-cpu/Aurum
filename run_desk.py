@@ -70,11 +70,16 @@ def assert_no_orders(pkg: Path = Path("golddesk")) -> Check:
 def _telegram_check(want: bool, secrets: Path) -> Check:
     """Shared by every feed backend. It was previously only reachable on the MT5
     path, so an OANDA launch could pass preflight with signals going nowhere."""
-    have = (secrets / "telegram_token").exists() and (secrets / "telegram_chat_id").exists()
+    from golddesk.notify import resolve_telegram
+    tok, cid, where = resolve_telegram(secrets)
+    have = bool(tok and cid)
     return Check("telegram", have or not want,
-                 f"credentials found in {secrets}/" if have else
-                 (f"missing {secrets}/telegram_token and/or telegram_chat_id — "
-                  f"signals will go nowhere" if want else "not requested"),
+                 f"credentials found in {where}" if have else
+                 (f"missing or EMPTY {secrets}/telegram_token and/or "
+                  f"telegram_chat_id (and no TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID "
+                  f"in the environment) — signals will go nowhere. install.sh "
+                  f"creates these files empty; fill them in."
+                  if want else "not requested"),
                  fatal=want)
 
 
@@ -163,6 +168,33 @@ def main() -> int:
     ap.add_argument("--min-stop", type=float, default=0.0,
                     help="your broker's trade_stops_level in PRICE units "
                          "(stops_level * point). Required with --feed oanda")
+    # WHO MANAGES THE TRADE. This was an implicit default and it is the single
+    # most consequential unstated choice in the desk: Claude forms the entry
+    # judgement, but a HeuristicChooser has been running the lifecycle. That is
+    # a defensible production stance and an indefensible accident, so it is now
+    # a flag that must be chosen, is printed at boot, and is stamped on every
+    # signal and outcome row.
+    ap.add_argument("--management", default="heuristic",
+                    choices=("heuristic", "contextual", "passive"),
+                    help="which policy has AUTHORITY over the open position. "
+                         "heuristic: deterministic rules (the incumbent). "
+                         "contextual: Claude decides each management step — do "
+                         "not grant this until it has beaten the heuristic on "
+                         "paired states. passive: never intervenes; the floor.")
+    ap.add_argument("--shadow-management", action="store_true", default=True,
+                    help="record what the OTHER policies would have chosen at "
+                         "every step, on the identical legality-filtered option "
+                         "set (default on; this is how authority gets earned)")
+    ap.add_argument("--no-shadow-management", dest="shadow_management",
+                    action="store_false")
+    ap.add_argument("--shadow-contextual", action="store_true",
+                    help="include the CONTEXTUAL arm in shadowing. Off by "
+                         "default because a shadow arm that calls a paid API on "
+                         "every management step costs real money to observe")
+    ap.add_argument("--universe", action="store_true",
+                    help="ask the analyst for every available proposition rather "
+                         "than one. Changes what is asked, so it is a different "
+                         "ARM — not a free improvement")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -198,13 +230,31 @@ def main() -> int:
     shadow = not args.live
     vision = Vision.NUMERIC_ONLY if args.numeric_only else Vision.NUMERIC_PLUS_CHARTS
     print(f"\nstarting: shadow={shadow}  vision={vision.value}")
-    print("every decision, refusal, management step and outcome is journalled to")
+    print(f"  ENTRY judgement  : Claude ({'charts + numeric' if not args.numeric_only else 'numeric only'})")
+    print(f"  ARITHMETIC/RISK  : deterministic compiler — always")
+    print(f"  MANAGEMENT       : {args.management}"
+          + ("  <- Claude has authority over the open position"
+             if args.management == "contextual" else
+             "  <- Claude does NOT manage the open position"))
+    print(f"  shadow policies  : {'on' if args.shadow_management else 'OFF'}"
+          + ("  (contextual included — this calls the API per step)"
+             if args.shadow_contextual else "  (contextual excluded — costs money)"))
+    print(f"  opportunity set  : {'universe (all propositions)' if args.universe else 'single read'}")
+    if args.management == "contextual":
+        print("\n  NOTE: contextual management has not yet beaten the heuristic on")
+        print("  paired states. Granting it authority before it has is the exact")
+        print("  thing the evidence standard exists to prevent.")
+    print("\nevery decision, refusal, management step and outcome is journalled to")
     print("state/ledger.jsonl — that file IS the forward evidence. Do not delete it.\n")
 
     from golddesk.management import BrokerLimits
     svc = build_service(symbol=args.symbol, shadow=shadow, vision=vision,
                         cfg=ServiceConfig(symbol=args.symbol),
                         secrets_dir=args.secrets, feed_backend=args.feed,
+                        management=args.management,
+                        shadow_management=args.shadow_management,
+                        shadow_contextual=args.shadow_contextual,
+                        universe_mode=args.universe,
                         broker_limits=(BrokerLimits(min_stop_distance=args.min_stop)
                                        if args.min_stop else None))
     try:

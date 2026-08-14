@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Optional, Protocol
 
@@ -62,13 +63,43 @@ class TelegramSink:
             return False
 
 
-def build_sink(secrets_dir: Optional[Path], shadow_log: Optional[Path] = None) -> Sink:
-    """Resolve a sink from secrets/, falling back to shadow file, then null."""
+def resolve_telegram(secrets_dir: Optional[Path]) -> tuple[Optional[str], Optional[str], str]:
+    """Find the bot credentials. Returns (token, chat_id, where).
+
+    ONE resolver, used by both the sink and the preflight check, because two
+    implementations of "do we have Telegram credentials" is how a desk passes
+    preflight and then sends signals nowhere.
+
+    Order: files first, environment second.
+
+    FILES ARE PREFERRED. An environment variable is visible in `systemctl show`,
+    in the journal when the process crashes, and to anything that can read
+    /proc/<pid>/environ. A 0600 file owned by the service account is not.
+
+    EMPTY IS NOT PRESENT. deploy/install.sh creates these files empty so the
+    operator has an obvious place to put the values, and the previous check
+    tested only `.exists()` — so a fresh install passed preflight with an empty
+    token and the desk ran silently. Content is what counts.
+    """
     if secrets_dir:
-        tok = Path(secrets_dir) / "telegram_token"
-        cid = Path(secrets_dir) / "telegram_chat_id"
-        if tok.exists() and cid.exists():
-            return TelegramSink(tok.read_text().strip(), cid.read_text().strip())
+        tok_p = Path(secrets_dir) / "telegram_token"
+        cid_p = Path(secrets_dir) / "telegram_chat_id"
+        if tok_p.exists() and cid_p.exists():
+            tok, cid = tok_p.read_text().strip(), cid_p.read_text().strip()
+            if tok and cid:
+                return tok, cid, f"{secrets_dir}/"
+    tok = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    cid = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
+    if tok and cid:
+        return tok, cid, "environment (files are preferred — see deploy/env.example)"
+    return None, None, "not configured"
+
+
+def build_sink(secrets_dir: Optional[Path], shadow_log: Optional[Path] = None) -> Sink:
+    """Resolve a sink from secrets/ or env, falling back to shadow file, then null."""
+    tok, cid, _ = resolve_telegram(secrets_dir)
+    if tok and cid:
+        return TelegramSink(tok, cid)
     if shadow_log:
         return FileSink(shadow_log)
     return NullSink()
