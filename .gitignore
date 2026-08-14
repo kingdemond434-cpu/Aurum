@@ -40,3 +40,5 @@ external/*
 !external/channels.txt
 external/*.session
 external/*.session-journal
+state/
+*.db

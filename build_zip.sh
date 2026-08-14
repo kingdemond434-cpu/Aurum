@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")"
 rm -rf golddesk/__pycache__ aurum_v2.zip
 zip -qr aurum_v2.zip golddesk acceptance.py ambiguity.py run_backtest.py \
-    export_mt5.py test_integration.py test_service.py run_desk.py missed_money.py capture_proof.py signals_capture.py signals_evidence.py macro_vintage.py probability_eval.py horizon_stack.py validate_prediction_layer.py \
+    export_mt5.py test_integration.py test_service.py run_desk.py missed_money.py deploy capture_proof.py signals_capture.py signals_evidence.py macro_vintage.py probability_eval.py horizon_stack.py validate_prediction_layer.py \
     AURUM_V2_INTEGRATION_AUDIT.md \
     -x "*__pycache__*"
 
