@@ -109,6 +109,7 @@ class DeskService:
         self._sw: list = []
         self._atrs: list = []
         self._rehydrated = False
+        self._venue_shut = False
         self.cfg.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     # -- lifecycle -------------------------------------------------------
@@ -293,15 +294,37 @@ class DeskService:
             # ---- staleness: the failure that looks like success ----------
             stale, tick_age = self.feed.tick_is_stale()
             if stale:
-                self.state.stale_suspensions += 1
-                if self.state.stale_suspensions % 60 == 1:
-                    log.warning("tick is stale (%.1fs) — management SUSPENDED; the "
-                                "desk will not act on a price that stopped advancing",
-                                tick_age)
-                    self._notify("*FEED STALE* management suspended until the "
-                                 "quote advances")
+                # A CLOSED MARKET AND A BROKEN FEED LOOK IDENTICAL from here:
+                # both are "the tick stopped advancing". They demand opposite
+                # responses — one is a Sunday evening, the other is an incident —
+                # so they are separated by HOW long the silence has run.
+                #
+                # This matters more than it sounds. Over a weekend a desk that
+                # logs "FEED STALE — management suspended" every minute is
+                # indistinguishable from the tuple-truthiness bug that made it do
+                # exactly that on a healthy feed, and the natural reaction is to
+                # go hunting for a bug that is not there.
+                if tick_age >= self.cfg.halt_after_silence_s:
+                    if not self._venue_shut:
+                        self._venue_shut = True
+                        log.info("no tick for %.0fs — VENUE APPEARS CLOSED. This is "
+                                 "normal outside market hours and is not an error; "
+                                 "the desk will resume by itself when quotes return.",
+                                 tick_age)
+                else:
+                    self.state.stale_suspensions += 1
+                    if self.state.stale_suspensions % 60 == 1:
+                        log.warning("tick is stale (%.1fs) DURING MARKET HOURS — "
+                                    "management SUSPENDED. The desk will not act on "
+                                    "a price that stopped advancing.", tick_age)
+                        self._notify("*FEED STALE* management suspended until the "
+                                     "quote advances")
                 time.sleep(self.cfg.poll_seconds)
                 continue
+            if self._venue_shut:
+                self._venue_shut = False
+                log.info("quotes resumed after %.0fs — desk active", tick_age)
+                self._notify("*MARKET OPEN* quotes resumed, desk active")
 
             bid, ask, age = self.feed.quote()
             price = (bid + ask) / 2.0
