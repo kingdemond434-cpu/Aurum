@@ -205,7 +205,8 @@ class LiveDesk:
                  broker: BrokerLimits = BrokerLimits(),
                  fine_resolution: Resolution = Resolution.M1_OBSERVED,
                  htf_factor: int = 16,
-                 measure_position_constraint: bool = True):
+                 measure_position_constraint: bool = True,
+                 concurrency_ceiling: int = 4):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
@@ -240,7 +241,12 @@ class LiveDesk:
                       SLOT_REENTRY: next(iter(self.reentry_policies))})
 
         self.risk = RiskState()
-        self.open: Optional[OpenTrade] = None
+        # MULTI-THESIS. The desk holds a LIST of open theses, not one trade.
+        # `open` remains as a property returning the first, so every existing
+        # caller — service checkpointing, the backtester, the tests — keeps
+        # working while the concurrency limit becomes a constitutional question
+        # rather than a structural one.
+        self.open_trades: list[OpenTrade] = []
         self.prior: Optional[PriorTrade] = None
         self.stats = LiveStats()
         # Live quote and venue limits, so management legality is a property of
@@ -256,9 +262,42 @@ class LiveDesk:
         # Used for TRUE OHLC aggregation, never for sampling.
         self.htf_factor = htf_factor
         self.measure_position_constraint = measure_position_constraint
+        # A hard ceiling on simultaneous theses, independent of heat. Not a
+        # quota on opportunity: heat is the economic limit and normally binds
+        # first. This only stops a pathological state opening dozens.
+        self.concurrency_ceiling = concurrency_ceiling
         self._last_state: Optional[StructureState] = None
         self._last_bars: Optional[Sequence[Bar]] = None
         self._last_idx: int = 0
+
+    # -- open positions ---------------------------------------------------
+    @property
+    def open(self) -> Optional[OpenTrade]:
+        """The first open thesis, or None. Compatibility surface."""
+        return self.open_trades[0] if self.open_trades else None
+
+    @open.setter
+    def open(self, t: Optional[OpenTrade]) -> None:
+        self.open_trades = [] if t is None else [t]
+
+    def max_concurrent(self) -> int:
+        """How many theses may run at once — decided by the CONSTITUTION.
+
+        This is the seam the audit correctly called out: risk.one_position was
+        measured but not removable, because on_bar returned unconditionally
+        while a trade was open. Now the limit is read from the registry, so a
+        restriction that fails its counterfactual review genuinely stops
+        applying instead of being demoted on paper only.
+
+        When it is demoted the ceiling is portfolio HEAT, not a count:
+        max_open_risk_r already bounds total exposure, and risk_check applies a
+        correlation haircut, so five copies of the same bullish idea cannot each
+        claim full independent risk.
+        """
+        from .constitution import is_enforcing
+        if is_enforcing("risk.one_position"):
+            return 1
+        return self.concurrency_ceiling
 
     def _provider_can_choose(self) -> bool:
         """Does this provider implement management choice? Checked by INTERFACE.
@@ -310,10 +349,16 @@ class LiveDesk:
         observer never sees anything and continuous observation is a claim
         rather than a fact.
         """
-        if self.open is None:
+        if not self.open_trades:
             return None
-        t = self.open
         self.stats.ticks += 1
+        results = [r for r in (self._tick_one(t, price, ts, bar_closed, bid, ask)
+                               for t in list(self.open_trades)) if r]
+        return "; ".join(results) if results else None
+
+    def _tick_one(self, t: OpenTrade, price: float, ts: datetime,
+                  bar_closed: bool, bid: Optional[float],
+                  ask: Optional[float]) -> Optional[str]:
 
         # Exit check FIRST, at the resolution the tick provides. Because ticks
         # arrive in order, whether the stop or the target came first is
@@ -333,11 +378,11 @@ class LiveDesk:
         if (exit_px <= pos.current_stop) if long else (exit_px >= pos.current_stop):
             r = pos.r_at(pos.current_stop)
             self._close(ts, r, "PROFITABLE_STOP" if r > 0 else "STOP",
-                        self._last_state, Resolution.TICK_OBSERVED)
+                        self._last_state, Resolution.TICK_OBSERVED, t=t)
             return "EXIT_STOP"
         if (exit_px >= t.signal.tp2) if long else (exit_px <= t.signal.tp2):
             self._close(ts, pos.r_at(t.signal.tp2), "TARGET",
-                        self._last_state, Resolution.TICK_OBSERVED)
+                        self._last_state, Resolution.TICK_OBSERVED, t=t)
             return "EXIT_TARGET"
 
         wake = t.observer.observe(price, ts, heartbeat=self.obs_heartbeat,
@@ -349,7 +394,7 @@ class LiveDesk:
             return "WAKE_NO_STATE"           # no closed-bar context yet
         acted = self._management_step(ts, price, self._last_state,
                                       source=f"observer:{'+'.join(x.value for x in wake.triggers)}",
-                                      wake=wake)
+                                      wake=wake, t=t)
         return f"WAKE->{acted}"
 
     # ====================================================================
@@ -367,8 +412,10 @@ class LiveDesk:
         self.risk.roll(ts)
         self._last_state, self._last_bars, self._last_idx = st, bars, i
 
-        if self.open is not None:
-            self._manage(bars, i, st, intrabar)
+        for t in list(self.open_trades):
+            self._manage(bars, i, st, intrabar, t)
+
+        if len(self.open_trades) >= self.max_concurrent():
             # ONE-POSITION CONSTRAINT — registered as risk.one_position and
             # measured, not assumed. The portfolio-heat engine already supports
             # several concurrent exposures, so holding exactly one is a policy
@@ -526,10 +573,10 @@ class LiveDesk:
                        1.0, 0.0, bars[i].ts, sig.setup.value)
         obs = TradeObserver(direction=sig.direction, entry=sig.entry, stop=sig.stop,
                             target=sig.tp2, risk_price=sig.risk, opened=bars[i].ts)
-        self.open = OpenTrade(pos, sig, i, obs,
+        self.open_trades.append(OpenTrade(pos, sig, i, obs,
                               entry_context=dict(brief.context.__dict__)
                               | {"session": brief.session},
-                              mechanism_name=pr.read.mechanism_name)
+                              mechanism_name=pr.read.mechanism_name))
         self.risk.open_risks.append(1.0)          # each trade risks exactly 1R
         self.risk.open_directions.append(sig.direction)
         self.risk.day_signals += 1                # reporting only; never enforced
@@ -552,9 +599,13 @@ class LiveDesk:
 
     # -- management --------------------------------------------------------
     def _manage(self, bars, i, st: StructureState,
-                intrabar: Optional[Sequence[tuple[datetime, float]]] = None) -> None:
-        """Bar-close management. Exits resolve on the finest series available."""
-        t = self.open
+                intrabar: Optional[Sequence[tuple[datetime, float]]] = None,
+                t: Optional[OpenTrade] = None) -> None:
+        """Bar-close management for ONE thesis. Exits resolve on the finest
+        series available."""
+        t = t or self.open
+        if t is None:
+            return
         pos, b = t.position, bars[i]
         long = pos.long
 
@@ -574,7 +625,7 @@ class LiveDesk:
                 if ev is not None:
                     reason = ("TARGET" if ev.kind == "TARGET" else
                               ("PROFITABLE_STOP" if ev.r > 0 else "STOP"))
-                    self._close(ev.ts, ev.r, reason, st, self._fine_resolution)
+                    self._close(ev.ts, ev.r, reason, st, self._fine_resolution, t=t)
                     return
             if stop_hit and tp_hit:
                 # The deciding bar touched both and nothing finer exists. The
@@ -582,23 +633,24 @@ class LiveDesk:
                 # this is the ONLY uncertain category.
                 r = pos.r_at(pos.current_stop)
                 self._close(b.ts, r, "PROFITABLE_STOP" if r > 0 else "STOP", st,
-                            Resolution.BAR_ASSUMED_STOP_FIRST)
+                            Resolution.BAR_ASSUMED_STOP_FIRST, t=t)
                 return
             # Exactly one side was touched, so ordering could not have changed
             # the outcome. Coarse, but not an assumption.
             if stop_hit:
                 r = pos.r_at(pos.current_stop)
                 self._close(b.ts, r, "PROFITABLE_STOP" if r > 0 else "STOP", st,
-                            Resolution.BAR_UNAMBIGUOUS)
+                            Resolution.BAR_UNAMBIGUOUS, t=t)
                 return
             self._close(b.ts, pos.r_at(t.signal.tp2), "TARGET", st,
-                        Resolution.BAR_UNAMBIGUOUS)
+                        Resolution.BAR_UNAMBIGUOUS, t=t)
             return
 
-        self._management_step(b.ts, b.close, st, source="bar_close")
+        self._management_step(b.ts, b.close, st, source="bar_close", t=t)
 
     def _management_step(self, ts: datetime, price: float, st: StructureState,
-                         *, source: str, wake: Optional[Wake] = None) -> str:
+                         *, source: str, wake: Optional[Wake] = None,
+                         t: Optional[OpenTrade] = None) -> str:
         """One reconsideration. Shared by the tick path and the bar path.
 
         Every registered policy is asked the same question on the same legal
@@ -606,7 +658,7 @@ class LiveDesk:
         comparison paired — the arms differ in choice, never in the state they
         were choosing from.
         """
-        t = self.open
+        t = t or self.open
         if t is None:
             return "no_position"
         pos = t.position
@@ -682,7 +734,7 @@ class LiveDesk:
 
         if choice.action is Action.EXIT:
             self._close(ts, exc.r_open_now, "EXIT_THESIS", st,
-                        Resolution.MANAGED_EXIT)
+                        Resolution.MANAGED_EXIT, t=t)
             return "EXIT"
         if choice.action is Action.PARTIAL:
             t.partials.append((choice.partial_fraction or 0.0, price))
@@ -711,8 +763,11 @@ class LiveDesk:
     # -- exit --------------------------------------------------------------
     def _close(self, ts: datetime, realised_r: float, reason: str,
                st: Optional[StructureState],
-               resolution: Resolution = Resolution.BAR_ASSUMED_STOP_FIRST) -> None:
-        t = self.open
+               resolution: Resolution = Resolution.BAR_ASSUMED_STOP_FIRST,
+               t: Optional[OpenTrade] = None) -> None:
+        t = t or self.open
+        if t is None:
+            return
         # NET of execution cost. Position.r_at() is pure price movement over the
         # risk unit, so everything downstream of it was gross. The compiler
         # already priced the round trip once, on mid, at compile time — that is
@@ -723,7 +778,18 @@ class LiveDesk:
         gross = t.position.banked_r + realised_r * t.position.remaining_fraction
         cost_r = float(getattr(t.signal, "cost_r", 0.0) or 0.0)
         total = gross - cost_r
-        if self.risk.open_risks:
+        # Release THIS thesis's risk, not whichever happened to be last. With
+        # one position those were the same object; with several, popping blindly
+        # frees the wrong exposure and the heat engine drifts out of step with
+        # reality one trade at a time.
+        try:
+            idx = self.open_trades.index(t)
+        except ValueError:
+            idx = -1
+        if 0 <= idx < len(self.risk.open_risks):
+            self.risk.open_risks.pop(idx)
+            self.risk.open_directions.pop(idx)
+        elif self.risk.open_risks:
             self.risk.open_risks.pop()
             self.risk.open_directions.pop()
         self.risk.day_loss_r += min(0.0, total)
@@ -772,7 +838,8 @@ class LiveDesk:
             mfe_r=t.mfe_r, mae_r=t.mae_r, exited_utc=ts,
             thesis_still_intact=(st is not None and st.trend_direction ==
                                  ("UP" if t.position.long else "DOWN")))
-        self.open = None
+        if t in self.open_trades:
+            self.open_trades.remove(t)
 
     # -- journalling -------------------------------------------------------
     def _record(self, bars, i, brief, kind, by, decision, reason, direction, risk_price):

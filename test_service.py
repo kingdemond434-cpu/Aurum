@@ -112,10 +112,15 @@ def open_trade(desk, entry=2000.0, stop=1990.0, tp2=2030.0, direction="LONG",
                          invalidation="i", brief_as_of=datetime(2025, 6, 2, tzinfo=UTC))
     obs = TradeObserver(direction, entry, stop, tp2, abs(entry - stop),
                         pos.opened_utc)
-    desk.open = OpenTrade(pos, sig, 0, obs, mechanism_name="test-mech")
+    # APPEND, never `desk.open = ...`. The compat setter deliberately REPLACES
+    # the list — that is what "the one open trade" means for rehydrate — so
+    # using it here would silently make every multi-thesis test a single-thesis
+    # test that passes for the wrong reason.
+    t = OpenTrade(pos, sig, 0, obs, mechanism_name="test-mech")
+    desk.open_trades.append(t)
     desk.risk.open_risks.append(1.0)
     desk.risk.open_directions.append(direction)
-    return desk.open
+    return t
 
 
 # --------------------------------------------------------------------------
@@ -270,13 +275,57 @@ def test_reconnect_and_sink():
     shutil.rmtree(out, ignore_errors=True)
 
 
+def test_multi_thesis():
+    print("\nMULTI-THESIS  concurrency is decided by the constitution")
+    from golddesk.constitution import BY_ID, Status
+    out = Path(tempfile.mkdtemp())
+    d = make_desk(out)
+
+    BY_ID["risk.one_position"].status = Status.ENFORCING
+    check("enforcing -> one thesis only", d.max_concurrent() == 1)
+    BY_ID["risk.one_position"].status = Status.ADVISORY
+    check("demoted -> concurrency allowed", d.max_concurrent() > 1,
+          f"max_concurrent={d.max_concurrent()} (heat still bounds it)")
+
+    a = open_trade(d, entry=2000.0, stop=1990.0, tp2=2030.0)
+    b = open_trade(d, entry=2005.0, stop=1995.0, tp2=2040.0)
+    check("two theses held at once", len(d.open_trades) == 2)
+    check("`open` still returns the first (compat surface)", d.open is a)
+    check("risk ledger tracks both", len(d.risk.open_risks) == 2,
+          f"open_risks={d.risk.open_risks}")
+
+    # close the FIRST one; the second must survive intact with its own risk
+    d._last_state = None
+    d._close(datetime(2025, 6, 2, 1, tzinfo=UTC), -1.0, "STOP", None,
+             Resolution.TICK_OBSERVED, t=a)
+    check("closing one leaves the other open", len(d.open_trades) == 1
+          and d.open_trades[0] is b)
+    check("the RIGHT risk entry was released", len(d.risk.open_risks) == 1,
+          f"open_risks={d.risk.open_risks}")
+
+    # a tick must reach every open thesis
+    # The two ranges must OVERLAP, or the tick exits one of them before the
+    # observer ever runs — exits are checked first, by design.
+    d2 = make_desk(out)
+    x = open_trade(d2, entry=2000.0, stop=1980.0, tp2=2060.0)
+    y = open_trade(d2, entry=2010.0, stop=1985.0, tp2=2070.0)
+    d2._last_state = None
+    d2.on_tick(2020.0, datetime(2025, 6, 2, 2, tzinfo=UTC), bid=2019.9, ask=2020.1)
+    check("on_tick feeds EVERY open thesis",
+          x.observer.ticks > 0 and y.observer.ticks > 0,
+          f"observer ticks: {x.observer.ticks} and {y.observer.ticks}")
+
+    BY_ID["risk.one_position"].status = Status.ENFORCING   # restore
+    shutil.rmtree(out, ignore_errors=True)
+
+
 def main():
     print("=" * 78)
     print("DESKSERVICE INTEGRATION TESTS — the daemon, not LiveDesk")
     print("=" * 78)
     for fn in (test_p0_1_stale_tuple, test_p0_3_closed_bar_contract,
                test_p0_2_rehydrate, test_p0_4_execution_side_and_cost,
-               test_reconnect_and_sink):
+               test_reconnect_and_sink, test_multi_thesis):
         try:
             fn()
         except Exception as e:
