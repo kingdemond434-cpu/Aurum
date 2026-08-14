@@ -1,0 +1,24 @@
+# /etc/systemd/system/aurum-capture.service
+#
+# The external-signal collector. Independent of the desk on purpose: it must
+# keep running through weekends and through any desk outage, because the data
+# it captures cannot be recovered later.
+
+[Unit]
+Description=Aurum external Gold signal capture
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/aurum
+EnvironmentFile=/opt/aurum/.env
+ExecStart=/usr/bin/python3 /opt/aurum/signals_capture.py --run
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

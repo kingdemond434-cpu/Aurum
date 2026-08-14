@@ -1,0 +1,31 @@
+# /etc/systemd/system/aurum-desk.service
+#
+# The signal desk. Restarts on failure and on reboot, which matters because the
+# checkpoint/rehydrate path can only resume a position if something restarts it.
+#
+#   sudo cp deploy/aurum-desk.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now aurum-desk
+#   journalctl -u aurum-desk -f
+
+[Unit]
+Description=Aurum XAUUSD signal desk (advisory only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/aurum
+EnvironmentFile=/opt/aurum/.env
+# --min-stop is YOUR broker's stops_level * point, read once from MT5.
+ExecStart=/usr/bin/python3 /opt/aurum/run_desk.py --shadow --feed oanda --min-stop 0.50
+Restart=always
+RestartSec=10
+# Never let a restart loop hammer the API; back off if it keeps dying.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
