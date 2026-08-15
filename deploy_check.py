@@ -84,12 +84,21 @@ def manifest() -> None:
           all("==" in l for l in txt.splitlines()
               if l.strip() and not l.strip().startswith("#") and not l.startswith("-r")),
           f"{len(pins)} pinned")
-    for pkg in ("anthropic", "pydantic", "pandas", "pyarrow"):
-        check(f"{pkg} is declared", pkg in names)
-    check("pyarrow is EXPLICIT, not left to pandas' optional extras",
-          "pyarrow" in names,
-          "without it to_parquet raises at runtime and the parquet tests "
-          "silently could not complete")
+    for pkg in ("anthropic", "pydantic"):
+        check(f"{pkg} is declared in the LIVE requirements", pkg in names)
+    check("pandas/pyarrow are NOT in the live requirements",
+          "pandas" not in names and "pyarrow" not in names,
+          "they are a parquet reader the live desk never touches, and pyarrow "
+          "is the usual VPS build failure — a desk that does not use it must "
+          "not be blocked by it")
+    res = ROOT / "requirements-research.txt"
+    check("research deps exist and are separate", res.exists())
+    if res.exists():
+        rtxt = res.read_text()
+        check("and carry pandas + pyarrow EXPLICITLY",
+              "pandas" in rtxt and "pyarrow" in rtxt,
+              "without pyarrow, to_parquet raises at runtime — which is how the "
+              "parquet integration checks silently could not complete")
     cap = ROOT / "requirements-capture.txt"
     check("the collector's deps are SEPARATE so the desk installs without them",
           cap.exists() and "telethon" in cap.read_text())

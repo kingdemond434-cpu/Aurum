@@ -1,0 +1,23 @@
+# Research, backtesting and data fetching. NOT needed to run the live desk.
+#
+#   pip install -r requirements-research.txt
+#
+# Install these when you want to:
+#   * fetch_dukascopy.py      deep tick history
+#   * export_mt5.py           your broker's own history
+#   * run_backtest.py         the arms ladder
+#   * aurum_report.py         some sections
+#   * the full test suite     test_integration.py's parquet checks
+#
+# The live desk needs none of it. If pyarrow will not build on your VPS — it is
+# the usual culprit — the desk still starts; you just cannot run research on
+# that box. Fetch elsewhere and rsync the parquet over if so.
+
+-r requirements.txt
+
+# pandas + pyarrow are the parquet path. pyarrow is declared EXPLICITLY rather
+# than left to pandas' optional extras, because without it to_parquet raises at
+# runtime — which is exactly how the parquet integration checks silently could
+# not complete for months.
+pandas==3.0.5
+pyarrow==25.0.1

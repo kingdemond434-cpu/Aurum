@@ -46,7 +46,19 @@ echo "==> virtualenv"
 python3 -m venv "$AURUM_HOME/.venv"
 "$AURUM_HOME/.venv/bin/pip" install -q --upgrade pip
 "$AURUM_HOME/.venv/bin/pip" install -q -r "$AURUM_HOME/requirements.txt"
-echo "    desk dependencies installed"
+echo "    desk dependencies installed (live path only)"
+# RESEARCH DEPS ARE SEPARATE AND NON-FATAL. pandas/pyarrow are a parquet
+# reader/writer the live desk never touches, and pyarrow is the most likely
+# thing to fail to build on a small VPS. A desk that does not use it must not be
+# unable to start because of it.
+if "$AURUM_HOME/.venv/bin/pip" install -q -r "$AURUM_HOME/requirements-research.txt" 2>/dev/null; then
+    echo "    research dependencies installed (pandas/pyarrow)"
+else
+    echo "    research dependencies FAILED to install — this is NOT fatal."
+    echo "    The live desk does not use them. You will not be able to run"
+    echo "    fetch_dukascopy.py or run_backtest.py on this box; fetch"
+    echo "    elsewhere and rsync the parquet over."
+fi
 if [[ "${WITH_CAPTURE:-0}" == "1" ]]; then
     "$AURUM_HOME/.venv/bin/pip" install -q -r "$AURUM_HOME/requirements-capture.txt"
     echo "    capture dependencies installed"

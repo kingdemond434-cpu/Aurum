@@ -1,14 +1,23 @@
-# Aurum — pinned runtime dependencies.
+# Aurum — what the LIVE DESK needs. Nothing more.
 #
 #   python3 -m venv .venv && . .venv/bin/activate
 #   pip install -r requirements.txt
 #
 # PINNED, not floated. This desk's whole claim is that a result recorded in
 # March can be re-derived in September; a silent minor-version bump in the
-# analyst client or the parquet engine breaks that quietly rather than loudly.
-# Bump deliberately, re-run the suites, and commit the new pin.
+# analyst client breaks that quietly rather than loudly. Bump deliberately,
+# re-run the suites, commit the new pin.
 #
-# Versions below are the ones the suites are green against.
+# WHY PANDAS IS NOT HERE. It was, and it should not have been. pandas and
+# pyarrow are a parquet reader/writer used by the research path and the data
+# fetchers — backtest.py, ParquetBarSource, fetch_dukascopy.py, export_mt5.py.
+# The live desk gets bars from OANDA over HTTP, writes its ledger as JSONL and
+# its ticks as gzipped CSV, and touches neither library. Verified by importing
+# the whole live path with both blocked.
+#
+# That matters operationally: pyarrow is the most likely thing to fail to build
+# on a small VPS, and a desk that never uses it should not be unable to start
+# because of it. Research deps live in requirements-research.txt.
 
 # ---- the analyst -------------------------------------------------------
 anthropic==0.122.0
@@ -16,20 +25,18 @@ anthropic==0.122.0
 # pydantic model, so this is load-bearing, not a convenience.
 pydantic==2.13.4
 
-# ---- data ---------------------------------------------------------------
-# pandas + pyarrow are the parquet path. WITHOUT pyarrow (or fastparquet)
-# pandas.to_parquet raises at runtime, which is how the integration suite's
-# parquet checks silently could not complete. pyarrow is declared explicitly
-# rather than left to pandas' optional extras for exactly that reason.
-pandas==3.0.5
-pyarrow==25.0.1
-
-# ---- charts -------------------------------------------------------------
-# Only needed for vision arms (NUMERIC_PLUS_CHARTS). chart.py forces the Agg
-# backend, so no display or GUI toolkit is required on the VPS.
+# ---- charts ------------------------------------------------------------
+# REQUIRED for the default arm. run_desk.py runs NUMERIC_PLUS_CHARTS unless you
+# pass --numeric-only, and live.py refuses to downgrade silently — a run that
+# declares charts and renders none is refused, not quietly demoted. chart.py
+# forces the Agg backend, so no display or GUI toolkit is needed.
+#
+# Running --numeric-only? You can drop this. It is also the cheaper arm
+# (~$1,850/yr of inference vs ~$2,780 with charts).
 matplotlib==3.11.1
 
-# ---- http ---------------------------------------------------------------
-# feed_oanda uses urllib from the stdlib on purpose, so the price feed has no
-# third-party dependency. requests is used by the auxiliary fetchers.
+# ---- http --------------------------------------------------------------
+# feed_oanda uses urllib from the stdlib on purpose, so the PRICE FEED has no
+# third-party dependency at all. requests is used by the notification sink and
+# the auxiliary fetchers.
 requests==2.33.1
