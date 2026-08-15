@@ -28,8 +28,84 @@ from golddesk.evaluation import Preregistration, metrics
 from golddesk.providers import AnthropicAnalyst
 from golddesk.runner import ParquetBarSource
 
-DEFAULT_PARQUET = ("/root/.claude/uploads/353d9479-657d-5787-9c73-4a674604017c/"
-                   "c3041b3a-XAUUSD_D1.parquet")
+# A sandbox upload path was hardcoded here, which does not exist on any machine
+# you would actually run this on. The default now looks where the fetchers write.
+DEFAULT_PARQUET = "data/XAUUSD_M15.parquet"
+
+
+def estimate_cost(n_states: int, arms, *, per_read_usd: float = 0.28,
+                  mgmt_steps_per_trade: float = 8.0,
+                  entry_rate: float = 0.12,
+                  wake_rate: float = 0.55) -> dict:
+    """What this run will cost BEFORE it starts spending.
+
+    THIS IS THE MISSING SAFETY RAIL. The ladder runs seven analyst arms over
+    every state in the sample; at a few hundred thousand states that is a bill
+    nobody intended to authorise, discovered afterwards. An estimate is not
+    exact — token counts vary with brief size and charts — but the difference
+    between "about forty dollars" and "about four thousand" is the decision, and
+    that difference is never subtle.
+
+    Chart arms cost materially more: three images per read is most of the input.
+    """
+    from golddesk.live import Vision
+    from golddesk.policies import ContextualChooser
+
+    rows, total = [], 0.0
+    for a in arms:
+        if a.analyst != "provider":
+            rows.append({"arm": a.name, "reads": 0, "usd": 0.0,
+                         "note": "deterministic baseline — no inference"})
+            continue
+        mult = 3.2 if a.vision is Vision.NUMERIC_PLUS_CHARTS else 1.0
+        # NOT every state is a read. The watcher only wakes the analyst when
+        # deterministic structure has changed, and the observed rate on a live
+        # M15 run was about 55%. This is the single biggest term in the bill, so
+        # it is a parameter rather than an assumption baked into the arithmetic.
+        reads = int(n_states * wake_rate)
+        usd = reads * per_read_usd * mult
+        note = "numeric" if mult == 1.0 else "charts (~3x input tokens)"
+        if a.management == ContextualChooser.name:
+            extra = n_states * entry_rate * mgmt_steps_per_trade
+            usd += extra * per_read_usd * 0.35      # management calls are small
+            note += f" + ~{extra:,.0f} management calls"
+        rows.append({"arm": a.name, "reads": reads, "usd": usd, "note": note})
+        total += usd
+    return {"rows": rows, "total_usd": total, "states": n_states}
+
+
+def render_cost(est: dict) -> str:
+    out = ["ESTIMATED INFERENCE COST", "",
+           f"  states in sample: {est['states']:,}"]
+    for r in est["rows"]:
+        out.append(f"  arm {r['arm']}  {r['reads']:>7,} reads  "
+                   f"${r['usd']:>9,.2f}   {r['note']}")
+    out += ["", f"  TOTAL ESTIMATE  ${est['total_usd']:,.2f}", "",
+            "  An ESTIMATE. Token counts vary with brief size and how much the",
+            "  cached prefix is reused. Treat it as the right order of magnitude,",
+            "  not a quote — and set a spend limit in the Anthropic console too,",
+            "  because that limit is the one that actually stops anything."]
+    if est["total_usd"] > 500:
+        out += ["",
+                "  THIS IS PROBABLY NOT THE RUN YOU WANT.",
+                "",
+                "  The full ladder prices every arm over every wake, and the",
+                "  chart arms are ~3x the numeric ones. Before paying for seven",
+                "  arms, note that ONE comparison gates all the others:",
+                "",
+                "      arm A (deterministic)  vs  arm B (Claude, numeric)",
+                "",
+                "  If Claude does not beat the baseline, C through H are answers",
+                "  to a question that no longer matters — they all sit above B on",
+                "  the ladder. If it does beat it, you have bought the fact that",
+                "  decides everything else for a small fraction of this.",
+                "",
+                "      --arms AB              just that comparison",
+                "      --from / --to          narrow the window",
+                "",
+                "  Spend the minimum that can change your mind. That is the whole",
+                "  point of an ablation ladder — it is ordered so you can stop."]
+    return "\n".join(out)
 
 
 def main() -> int:
@@ -42,6 +118,19 @@ def main() -> int:
                     help="parquet of REAL M1 bars; enables arm F")
     ap.add_argument("--ticks", default=None,
                     help="parquet of REAL ticks; preferred over --m1 for arm F")
+    ap.add_argument("--estimate-only", action="store_true",
+                    help="price the run and stop. ALWAYS DO THIS FIRST — the "
+                         "ladder runs every analyst arm over every state, and "
+                         "the bill is not obvious from the arm count")
+    ap.add_argument("--max-usd", type=float, default=None,
+                    help="refuse to start if the estimate exceeds this. A "
+                         "second line of defence behind the console spend limit")
+    ap.add_argument("--yes", action="store_true",
+                    help="skip the cost confirmation prompt (for unattended runs)")
+    ap.add_argument("--arms", default=None,
+                    help="run only these rungs, e.g. AB or ABC. The ladder is "
+                         "ORDERED so you can stop early: if B does not beat A, "
+                         "C..H answer a question that no longer matters")
     args = ap.parse_args()
     logging.basicConfig(level=logging.ERROR)
 
@@ -69,6 +158,25 @@ def main() -> int:
     has_ticks = bool(fine) and cov is not None and cov.usable
     arms = ladder(has_key, has_ticks)
 
+    if args.arms:
+        want = {c.upper() for c in args.arms if c.isalpha()}
+        kept = [a for a in arms if a.name in want]
+        missing = want - {a.name for a in kept}
+        if missing:
+            print(f"requested arm(s) {sorted(missing)} are not runnable in this "
+                  f"environment — they are omitted, never downgraded")
+        if not kept:
+            print("no runnable arms selected")
+            return 2
+        # A ladder must keep its baseline: every rung is measured as an
+        # INCREMENT over the one beneath it, and a subset with no floor
+        # measures nothing.
+        if "A" not in {a.name for a in kept}:
+            kept = [a for a in arms if a.name == "A"] + kept
+            print("arm A re-added: every rung is an increment over the baseline, "
+                  "so a subset without it has nothing to be an increment over")
+        arms = kept
+
     ladder_problems = assert_arms_differ(arms)
     if ladder_problems:
         print("LADDER IS MALFORMED — refusing to run:")
@@ -88,6 +196,30 @@ def main() -> int:
     for a in arms:
         print("  " + a.render())
     print()
+
+    # ---- PRICE IT BEFORE SPENDING ANYTHING ----------------------------
+    est = estimate_cost(len(bars), arms)
+    print(render_cost(est))
+    print()
+    if args.estimate_only:
+        print("--estimate-only given; nothing was run and nothing was spent.")
+        return 0
+    if args.max_usd is not None and est["total_usd"] > args.max_usd:
+        print(f"REFUSING TO START: estimate ${est['total_usd']:,.2f} exceeds "
+              f"--max-usd ${args.max_usd:,.2f}.")
+        print("Narrow the date range, drop the chart arms, or raise the cap "
+              "deliberately.")
+        return 2
+    if has_key and est["total_usd"] > 25.0 and not args.yes:
+        try:
+            ans = input(f"This will spend roughly ${est['total_usd']:,.2f}. "
+                        f"Type the word 'spend' to continue: ").strip()
+        except EOFError:
+            ans = ""
+        if ans != "spend":
+            print("aborted — nothing was spent.")
+            return 1
+        print()
 
     bt = Backtest(bars, Path(args.out), timeframe=args.timeframe,
                   provider_factory=(lambda: AnthropicAnalyst(model="claude-opus-5"))

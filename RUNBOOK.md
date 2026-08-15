@@ -165,15 +165,42 @@ than refusing to boot.
 
 The single biggest constraint on this project is data, not architecture.
 
+**Do these three in order. The first two cost nothing and take seconds.**
+
 ```bash
 cd /opt/aurum
-sudo -u aurum .venv/bin/python fetch_dukascopy.py --symbol XAUUSD \
-    --start 2015-01-01 --out data/xauusd_ticks.parquet
+
+# 1. Prove the FORMAT handling is right. No network needed.
+sudo -u aurum .venv/bin/python fetch_dukascopy.py --offline-test
+
+# 2. Prove you can reach the feed. One hour, ~2 seconds.
+sudo -u aurum .venv/bin/python fetch_dukascopy.py --selftest
+
+# 3. See what you are committing to BEFORE committing to it.
+sudo -u aurum .venv/bin/python fetch_dukascopy.py \
+    --from 2023-01-01 --to 2026-01-01 --dry-run
 ```
 
-Free tick data back to ~2003. Expect **1–3 hours** and several GB; run it under
-`tmux` or `screen`. Untested against the live source from here — if it errors,
-send me the traceback and the failing URL.
+Then the real pull, **under `tmux`** so an SSH drop does not kill it:
+
+```bash
+tmux new -s fetch
+sudo -u aurum .venv/bin/python fetch_dukascopy.py \
+    --from 2023-01-01 --to 2026-01-01 --pause 0.05
+# Ctrl-B then D to detach.  tmux attach -t fetch  to come back.
+```
+
+**Corrected timing — I under-estimated this earlier.** The dry-run gives the
+real number: five years is ~31,000 hourly files, which is **10–26 hours**, not
+1–3. Three years is roughly 6–15 hours and ~5GB. Start with three years; you can
+always extend later because the fetch is resumable per month.
+
+`--pause 0.05` adds ~15 minutes over three years and is good manners to a free
+feed. Use it.
+
+**It is genuinely resumable now.** It writes one parquet per month and skips
+completed months without issuing a single request. If it dies you lose at most
+the month in progress — just re-run the same command.
 
 **Why it matters:** the arms comparison needs paired states in volume. Twenty
 trades cannot separate anything, and no amount of architecture substitutes for
@@ -286,7 +313,55 @@ novelty, model competition, management counterfactual, constitutional review.
 
 ---
 
-## 12. External signal collection (optional, later)
+## 12. The arms comparison — read the cost first
+
+**This is where I was naive earlier and the numbers corrected me.**
+
+Always price it before spending:
+
+```bash
+cd /opt/aurum
+sudo -u aurum .venv/bin/python run_backtest.py \
+    --parquet data/XAUUSD_M15.parquet --estimate-only
+```
+
+Real figures from the estimator:
+
+| Sample | Full ladder A–H | **A vs B only** |
+|---|---:|---:|
+| 2 weeks M15 | $2,092 | **$92** |
+| 3 months M15 | $6,974 | **$308** |
+| 6 months M15 | $20,923 | **$924** |
+| 1 year M15 | $122,049 | $5,390 |
+
+**Do not run the full ladder.** I said "run arms B–H" earlier without pricing
+it; that was wrong and I should have checked before recommending it.
+
+One comparison gates all the others:
+
+> **arm A (deterministic) vs arm B (Claude, numeric)** — does the model beat the
+> baseline at all?
+
+Every other rung sits *above* B on the ladder. If Claude does not beat the
+baseline, C through H answer a question that no longer matters. If it does, you
+have bought the fact that decides everything else for a few hundred dollars.
+
+```bash
+sudo -u aurum .venv/bin/python run_backtest.py \
+    --parquet data/XAUUSD_M15.parquet \
+    --arms AB --max-usd 350 --out backtest_out/ab
+```
+
+`--max-usd` refuses to start if the estimate exceeds it. It also prompts for
+confirmation above $25. Set a spend limit in the Anthropic console as well —
+that is the one that actually stops anything.
+
+Spend the minimum that can change your mind. That is what an ablation ladder is
+*for*: it is ordered so you can stop.
+
+---
+
+## 13. External signal collection (optional, later)
 
 Only after the desk has been running for weeks.
 
@@ -313,7 +388,7 @@ Constraints that are not negotiable:
 
 | Blocked on | Why |
 |---|---|
-| **Run arms B–H** | Needs `ANTHROPIC_API_KEY`. This is the real evidence gap — one arm, 20 trades, −7.8R |
+| **Run the arms** | Needs `ANTHROPIC_API_KEY`. See step 13 — and read the cost note first, it changed my advice |
 | **Verify `feed_oanda.py` live** | `403 CONNECT` to every external host from this sandbox |
 | **Verify `fetch_dukascopy.py`** | Same |
 | **#12 source discovery** | Needs your Telegram account and membership |
@@ -332,11 +407,13 @@ Send me a traceback from any of these and I can fix it without the network.
 4. sudo ./deploy/install.sh                          ~10 min
 5. Fill .env + secrets/                              ~5 min
 6. run_desk.py --preflight   -> all PASS             ~2 min
-7. fetch_dukascopy.py (tmux)                         1-3 hrs
+7. fetch_dukascopy --offline-test, --selftest        2 min
+   fetch_dukascopy --dry-run, then the pull (tmux)   6-15 hrs (3 years)
 8. Choose --management (heuristic)                   decision
 9. Optional: MT5 stops_level                         ~5 min
 10. systemctl enable --now aurum-desk, Sunday        ~5 min
-11. aurum_report.py weekly                           ongoing
+11. run_backtest.py --estimate-only, then --arms AB  ~$300
+12. aurum_report.py weekly                           ongoing
 ```
 
 Then stop building and let it run. At this point more architecture is worth less
