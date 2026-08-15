@@ -26,6 +26,12 @@ class CostModel:
     contract_size: float = 100.0
     commission_per_lot_round_turn: float = 0.0   # account currency, both sides
     slippage_price: float = 0.0                  # add measured slippage here
+    # YOUR execution venue's spread, by session. None means uncalibrated, and
+    # the compiler then charges the FEED's spread and stamps every signal to say
+    # so. See venue.py — the feed is not where you execute, and pricing trades
+    # against the wrong venue's costs is the error that makes marginal trades
+    # look positive.
+    spread_profile: object = None
 
     def commission_in_price(self) -> float:
         return self.commission_per_lot_round_turn / self.contract_size

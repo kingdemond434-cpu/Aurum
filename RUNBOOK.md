@@ -208,7 +208,37 @@ sample.
 
 ---
 
-## 8. Decide who manages the trade
+## 8. Tell the desk what YOUR broker charges
+
+**Do not skip this. It changes every trade decision.**
+
+The OANDA feed is where Aurum *looks*. Your broker is where you *execute*. They
+charge different spreads, and retail gold brokers are usually **wider** than the
+feed. Without this the desk prices every trade against a cost you will not pay —
+in the direction that makes marginal trades look positive.
+
+On a $6 stop: a $0.30 feed spread is 0.05R; a $0.60 broker spread is 0.10R. That
+0.05R gap decides marginal trades, and marginal trades are most of them.
+
+Find your broker's typical XAUUSD spread (MT5 Market Watch, or ask support for
+the average — not the "from" number in their marketing), then:
+
+```
+--declared-spread 0.45
+```
+
+Add it to `ExecStart` in `/etc/systemd/system/aurum-desk.service`.
+
+If you skip it the desk still runs, prints `COST basis: THE FEED — not your
+execution venue` at boot, and stamps every signal with where the cost came from.
+It will not pretend.
+
+Later, once the tick archive has a few weeks in it, you can measure the real
+per-session profile instead of declaring one number.
+
+---
+
+## 9. Decide who manages the trade
 
 **This is a real decision and it is yours.** Claude forms the entry judgement.
 Who runs the position after fill is a separate question:
@@ -231,7 +261,7 @@ it calls the API on every management step, so it costs real money — add
 
 ---
 
-## 9. Optional: your broker's minimum stop distance
+## 10. Optional: your broker's minimum stop distance
 
 The shipped unit assumes `--min-stop 0.50`. If you have MT5 on any Windows
 machine, get the real number:
@@ -252,7 +282,7 @@ automatically), just occasionally annoying.
 
 ---
 
-## 10. Launch, in shadow
+## 11. Launch, in shadow
 
 Markets open **Sunday ~22:00 UTC**. Start before then; the desk detects the
 venue is shut, backs off to a 60-second health poll, and resumes by itself.
@@ -328,7 +358,7 @@ wc -l /opt/aurum/state/ledger.jsonl            # decisions recorded
 
 ---
 
-## 11. Read what it did
+## 12. Read what it did
 
 ```bash
 cd /opt/aurum
@@ -344,7 +374,7 @@ novelty, model competition, management counterfactual, constitutional review.
 
 ---
 
-## 12. The arms comparison — read the cost first
+## 13. The arms comparison — read the cost first
 
 **This is where I was naive earlier and the numbers corrected me.**
 
@@ -392,7 +422,7 @@ Spend the minimum that can change your mind. That is what an ablation ladder is
 
 ---
 
-## 13. External signal collection (optional, later)
+## 14. External signal collection (optional, later)
 
 Only after the desk has been running for weeks.
 
@@ -440,7 +470,8 @@ Send me a traceback from any of these and I can fix it without the network.
 6. run_desk.py --preflight   -> all PASS             ~2 min
 7. fetch_dukascopy --offline-test, --selftest        2 min
    fetch_dukascopy --dry-run, then the pull (tmux)   6-15 hrs (3 years)
-8. Choose --management (heuristic)                   decision
+8. --declared-spread <your broker's spread>          IMPORTANT
+9. Choose --management (heuristic)                   decision
 9. Optional: MT5 stops_level                         ~5 min
 10. systemctl enable --now aurum-desk, Sunday        ~5 min
 11. run_backtest.py --estimate-only, then --arms AB  ~$300

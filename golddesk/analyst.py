@@ -559,7 +559,18 @@ def compile_signal(
 
     # ---- Canonical cost. ONE function, shared with research/backtest.py.
     # Prices here are mid, so the round trip is charged exactly once.
-    cost_price = round_trip_cost(brief.spread, cost_model)
+    #
+    # THE SPREAD CHARGED IS YOUR VENUE'S, NOT THE FEED'S — when you have told
+    # the desk what your venue charges. Perception comes from OANDA or MT5; you
+    # execute somewhere else by hand. Charging the feed's spread prices every
+    # trade against a cost you will not pay, and retail gold brokers are usually
+    # WIDER than the feed, so the error runs in the direction that makes the
+    # desk trade more. `provenance` is stamped on the signal so a month of
+    # decisions priced against the wrong venue is discoverable.
+    from .venue import effective_spread
+    charged_spread, cost_provenance = effective_spread(
+        brief.spread, getattr(cost_model, "spread_profile", None), brief.session)
+    cost_price = round_trip_cost(charged_spread, cost_model)
     cost_r = cost_price / risk
     rr_tp1 = (abs(tp1 - entry) - cost_price) / risk
     rr_tp2 = (abs(tp2 - entry) - cost_price) / risk
@@ -610,7 +621,8 @@ def compile_signal(
         confidence=read.confidence,
         trigger_price=brief.trigger_price,
         stop_anchor_ref=read.stop_ref,
-        router_advisories=list(route_verdict.advisories) + [ev_verdict.reason],
+        router_advisories=(list(route_verdict.advisories) + [ev_verdict.reason]
+                           + [f"cost from {cost_provenance}"]),
         read=read.read,
         why=read.why,
         why_not=read.why_not,

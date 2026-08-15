@@ -582,6 +582,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   shadow_contextual: bool = False,
                   universe_mode: bool = False,
                   calendar=None,
+                  spread_profile_path: str = "config/spread_profile.json",
+                  declared_spread: Optional[float] = None,
                   broker_limits: Optional[BrokerLimits] = None) -> DeskService:
     """Wire the real client, feed, desk and sink. One call, one deployed desk.
 
@@ -621,6 +623,24 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     # with shadow=False, where silence is the last thing you want. build_sink
     # reads secrets/telegram_token and secrets/telegram_chat_id and degrades to
     # null on its own if they are absent, so passing the path is safe either way.
+    # YOUR VENUE'S COSTS. Perception is OANDA/MT5; you execute elsewhere by
+    # hand. Without this the compiler prices every trade against the feed's
+    # spread — a cost you will not pay, and usually a smaller one.
+    from .costs import CostModel
+    from .venue import SpreadProfile
+    if declared_spread:
+        profile = SpreadProfile.declared("declared", declared_spread)
+    else:
+        profile = SpreadProfile.load(Path(spread_profile_path))
+    cost_model = CostModel(spread_profile=profile)
+    if not profile.calibrated:
+        log.warning("NO SPREAD PROFILE — costs will be taken from the FEED, "
+                    "which is not your execution venue. Every expectancy figure "
+                    "is priced against a spread you will not pay. Set "
+                    "--declared-spread or calibrate one.")
+    else:
+        log.info("spread profile: %s (%s)", profile.venue, profile.statistic)
+
     sink = build_sink(secrets_dir)
 
     # Event proximity, computed rather than fetched. Wired here so it is on by
@@ -645,6 +665,7 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
 
     desk = LiveDesk(build_provider(provider_spec), Ledger(cfg.ledger_path),
                     sink, shadow=shadow, vision=vision, broker=broker,
+                    cost_model=cost_model,
                     shadow_management=shadow_management,
                     shadow_contextual=shadow_contextual,
                     universe_mode=universe_mode,

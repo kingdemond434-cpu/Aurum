@@ -191,6 +191,12 @@ def main() -> int:
                     help="include the CONTEXTUAL arm in shadowing. Off by "
                          "default because a shadow arm that calls a paid API on "
                          "every management step costs real money to observe")
+    ap.add_argument("--declared-spread", type=float, default=None,
+                    help="YOUR broker's typical XAUUSD spread in dollars, e.g. "
+                         "0.45. Without it the desk prices every trade against "
+                         "the FEED's spread — a cost you will not pay, and "
+                         "usually a smaller one, so marginal trades look better "
+                         "than they are")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
@@ -240,6 +246,12 @@ def main() -> int:
           + ("  (contextual included — this calls the API per step)"
              if args.shadow_contextual else "  (contextual excluded — costs money)"))
     print(f"  opportunity set  : {'universe (all propositions)' if args.universe else 'single read'}")
+    if args.declared_spread:
+        print(f"  COST basis       : your venue, ${args.declared_spread:.2f} declared")
+    else:
+        print(f"  COST basis       : THE FEED — not your execution venue.")
+        print(f"                     Every expectancy figure is priced against a")
+        print(f"                     spread you will not pay. Pass --declared-spread.")
     if args.management == "contextual":
         print("\n  NOTE: contextual management has not yet beaten the heuristic on")
         print("  paired states. Granting it authority before it has is the exact")
@@ -252,6 +264,7 @@ def main() -> int:
                         cfg=ServiceConfig(symbol=args.symbol),
                         secrets_dir=args.secrets, feed_backend=args.feed,
                         management=args.management,
+                        declared_spread=args.declared_spread,
                         shadow_management=args.shadow_management,
                         shadow_contextual=args.shadow_contextual,
                         universe_mode=args.universe,
