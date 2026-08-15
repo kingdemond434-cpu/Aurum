@@ -103,6 +103,12 @@ class ServiceConfig:
     # requests. An hour still refreshes H4 context four times per H4 candle,
     # which is ample, while cutting the request rate sixteen-fold.
     htf_cache_seconds: float = 3600.0
+    # Reject implausible prints before they can trip a stop, and keep every
+    # accepted tick. See tickguard.py — one bad quote writes a fabricated loss
+    # into the ledger, and the ledger is the only evidence this desk has.
+    guard_ticks: bool = True
+    archive_ticks: bool = True
+    tick_archive_dir: Path = Path("data/ticks")
     state_path: Path = Path("state/service_state.json")
     ledger_path: Path = Path("state/ledger.jsonl")
     heartbeat_every_s: float = 900.0
@@ -138,6 +144,10 @@ class DeskService:
         self._venue_shut = False
         self._htf_cache = None
         self._htf_cached_at = 0.0
+        from .tickguard import TickArchive, TickGuard
+        self.guard = TickGuard() if self.cfg.guard_ticks else None
+        self.archive = (TickArchive(self.cfg.tick_archive_dir, self.cfg.symbol)
+                        if self.cfg.archive_ticks else None)
         self.cfg.state_path.parent.mkdir(parents=True, exist_ok=True)
 
     # -- lifecycle -------------------------------------------------------
@@ -309,6 +319,13 @@ class DeskService:
                 backoff = min(backoff * 2, self.cfg.backoff_max_s)
 
         self.checkpoint()
+        # Flush and close the archive on the way out. A day's ticks sitting in a
+        # buffer that was never flushed is the same as not having collected them.
+        if self.archive is not None:
+            self.archive.close()
+            log.info(self.archive.render())
+        if self.guard is not None and self.guard.stats.seen:
+            log.info("tick guard:\n%s", self.guard.stats.render())
         self._notify(f"*DESK STOPPED* {self.state.bars_processed} bars, "
                      f"{self.state.ticks_seen} ticks, "
                      f"{self.state.reconnects} reconnect(s)")
@@ -370,6 +387,31 @@ class DeskService:
                 self._venue_shut = False
                 log.info("quotes resumed after %.0fs — desk active", tick_age)
                 self._notify("*MARKET OPEN* quotes resumed, desk active")
+
+            # ---- REJECT BAD PRINTS BEFORE THEY REACH THE POSITION --------
+            #
+            # This sits above everything that acts on price. The tick path
+            # evaluates stops and targets, so a single bad quote closes a trade
+            # that was never closed and writes a fabricated loss the ledger
+            # cannot distinguish from a real one. Rejecting a good tick costs
+            # one poll; accepting a bad one corrupts the evidence permanently.
+            now_utc = datetime.now(timezone.utc)
+            if self.guard is not None:
+                ok, why = self.guard.check(bid, ask, now_utc)
+                if not ok:
+                    if self.archive is not None:
+                        self.archive.write_reject(bid, ask, now_utc, why)
+                    # Log the first few and then every hundredth: a feed that
+                    # starts rejecting steadily is a problem worth seeing, and
+                    # one that rejects a print an hour is noise.
+                    n = self.guard.stats.rejected
+                    if n <= 5 or n % 100 == 0:
+                        log.warning("REJECTED TICK (%d total, %.3f%% of stream): %s",
+                                    n, self.guard.stats.reject_rate * 100, why)
+                    time.sleep(self.cfg.poll_seconds)
+                    continue
+            if self.archive is not None:
+                self.archive.write(bid, ask, now_utc)
 
             age = tick_age
             price = (bid + ask) / 2.0

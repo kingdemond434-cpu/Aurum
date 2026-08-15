@@ -275,6 +275,26 @@ curl -s -X POST "https://api.telegram.org/botYOUR_TOKEN/sendMessage" \
 **Every message will be tagged `[SHADOW]`.** That is correct. Do not remove
 `--shadow` until you have weeks of forward evidence.
 
+### Tick integrity
+
+Every quote is checked before anything acts on it — crossed quotes, decimal
+slips, absurd spreads, impossible jumps. A bad print that reached the tick path
+would trip a stop that never happened and write a fabricated loss into the
+ledger, which is worse than a trading error: nothing downstream can tell it
+apart from a real one.
+
+Rejections are logged and archived to `data/ticks/XAUUSD_rejects_*.csv.gz`. A
+handful a day is normal. **A steadily rising reject rate means the feed has
+developed a problem** — check it in the journal:
+
+```bash
+journalctl -u aurum-desk | grep "REJECTED TICK" | tail
+```
+
+Weekend gaps and news moves are explicitly NOT rejected — the jump test only
+applies when the previous tick was seconds old, so a Sunday reopen or an NFP
+spike passes through untouched.
+
 ### What normal looks like
 
 - `alive: N ticks, M bars` every 15 minutes
@@ -292,8 +312,19 @@ sudo systemctl restart aurum-desk              # safe: state is checkpointed
 wc -l /opt/aurum/state/ledger.jsonl            # decisions recorded
 ```
 
-> **`state/ledger.jsonl` IS the forward evidence.** Never delete it. Back it up:
-> `rsync -a you@vps:/opt/aurum/state/ ./aurum-state-backup/`
+> **`state/ledger.jsonl` IS the forward evidence.** Never delete it.
+>
+> **`data/ticks/` is the other irreplaceable thing.** From launch, every
+> accepted tick is archived as `XAUUSD_ticks_YYYYMMDD.csv.gz`. Your own venue's
+> tick history is the one dataset you cannot buy or backfill — Dukascopy has
+> *their* feed, not yours, and the difference is exactly the spread and slippage
+> behaviour that decides whether a strategy pays. It starts accumulating the day
+> the desk starts and not one day sooner.
+>
+> Back up both, weekly:
+> `rsync -a you@vps:/opt/aurum/state/ you@vps:/opt/aurum/data/ticks/ ./aurum-backup/`
+>
+> Budget roughly 50-150 MB/month gzipped for ticks.
 
 ---
 
