@@ -38,8 +38,12 @@ EnvironmentFile=/opt/aurum/.env
 # --management is an EXPLICIT production decision, not a default to forget:
 # heuristic manages, contextual shadows, so Claude management has to prove it
 # adds money on paired states before it is granted authority.
+# --feed yahoo needs NO ACCOUNT and synthesises bid/ask from --declared-spread.
+# Switch to `--feed oanda` for a real two-sided quote; it is one word and
+# nothing else changes, because both implement the same Protocol.
+# --declared-spread is YOUR broker's, and on the yahoo feed it is REQUIRED.
 ExecStart=/opt/aurum/.venv/bin/python /opt/aurum/run_desk.py \
-    --shadow --feed oanda --min-stop 0.50 \
+    --shadow --feed yahoo --declared-spread 0.45 --min-stop 0.50 \
     --management heuristic --shadow-management
 Restart=always
 RestartSec=10

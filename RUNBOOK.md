@@ -25,7 +25,29 @@ what to do when it fails.
 
 ---
 
-## 1. OANDA account and a READ-ONLY token
+## 1. The price feed — pick one
+
+### Option A: zero setup (recommended to START)
+
+Nothing to sign up for. Skip straight to step 2.
+
+```
+--feed yahoo --declared-spread 0.45
+```
+
+**What it costs you:** the endpoint publishes OHLC, not a two-sided quote, so
+the bid/ask is SYNTHESISED as `mid ± half your declared spread`. Honest
+arithmetic on a number you supply — but constant by construction, so it cannot
+widen into a release or gap at the rollover. Every such tick is stamped
+`synthetic`. It is also an unofficial endpoint that can rate-limit or change
+without notice.
+
+**Good enough to start collecting forward evidence, which is the point.**
+Switch to B when you start caring about the tick path — profit-lock, trailing,
+giveback, intrabar exits — because all of that is measured against a synthetic
+spread here.
+
+### Option B: OANDA practice (~10 min, real bid/ask)
 
 The price feed. Practice account is correct — you are not trading through it.
 
@@ -50,6 +72,9 @@ curl -s -H "Authorization: Bearer YOUR_TOKEN" \
 
 Expect JSON with `bids` and `asks`. `401` = bad token. `403` = wrong environment
 (practice token against the live host or vice versa).
+
+**Switching between A and B later is one flag.** Both implement the same
+Mt5Client Protocol; nothing else in the desk changes.
 
 ---
 
@@ -115,8 +140,9 @@ Also want the external-signal collector? `sudo WITH_CAPTURE=1 ./deploy/install.s
 sudo -u aurum nano /opt/aurum/.env
 ```
 
-Set `ANTHROPIC_API_KEY`, `OANDA_TOKEN`, `OANDA_ACCOUNT`. No quotes, no `export`,
-no trailing comments — systemd reads the line literally.
+Set `ANTHROPIC_API_KEY`. If you chose OANDA, also `OANDA_TOKEN` and
+`OANDA_ACCOUNT`; on `--feed yahoo` neither is needed. No quotes, no `export`, no
+trailing comments — systemd reads the line literally.
 
 Then the Telegram credentials, as **files** (preferred over env vars: env is
 visible in `systemctl show`, in crash logs, and to anything that can read
@@ -462,7 +488,7 @@ Send me a traceback from any of these and I can fix it without the network.
 ## Order of operations, condensed
 
 ```
-1. OANDA practice account + read-only token          ~10 min
+1. Price feed: yahoo (nothing to do) or OANDA        0-10 min
 2. Telegram bot + chat id                            ~5 min
 3. VPS with python3.11+                              ~5 min
 4. sudo ./deploy/install.sh                          ~10 min
