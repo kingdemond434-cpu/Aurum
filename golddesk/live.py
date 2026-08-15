@@ -880,6 +880,13 @@ class LiveDesk:
                       "cost_r": sig.cost_r, "analyst_read": pr.read.model_dump(),
                       "vision": self.vision.value, "charts_sent": n_charts,
                       "management_policy": self.active_chooser().name,
+                      # WHO will manage this position, and on whose authority.
+                      # On the SIGNAL row as well as the close row: a signal is
+                      # filed under an arm at the moment it is produced, and
+                      # recovering that from the close row only works for trades
+                      # that closed.
+                      "management_authority": ("operator" if self._management_override
+                                               else "durable-binding"),
                       "edge_r": edge_r,
                       "uncertainty": unc.to_dict(),
                       "sizing": {"risk_r": risk_r, "wanted_r": alloc.risk_r,
