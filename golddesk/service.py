@@ -597,6 +597,18 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     if feed_backend == "oanda":
         from .feed_oanda import OandaClient
         client = OandaClient(instrument=os.environ.get("OANDA_INSTRUMENT", "XAU_USD"))
+    elif feed_backend == "yahoo":
+        # ZERO-SETUP feed. No account, no key. It publishes no bid/ask, so the
+        # quote is synthesised from YOUR declared spread — which is why this
+        # backend REQUIRES --declared-spread and refuses without one.
+        from .feed_yahoo import YahooClient
+        if not declared_spread:
+            raise SystemExit(
+                "--feed yahoo requires --declared-spread. That feed publishes "
+                "OHLC only, so the desk has to build the bid/ask from a number "
+                "you supply. Inventing one would be inventing the single figure "
+                "that decides whether marginal trades are worth taking.")
+        client = YahooClient(symbol=symbol, half_spread=declared_spread / 2.0)
     else:
         client = RealMt5Client()
     feed = LiveFeed(client, FeedConfig(symbol=symbol,

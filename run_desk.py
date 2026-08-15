@@ -84,7 +84,8 @@ def _telegram_check(want: bool, secrets: Path) -> Check:
 
 
 def preflight(symbol: str, want_telegram: bool, secrets: Path,
-              feed: str = "mt5", min_stop: float = 0.0) -> list[Check]:
+              feed: str = "mt5", min_stop: float = 0.0,
+              declared_spread: float = 0.0) -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
@@ -95,6 +96,36 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
                         "The desk cannot analyse anything without it"))
 
     # --- feed ------------------------------------------------------------
+    if feed == "yahoo":
+        checks.append(Check("declared spread", bool(declared_spread),
+                            f"${declared_spread:.2f} — the bid/ask is BUILT from "
+                            f"this, because this feed publishes none"
+                            if declared_spread else
+                            "REQUIRED with --feed yahoo. That feed has no bid/ask, "
+                            "so the quote is synthesised from your venue's spread. "
+                            "Inventing one would invent the number that decides "
+                            "whether marginal trades pay"))
+        if declared_spread:
+            from golddesk.feed_yahoo import YahooClient
+            c = YahooClient(symbol=symbol, half_spread=declared_spread / 2.0)
+            ok = c.initialize()
+            checks.append(Check("yahoo feed", ok,
+                                "reachable" if ok else f"{c.last_error()}"))
+            if ok:
+                t = c.symbol_info_tick(symbol)
+                checks.append(Check("quote (SYNTHETIC)", t is not None,
+                                    f"bid={t.bid} ask={t.ask} — built from your "
+                                    f"declared spread, NOT observed. The tick path "
+                                    f"cannot see a real spread widen on this feed"
+                                    if t else f"no price: {c.last_error()}",
+                                    fatal=False))
+        checks.append(Check("broker stop limit", bool(min_stop),
+                            f"{min_stop} price units, from your own terminal"
+                            if min_stop else
+                            "NOT SET — pass --min-stop from YOUR MT5", fatal=False))
+        checks.append(_telegram_check(want_telegram, secrets))
+        return checks
+
     if feed == "oanda":
         from golddesk.feed_oanda import OandaClient
         c = OandaClient()
@@ -161,10 +192,12 @@ def main() -> int:
     ap.add_argument("--numeric-only", action="store_true",
                     help="skip charts (cheaper; changes which arm you are running)")
     ap.add_argument("--max-hours", type=float, default=None)
-    ap.add_argument("--feed", default="mt5", choices=("mt5", "oanda"),
+    ap.add_argument("--feed", default="mt5", choices=("mt5", "oanda", "yahoo"),
                     help="where PERCEPTION comes from. oanda runs on Linux with "
-                         "no terminal; cost and stop legality still come from "
-                         "your own broker via --min-stop")
+                         "no terminal; yahoo needs NO ACCOUNT AT ALL but has no "
+                         "real bid/ask, so it synthesises one from "
+                         "--declared-spread. Cost and stop legality always come "
+                         "from your own broker via --min-stop")
     ap.add_argument("--min-stop", type=float, default=0.0,
                     help="your broker's trade_stops_level in PRICE units "
                          "(stops_level * point). Required with --feed oanda")
@@ -211,7 +244,8 @@ def main() -> int:
           f"no order placement")
     print("=" * 78)
     checks = preflight(args.symbol, not args.no_telegram, Path(args.secrets),
-                       feed=args.feed, min_stop=args.min_stop)
+                       feed=args.feed, min_stop=args.min_stop,
+                       declared_spread=args.declared_spread or 0.0)
     for c in checks:
         print(c.render())
     fatal = [c for c in checks if c.fatal and not c.ok]

@@ -160,6 +160,62 @@ def oanda_spread() -> None:
     check("and stays silent when there is too little to judge", quiet)
 
 
+def zero_setup_feed() -> None:
+    """The no-account backend. Logic is testable offline; the network is not."""
+    import json
+    from golddesk.feed_yahoo import POINT, YahooClient
+    print("\n3b. zero-setup feed (no account, no key)")
+
+    c0 = YahooClient(half_spread=0.0)
+    check("refuses to start without a declared spread", not c0.initialize(),
+          "it publishes no bid/ask; inventing one invents the number that "
+          "decides whether marginal trades pay")
+
+    canned = {"chart": {"result": [{"timestamp": [1772452800, 1772452860],
+              "indicators": {"quote": [{"open": [3300.0, 3301.0],
+              "high": [3301.0, 3302.0], "low": [3299.0, 3300.5],
+              "close": [3300.5, 3301.5], "volume": [10, 12]}]}}]}}
+
+    # THE ROUNDING BUG THIS GUARDS. round() on both sides of the mid pulls each
+    # in by half a tick, so a declared $0.45 arrived as $0.44 — a cost cheaper
+    # than the one the operator stated they pay, in the direction that makes
+    # marginal trades look positive.
+    worst = None
+    for declared in (0.45, 0.30, 0.25, 0.33, 0.60, 1.00, 0.15):
+        cl = YahooClient(half_spread=declared / 2.0)
+        cl._get = lambda i, r: canned
+        t = cl.symbol_info_tick("XAUUSD")
+        got = round(t.ask - t.bid, 2)
+        if worst is None or (got - declared) < worst[1]:
+            worst = (declared, got - declared, got)
+    check("a synthesised spread is NEVER narrower than declared",
+          worst[1] >= -1e-9,
+          f"worst case ${worst[0]:.2f} declared -> ${worst[2]:.2f} synthesised")
+
+    cl = YahooClient(half_spread=0.225)
+    cl._get = lambda i, r: canned
+    t = cl.symbol_info_tick("XAUUSD")
+    check("the quote is STAMPED synthetic", getattr(t, "synthetic", False) is True,
+          "the tick path cannot see a real spread widen on this feed, and "
+          "nothing downstream may mistake this for an observed quote")
+
+    rows = cl.copy_rates_from_pos("XAUUSD", 15, 0, 5)
+    check("bar spread is in POINTS, matching the Protocol",
+          rows[0].spread == int(round(0.45 / POINT)),
+          f"{rows[0].spread} pts — same unit contract the OANDA client got wrong")
+
+    holed = json.loads(json.dumps(canned))
+    holed["chart"]["result"][0]["indicators"]["quote"][0]["close"][0] = None
+    cl._get = lambda i, r: holed
+    check("a null bar is dropped, not interpolated",
+          len(cl.copy_rates_from_pos("XAUUSD", 15, 0, 5)) == 1,
+          "interpolating invents a swing that never traded")
+
+    si = cl.symbol_info("XAUUSD")
+    check("venue stop limits are 0, never guessed", si.trade_stops_level == 0,
+          "that is a fact about YOUR broker, which this feed knows nothing of")
+
+
 def polling() -> None:
     print("\n4. REST polling is proportionate")
     from golddesk.service import ServiceConfig
@@ -289,6 +345,7 @@ def main() -> int:
     systemd()
     manifest()
     oanda_spread()
+    zero_setup_feed()
     polling()
     telegram()
     management()
