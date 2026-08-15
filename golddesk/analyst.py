@@ -404,7 +404,20 @@ class Thresholds:
     max_entry_drift_r: float = 0.30
     stop_atr_buffer: float = 0.25
     max_spread_frac_of_stop: float = 0.10
-    default_ttl_minutes: int = 30
+    # HOW LONG A SIGNAL STAYS ACTIONABLE.
+    #
+    # A clock is the wrong instrument for this and 30 minutes was two M15 bars.
+    # A setup is dead when its STRUCTURE is dead — the trigger level is lost, the
+    # sweep is undone, the displacement origin is traded through — and none of
+    # those events keep to a timer. A trade that was valid at minute 29 is not
+    # usually invalid at minute 31, and discarding it is a quota on opportunity
+    # measured in seconds.
+    #
+    # This is now a DISPLAY hint on the notification ("valid ~Nm"), long enough
+    # not to bin live setups, and registered as entry.signal_ttl so it has to
+    # earn its keep. The real invalidation is the analyst's stated one, which
+    # travels with the signal and is what a human should act on.
+    default_ttl_minutes: int = 240
     max_tick_age_s: float = 120.0
 
 

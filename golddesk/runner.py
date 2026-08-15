@@ -316,7 +316,15 @@ class ShadowRunner:
                  cost_model: CostModel = CostModel(),
                  limits: RiskLimits = RiskLimits(),
                  heartbeat: timedelta = timedelta(days=3),
-                 forward_bars: int = 40):
+                 # SAME BIAS AS THE LIVE PATH, AND WORSE. At 40 bars a refusal
+                 # was resolved over ten hours; anything that paid off on day
+                 # two was recorded as forgone 0.0R. Since the constitution
+                 # prices a restriction by what refusing COST, a short window
+                 # makes every gate look cheap and every gate therefore gets
+                 # kept. The cost of a longer window is that the last N bars of
+                 # the series produce no decisions, which on a multi-year study
+                 # is nothing.
+                 forward_bars: int = 480):
         self.source, self.analyst, self.ledger = source, analyst, ledger
         self.sink = sink or build_sink(None)
         self.thresholds, self.cost_model, self.limits = thresholds, cost_model, limits

@@ -72,11 +72,20 @@ log = logging.getLogger(__name__)
 
 UNIVERSE_VERSION = "univ-2026-08-14-a"
 
-# How many propositions the analyst may return. This is an output-length bound,
-# not a selectivity dial — but it CAN discard a real opportunity, so it is
-# registered (`entry.universe_cap`) and the truncation is journalled whenever
-# the analyst fills it, which is the signal that the bound is binding.
-MAX_CANDIDATES = 6
+# How many propositions the analyst may return.
+#
+# This is an OUTPUT-LENGTH bound and nothing else. It is not a view about how
+# many opportunities a market is allowed to contain — an opportunity that
+# happens to be the twelfth is worth exactly what it is worth, and a cap that
+# silently drops it is a quota wearing an engineering justification.
+#
+# Set high enough that it should essentially never bind. When it does, the
+# analyst says so explicitly (`had_more`) rather than leaving us to infer it
+# from a full list, and the selection is stamped CAP BINDING. Two independent
+# signals, because this is the one restriction here that cannot be measured
+# from the ledger afterwards: an opportunity that was never stated leaves no
+# trace at all, so detection has to happen at the moment of truncation.
+MAX_CANDIDATES = 12
 
 
 # --------------------------------------------------------------------------
@@ -103,6 +112,11 @@ class AnalystUniverse(BaseModel):
         "propositions you considered and did not put forward, and why."))
     dominant_context: str = Field(max_length=300, description=(
         "The one structural fact that most constrains everything above."))
+    had_more: bool = Field(default=False, description=(
+        "True if you had further statable propositions and ran out of slots. "
+        "This is the only way a truncated universe can ever be detected: an "
+        "opportunity you did not state leaves no trace anywhere, so nothing "
+        "downstream can recover it. Say so rather than silently dropping one."))
 
 
 UNIVERSE_SCHEMA = AnalystUniverse.model_json_schema()
@@ -137,6 +151,12 @@ not withhold one to look disciplined — both corrupt the record in the same way
 
 `survey` must say what you looked at and what you dismissed. `dominant_context` \
 is the single structural fact that most constrains the whole list.
+
+If you run out of slots while you still have statable propositions, set \
+`had_more` to true. The cap is an output-length bound, not a view about how many \
+opportunities a market may contain, and it is the one limit here whose cost \
+cannot be recovered later — an opportunity you never stated leaves no trace \
+anywhere. Saying so is what gets the cap raised.
 """
 
 
@@ -311,6 +331,7 @@ class Selection:
     budget_bound: bool = False
     tiebreak_used: bool = False
     truncated: bool = False
+    analyst_had_more: bool = False
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -338,10 +359,14 @@ class Selection:
             lines.append("  TIEBREAK WAS LOAD-BEARING — an unmeasured preference "
                          "decided a real allocation. Registered as "
                          "entry.universe_tiebreak and measured like any restriction.")
-        if self.truncated:
+        if self.analyst_had_more:
+            lines.append("  TRUNCATED — the analyst SAID it had further statable "
+                         "propositions and ran out of slots. Raise MAX_CANDIDATES; "
+                         "an unstated opportunity leaves no trace to recover.")
+        elif self.truncated:
             lines.append(f"  CAP BINDING — the analyst filled all "
-                         f"{MAX_CANDIDATES} slots; the universe may be larger "
-                         f"than what was enumerated.")
+                         f"{MAX_CANDIDATES} slots without saying it had more; the "
+                         f"universe may still be larger than what was enumerated.")
         lines += [f"  {n}" for n in self.notes]
         return "\n".join(lines)
 
@@ -352,6 +377,7 @@ class Selection:
                 "budget_bound": self.budget_bound,
                 "tiebreak_used": self.tiebreak_used,
                 "cap_binding": self.truncated,
+                "analyst_had_more": self.analyst_had_more,
                 "candidates": [c.to_journal() for c in self.candidates]}
 
 
@@ -383,7 +409,8 @@ def select(candidates: Sequence[Candidate], heat: Heat,
            max_concurrent: int = 1,
            risk_per_trade_r: float = 1.0,
            min_overlap: float = 0.6,
-           cap_filled: bool = False) -> Selection:
+           cap_filled: bool = False,
+           analyst_had_more: bool = False) -> Selection:
     """Choose which enumerated propositions get risk.
 
     Order of operations matters and is deliberate:
@@ -401,7 +428,8 @@ def select(candidates: Sequence[Candidate], heat: Heat,
     to picking a single best candidate — which is the current behaviour, now
     with the discarded alternatives written down.
     """
-    sel = Selection(list(candidates), truncated=cap_filled)
+    sel = Selection(list(candidates), truncated=cap_filled or analyst_had_more,
+                    analyst_had_more=analyst_had_more)
 
     pool = [c for c in sel.candidates if c.viable]
     for c in pool:
@@ -435,11 +463,20 @@ def select(candidates: Sequence[Candidate], heat: Heat,
             continue
 
         if len(sel.taken) + len(open_directions) >= max_concurrent:
+            # A COUNT SHOULD NEVER BE WHAT STOPS THIS. Heat is the economic
+            # limit and normally binds long before any count does. If a count
+            # binds first, either an operator set a runaway guard deliberately
+            # or the risk arithmetic is not doing its job — both are worth
+            # seeing, so it is logged as an anomaly rather than accepted as
+            # routine.
+            log.warning("concurrency COUNT bound at %d before portfolio heat did "
+                        "— a count is a quota and should not be the binding "
+                        "constraint on opportunity", max_concurrent)
             c.disposition = "DEFERRED"
             c.disposition_reason = (
                 f"concurrency ceiling {max_concurrent} reached "
                 f"({len(open_directions)} already open, {len(sel.taken)} taken here) "
-                f"— deferred on a budget, not on merit")
+                f"— deferred on a COUNT, which has no economics in it")
             sel.budget_bound = True
             continue
 
@@ -535,6 +572,7 @@ def as_universe(read: AnalystRead) -> AnalystUniverse:
     cands = [] if read.setup is Setup.NO_SETUP else [read]
     return AnalystUniverse(
         candidates=cands,
+        had_more=False,
         survey=("single-read provider: this is one proposition, not a survey. "
                 "The absence of other candidates is a property of the interface, "
                 "not a statement about the market."),

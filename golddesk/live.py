@@ -236,11 +236,12 @@ class LiveDesk:
                  fine_resolution: Resolution = Resolution.M1_OBSERVED,
                  htf_factor: int = 16,
                  measure_position_constraint: bool = True,
-                 concurrency_ceiling: int = 4,
+                 concurrency_ceiling: Optional[int] = None,
                  universe_mode: bool = False,
                  calendar=None,
                  regime_history=None,
-                 entry_urgency: float = 0.5):
+                 entry_urgency: float = 0.5,
+                 forward_bars: int = 480):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
@@ -299,7 +300,13 @@ class LiveDesk:
         # A hard ceiling on simultaneous theses, independent of heat. Not a
         # quota on opportunity: heat is the economic limit and normally binds
         # first. This only stops a pathological state opening dozens.
+        # None = NO COUNT LIMIT. Heat governs. See max_concurrent().
         self.concurrency_ceiling = concurrency_ceiling
+        # How far forward a refusal is resolved. 480 M15 bars is five trading
+        # days: long enough that "this would have paid" is a fact about gold
+        # rather than about the window. See _record for why the old 60 was a
+        # bias and not merely an approximation.
+        self.forward_bars = forward_bars
         # Ask for the whole opportunity set rather than a single best trade.
         # OFF by default: it changes what the analyst is asked, so it is an ARM
         # to be measured against the single-read arm on identical states, not an
@@ -343,14 +350,28 @@ class LiveDesk:
         restriction that fails its counterfactual review genuinely stops
         applying instead of being demoted on paper only.
 
-        When it is demoted the ceiling is portfolio HEAT, not a count:
-        max_open_risk_r already bounds total exposure, and risk_check applies a
-        correlation haircut, so five copies of the same bullish idea cannot each
-        claim full independent risk.
+        When it is demoted there is NO COUNT AT ALL. Portfolio heat is the only
+        limiter, and it is the correct one: max_open_risk_r bounds total
+        exposure and risk_check applies a correlation haircut, so five copies of
+        the same bullish idea cannot each claim full independent risk. At the
+        default 2.0R ceiling with a 0.65 haircut, a second same-direction thesis
+        already cannot fit — the count was never what stopped it.
+
+        A COUNT IS A QUOTA AND A QUOTA HAS NO ECONOMICS IN IT. Four
+        simultaneous positive-expectancy opportunities are worth more than
+        three, and the fourth is not worse than the third for being fourth.
+        Whatever a count would have blocked, heat blocks correctly or does not
+        need blocking. `concurrency_ceiling` therefore defaults to None, meaning
+        unlimited, and exists only as a runaway-process guard for an operator
+        who wants one. If it ever binds it is logged as an anomaly, because a
+        count binding before heat means something is wrong with the risk maths,
+        not that the desk found too many opportunities.
         """
         from .constitution import is_enforcing
         if is_enforcing("risk.one_position"):
             return 1
+        if self.concurrency_ceiling is None:
+            return 1 << 30            # unlimited; heat is the only real limit
         return self.concurrency_ceiling
 
     def _provider_can_choose(self) -> bool:
@@ -663,7 +684,8 @@ class LiveDesk:
                      open_directions=self.risk.open_directions,
                      day_loss_r=self.risk.day_loss_r,
                      max_concurrent=self.max_concurrent(),
-                     cap_filled=len(uni.candidates) >= MAX_CANDIDATES)
+                     cap_filled=len(uni.candidates) >= MAX_CANDIDATES,
+                     analyst_had_more=bool(getattr(uni, "had_more", False)))
 
         # The survey itself is journalled BEFORE anything is entered, so the
         # record of what was available does not depend on what was taken.
@@ -1204,7 +1226,30 @@ class LiveDesk:
         # timestamp, and a colliding id would silently overwrite the very
         # counterfactuals it exists to preserve.
         did = f"{brief.symbol}-{bars[i].ts.isoformat()}" + (f"-{suffix}" if suffix else "")
-        fwd = bars[i:i + 61]
+        # FORWARD RESOLUTION WINDOW.
+        #
+        # This was 61 bars — about fifteen hours on M15 — and that was a quiet,
+        # systematic bias against the objective. Every refusal is resolved
+        # forward to answer "what would saying no have cost", and a truncated
+        # window answers it as ZERO for anything that paid off later. Missed
+        # positive-EV opportunity is an economic cost in this desk, so
+        # understating it understates the price of every DISCRETIONARY
+        # restriction, and every restriction's counterfactual review is
+        # consequently biased toward KEEPING it. A cap on how far forward we are
+        # willing to look is a cap on how expensive a gate is allowed to appear.
+        #
+        # The window is now long enough that the answer is about the market
+        # rather than about the window. It costs bars in the path hash and
+        # nothing at decision time — resolve_forward runs on already-loaded
+        # data, after the decision, and cannot affect it.
+        fwd = bars[i:i + self.forward_bars + 1]
+        if len(fwd) < self.forward_bars + 1:
+            # Near the end of the available series the window is short, and a
+            # short window UNDERSTATES forgone value. Recorded so the analysis
+            # can discount it rather than reading a truncated resolution as a
+            # genuine zero.
+            log.debug("forward window truncated to %d bars at %s — forgone value "
+                      "from here is a LOWER BOUND", len(fwd), bars[i].ts)
         lb = [LBar(b.ts, b.open, b.high, b.low, b.close) for b in fwd]
         self.ledger.append(DecisionRecord(
             decision_id=did, kind=kind,

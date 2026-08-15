@@ -159,6 +159,34 @@ REGISTRY: list[Restriction] = [
                 "forgone value is journalled on every blocked state and must "
                 "exceed the correlated risk it avoids, or it goes",
                 review_days=30),
+    Restriction("entry.signal_ttl", "analyst:Thresholds", Kind.DISCRETIONARY,
+                "a signal that is still structurally valid after its timer",
+                "a clock is the wrong instrument for whether a setup is alive. "
+                "Structure kills a setup; a timer kills whatever happens to be "
+                "open when it fires. It survives as a display hint because a "
+                "human wants some sense of shelf life, and the analyst's stated "
+                "invalidation is the real one",
+                status=Status.ADVISORY, review_days=30),
+    Restriction("entry.concurrency_count", "live:LiveDesk.max_concurrent",
+                Kind.DISCRETIONARY,
+                "simultaneous opportunities beyond a COUNT, when heat has room",
+                "a count is a quota and a quota has no economics in it. Four "
+                "positive-expectancy opportunities are worth more than three, "
+                "and the fourth is not worse for being fourth. Portfolio heat "
+                "with the correlation haircut is the correct limiter and "
+                "normally binds first. DEFAULT OFF (concurrency_ceiling=None); "
+                "if a count ever binds before heat, that is logged as an anomaly",
+                status=Status.REMOVED, review_days=30),
+    Restriction("measurement.forward_window", "live:LiveDesk._record",
+                Kind.DISCRETIONARY,
+                "forgone value that only materialised beyond the resolution window",
+                "not a trading gate but it distorts every other one: a refusal "
+                "resolved over 60 bars scores zero for anything that paid off "
+                "later, so a short window makes every restriction look cheap and "
+                "every restriction therefore gets kept. Now 480 bars, and a "
+                "truncated window is logged as a LOWER BOUND rather than read as "
+                "a genuine zero",
+                review_days=90),
     Restriction("risk.adaptive_sizing", "live:LiveDesk._enter", Kind.DISCRETIONARY,
                 "the flat 1R risk unit, when a measured edge argues for more or less",
                 "sizing off an estimated edge is how a system turns an unlucky "
