@@ -390,8 +390,30 @@ def step_entries(ctx: dict) -> str:
     return cls_report(hits)
 
 
+def step_intake(ctx: dict) -> str:
+    """Hunt output -> shadow book, with nobody asked.
+
+    Runs every morning against a candidate file that mostly does not change.
+    The idempotence is load-bearing: re-registering a known cell would reset its
+    shadow clock daily and nothing would ever accrue enough forward days to be
+    promoted — a pipeline that looks busy and can never finish.
+    """
+    from golddesk.intake import budget_note, run as intake_run
+    from pathlib import Path
+    book, text = intake_run(
+        book_path=Path(ctx.get("pipeline_path", "state/pipeline.json")),
+        returns=ctx.get("forward_returns") or {})
+    ctx["pipeline"] = book
+    rs = ctx.get("r_multiples") or []
+    if len(rs) >= 30:
+        text += "\n\n" + budget_note(book, rs,
+                                     tolerance=ctx.get("tolerance", 0.35))
+    return text
+
+
 STEPS = (
     ("evidence", step_evidence),
+    ("intake", step_intake),
     ("channel", step_channel),
     ("growth", step_growth),
     ("attribution", step_attribution),

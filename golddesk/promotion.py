@@ -180,12 +180,28 @@ def observe(c: Candidate, r: float) -> Candidate:
     return c
 
 
+def _normal_sf(t: float) -> float:
+    """One-sided tail of the standard normal. A p-value from a t, near enough
+    at the sample sizes here (60+ days), and it avoids a scipy dependency."""
+    return 0.5 * math.erfc(t / math.sqrt(2.0))
+
+
 def consider_promotion(c: Candidate, min_days: int = MIN_SHADOW_DAYS,
                        min_t: float = MIN_FORWARD_T) -> Candidate:
-    """Promote to LIVE on FORWARD evidence alone.
+    """Promote ONE cell on forward evidence. Prefer promote_book() for a book.
+
+    THE FORWARD GATE IS ITSELF A MULTIPLE TEST, which this single-cell version
+    cannot see. At t >= 1.5 a pure-noise cell promotes about 6.7% of the time,
+    so a shadow book of 77 candidates promotes roughly five random-number
+    generators — and this module's own test caught exactly that, with a
+    seeded-noise cell reaching LIVE at t=+2.14 before review() retired it.
+    Retiring it afterwards is not good enough: it carried capital in between.
+
+    Left in place because a single cell genuinely is a single test, and callers
+    that shadow one thing at a time are not committing the error.
 
     The in-sample Sharpe plays no part here and must not: it is the number the
-    search maximised, so using it twice would count the same evidence twice.
+    search maximised, so using it again would count the same evidence twice.
     """
     if c.status is not Status.SHADOW:
         return c
@@ -200,6 +216,54 @@ def consider_promotion(c: Candidate, min_days: int = MIN_SHADOW_DAYS,
                        f"mean {c.forward_mean:+.4f}R, t={t:+.2f} — evidence the "
                        f"search could not have fitted")
     return c
+
+
+#: Share of promoted cells permitted to be false discoveries. FDR rather than
+#: family-wise error on purpose: Bonferroni across 77 shadow cells demands
+#: t >= 3.2 and would refuse genuine edges to avoid any single mistake, which is
+#: the wrong trade for a book that wants several sleeves. Bounding the
+#: PROPORTION of duds keeps the queue moving while capping the damage.
+FALSE_DISCOVERY_RATE = 0.10
+
+
+def promote_book(book: Sequence[Candidate], min_days: int = MIN_SHADOW_DAYS,
+                 fdr: float = FALSE_DISCOVERY_RATE,
+                 floor_t: float = MIN_FORWARD_T) -> list:
+    """Promote across the whole shadow book at a controlled false-discovery rate.
+
+    Benjamini-Hochberg over every cell eligible on days: sort the one-sided
+    p-values, find the largest k with p_(k) <= k*fdr/m, promote that many. The
+    threshold therefore TIGHTENS as more cells shadow concurrently, which is the
+    property the single-cell version lacks and the reason noise was reaching
+    LIVE.
+
+    `floor_t` still applies underneath, so a book of two cells cannot promote on
+    a t of 0.3 merely because two is a small family.
+    """
+    eligible = [c for c in book
+                if c.status is Status.SHADOW and c.shadow_days >= min_days
+                and c.forward_t is not None and (c.forward_mean or 0.0) > 0]
+    m = len(eligible)
+    if m == 0:
+        return []
+    scored = sorted(((_normal_sf(c.forward_t), c) for c in eligible),
+                    key=lambda pc: pc[0])
+    cutoff = 0
+    for i, (p, _) in enumerate(scored, start=1):
+        if p <= i * fdr / m:
+            cutoff = i
+    promoted = []
+    for p, c in scored[:cutoff]:
+        if c.forward_t < floor_t:
+            continue
+        c.status = Status.LIVE
+        c.notes.append(
+            f"PROMOTED on {c.shadow_days} forward days, mean "
+            f"{c.forward_mean:+.4f}R, t={c.forward_t:+.2f}, p={p:.4f} — cleared "
+            f"Benjamini-Hochberg at FDR {fdr:.0%} against {m} concurrent shadow "
+            f"cells, so the forward gate was corrected for its own multiplicity")
+        promoted.append(c)
+    return promoted
 
 
 def review(c: Candidate, lookback: int = REVIEW_EVERY_DAYS) -> Candidate:
