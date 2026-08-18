@@ -65,10 +65,31 @@ class Status(str, Enum):
 #: gate applied, exactly.
 RAW_PSR_THRESHOLD = 0.95
 
-#: Forward days a shadow cell must accrue before it can be considered at all.
-#: Not a statistical bar — a sample-size floor. Below this the forward mean is
-#: dominated by whichever few days happened to land in it.
-MIN_SHADOW_DAYS = 60
+#: THE CADENCE IS TRADES, NOT CALENDAR DAYS, AND THE DESK LEARNED THIS THE HARD
+#: WAY. shadow_forward.py carries the arithmetic: a cell firing ~80 times a year
+#: produces about THREE fills in fourteen days, and a verdict on three fills
+#: KILLS a genuinely good edge 36% of the time (measured against +0.276R at
+#: per-trade sd 1.089). A calendar clock does not rescue slow sleeves from limbo,
+#: it executes them at random — and promotes noise by the same arithmetic in the
+#: other direction.
+#:
+#: An earlier version of this module used MIN_SHADOW_DAYS = 60 and reproduced
+#: exactly that error in a new constant: a daily sleeve gets 60 observations, an
+#: 80-a-year sleeve gets thirteen, and both were judged the same.
+#:
+#: So evaluation is TRIGGERED by either clause and GATED by the trade floor.
+VERDICT_MIN_TRADES = 50
+VERDICT_MIN_DAYS = 14
+
+#: The hard floor. Below this NO verdict is issued whatever the clock says — the
+#: sleeve stays in shadow and keeps accruing, which costs nothing because shadow
+#: uses no capital. A slow edge is then never stuck (it promotes the moment it
+#: has evidence) and never killed on three fills.
+MIN_VERDICT_TRADES = 20
+
+#: Kept as an alias so callers that still speak in days do not silently get a
+#: different meaning. It is a TRIGGER, never a licence to decide.
+MIN_SHADOW_DAYS = VERDICT_MIN_DAYS
 
 #: Forward evidence required to promote. The t-statistic is computed on days the
 #: cell could not have been fitted to, which is the entire point.
@@ -99,6 +120,9 @@ class Candidate:
     #: align two sleeves for the marginal-growth test — a bare list of returns
     #: cannot say which days two sleeves shared.
     forward_days_idx: list = field(default_factory=list)
+    #: FILLS behind those daily returns. The promotion floor counts these, not
+    #: rows: one row is one DAY, and a day can carry six fills or one.
+    forward_trades: int = 0
     notes: list = field(default_factory=list)
 
     # ------------------------------------------------------------- forward stats
@@ -173,7 +197,8 @@ def to_shadow(c: Candidate) -> Candidate:
     return c
 
 
-def observe(c: Candidate, r: float, day: Optional[str] = None) -> Candidate:
+def observe(c: Candidate, r: float, day: Optional[str] = None,
+            n_trades: int = 1) -> Candidate:
     """Record one forward day. The only kind of evidence that promotes.
 
     `day` is optional but wanted: marginal-growth ranking needs to know WHICH
@@ -190,6 +215,7 @@ def observe(c: Candidate, r: float, day: Optional[str] = None) -> Candidate:
     if day is not None:
         c.forward_days_idx.append(str(day))
     c.shadow_days = len(c.forward_r)
+    c.forward_trades += max(int(n_trades), 0)
     return c
 
 
@@ -215,6 +241,19 @@ def _normal_sf(t: float) -> float:
     return 0.5 * math.erfc(t / math.sqrt(2.0))
 
 
+def eligible_for_verdict(c: Candidate) -> bool:
+    """Has this cell earned a verdict yet?
+
+    TRIGGERED by 50 fills or 14 days, GATED by a 20-fill floor. The floor is the
+    part that matters: it is what stops a fourteen-day clock from executing a
+    slow edge on three fills.
+    """
+    if c.forward_trades < MIN_VERDICT_TRADES:
+        return False
+    return (c.forward_trades >= VERDICT_MIN_TRADES
+            or len(c.forward_r) >= VERDICT_MIN_DAYS)
+
+
 def consider_promotion(c: Candidate, min_days: int = MIN_SHADOW_DAYS,
                        min_t: float = MIN_FORWARD_T) -> Candidate:
     """Promote ONE cell on forward evidence. Prefer promote_book() for a book.
@@ -234,7 +273,7 @@ def consider_promotion(c: Candidate, min_days: int = MIN_SHADOW_DAYS,
     """
     if c.status is not Status.SHADOW:
         return c
-    if c.shadow_days < min_days:
+    if not eligible_for_verdict(c):
         return c
     t = c.forward_t
     if t is None:
@@ -530,7 +569,7 @@ def promote_book(book: Sequence[Candidate], min_days: int = MIN_SHADOW_DAYS,
     a t of 0.3 merely because two is a small family.
     """
     eligible = [c for c in book
-                if c.status is Status.SHADOW and c.shadow_days >= min_days
+                if c.status is Status.SHADOW and eligible_for_verdict(c)
                 and c.forward_t is not None and (c.forward_mean or 0.0) > 0]
     m = len(eligible)
     if m == 0:
@@ -611,7 +650,9 @@ def review(c: Candidate, lookback: int = REVIEW_EVERY_DAYS) -> Candidate:
     re-arms. A cell that recovers goes back through shadow like anything else,
     because "it came back" is exactly what a noise cell looks like half the time.
     """
-    if c.status is not Status.LIVE or len(c.forward_r) < lookback + 10:
+    if c.status is not Status.LIVE or c.forward_trades < MIN_VERDICT_TRADES:
+        return c
+    if len(c.forward_r) < lookback + 10:
         return c
     recent = c.forward_r[-lookback:]
     if statistics.fmean(recent) <= 0:

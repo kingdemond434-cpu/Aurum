@@ -13,7 +13,7 @@ from pathlib import Path
 
 from golddesk.growth import (MAX_DRAWDOWN_TOLERANCE, per_sleeve_heat,
                              solve_heat)
-from golddesk.promotion import (MIN_FORWARD_T, MIN_SHADOW_DAYS,
+from golddesk.promotion import (MIN_FORWARD_T, MIN_VERDICT_TRADES, VERDICT_MIN_TRADES,
                                 RAW_PSR_THRESHOLD, Candidate, Status, consider_promotion,
                                 load, observe, queue, report, review, save,
                                 screen, to_shadow)
@@ -59,7 +59,7 @@ def test_in_sample_alone_never_reaches_live():
 
 def test_promotion_requires_enough_forward_days():
     c = to_shadow(screen("x", 1.0, 0.99))
-    for _ in range(MIN_SHADOW_DAYS - 1):
+    for _ in range(MIN_VERDICT_TRADES - 1):
         observe(c, 0.5)
     consider_promotion(c)
     assert c.status is Status.SHADOW, "promoted below the day floor"
@@ -68,7 +68,7 @@ def test_promotion_requires_enough_forward_days():
 def test_promotion_on_real_forward_evidence():
     c = to_shadow(screen("x", 1.0, 0.99))
     rng = random.Random(4)
-    for _ in range(MIN_SHADOW_DAYS + 20):
+    for _ in range(VERDICT_MIN_TRADES + 20):
         observe(c, 0.30 + rng.gauss(0, 0.5))
     consider_promotion(c)
     assert c.status is Status.LIVE
@@ -79,7 +79,7 @@ def test_flat_forward_record_does_not_promote():
     """A noise cell reverts. Zero-mean forward days must not promote it."""
     c = to_shadow(screen("x", 3.0, 0.999))
     rng = random.Random(7)
-    for _ in range(MIN_SHADOW_DAYS + 40):
+    for _ in range(VERDICT_MIN_TRADES + 40):
         observe(c, rng.gauss(0, 0.5))
     consider_promotion(c)
     assert c.status is Status.SHADOW
@@ -110,7 +110,7 @@ def test_candidate_cannot_skip_shadow():
 def test_review_retires_a_decayed_live_cell():
     c = to_shadow(screen("x", 1.0, 0.99))
     rng = random.Random(11)
-    for _ in range(MIN_SHADOW_DAYS + 20):
+    for _ in range(VERDICT_MIN_TRADES + 20):
         observe(c, 0.30 + rng.gauss(0, 0.4))
     consider_promotion(c)
     assert c.status is Status.LIVE
@@ -413,3 +413,58 @@ def test_require_growth_false_restores_significance_only():
     dup = _shadow("D|f", [x + rng.gauss(0, 0.02) for x in base], dates)
     promote_book([live, dup], require_growth=False)
     assert dup.status is Status.LIVE
+
+
+# ------------------------------------------------- the cadence is TRADES, not days
+#
+# shadow_forward.py measured what a calendar clock costs: a cell firing ~80 times
+# a year makes about THREE fills in fourteen days, and a verdict on three fills
+# kills a genuinely good edge 36% of the time. These encode that lesson so a
+# future "simplification" back to a day count fails loudly.
+
+from golddesk.promotion import (VERDICT_MIN_DAYS,  # noqa: E402
+                                eligible_for_verdict)
+
+
+def test_a_slow_sleeve_is_not_judged_on_three_fills():
+    """THE LESSON. Fourteen days of a slow sleeve is three trades, and three
+    trades is not evidence in either direction."""
+    c = to_shadow(screen("slow", 1.0, 0.99))
+    for i in range(VERDICT_MIN_DAYS + 6):        # clock trigger satisfied
+        observe(c, 0.4, day=f"2026-02-{i + 1:02d}", n_trades=0)
+    observe(c, 0.4, day="2026-03-01", n_trades=3)
+    assert not eligible_for_verdict(c), "judged a sleeve on three fills"
+    consider_promotion(c)
+    assert c.status is Status.SHADOW
+
+
+def test_the_same_sleeve_is_judged_once_it_has_fills():
+    c = to_shadow(screen("slow", 1.0, 0.99))
+    rng = random.Random(31)
+    for i in range(30):
+        observe(c, 0.35 + rng.gauss(0, 0.4), day=f"2026-04-{i + 1:02d}",
+                n_trades=2)
+    assert c.forward_trades >= MIN_VERDICT_TRADES
+    assert eligible_for_verdict(c)
+    consider_promotion(c)
+    assert c.status is Status.LIVE
+
+
+def test_fifty_fills_triggers_even_inside_fourteen_days():
+    """A fast sleeve should not wait out a calendar clock it does not need."""
+    c = to_shadow(screen("fast", 1.0, 0.99))
+    rng = random.Random(32)
+    for i in range(5):                            # five days, ten fills each
+        observe(c, 0.35 + rng.gauss(0, 0.35), day=f"2026-05-{i + 1:02d}",
+                n_trades=10)
+    assert c.forward_trades >= VERDICT_MIN_TRADES
+    assert len(c.forward_r) < VERDICT_MIN_DAYS
+    assert eligible_for_verdict(c)
+
+
+def test_the_trade_floor_outranks_the_clock_in_both_directions():
+    c = to_shadow(screen("x", 1.0, 0.99))
+    for i in range(90):
+        observe(c, 0.4, day=f"2026-06-{i + 1:03d}", n_trades=0)
+    assert c.forward_trades == 0
+    assert not eligible_for_verdict(c), "ninety days of no fills is not evidence"

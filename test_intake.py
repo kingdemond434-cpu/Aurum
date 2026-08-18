@@ -13,8 +13,8 @@ from pathlib import Path
 
 from golddesk.intake import (budget_note, intake, promote_queue, read_sources,
                              record_day, run)
-from golddesk.promotion import (MIN_SHADOW_DAYS, Status, load, save, screen,
-                                to_shadow)
+from golddesk.promotion import (MIN_VERDICT_TRADES, VERDICT_MIN_TRADES,
+                                Status, load, save, screen, to_shadow)
 
 
 def _rows(n=3):
@@ -102,7 +102,7 @@ def test_forward_evidence_promotes_through_the_daily_path():
     book, _, _, _ = intake(_rows(1), [])
     promote_queue(book)
     rng = random.Random(2)
-    for _ in range(MIN_SHADOW_DAYS + 25):
+    for _ in range(VERDICT_MIN_TRADES + 25):
         record_day(book, {book[0].cell: 0.30 + rng.gauss(0, 0.4)})
     assert book[0].status is Status.LIVE
 
@@ -122,7 +122,7 @@ def test_a_book_of_noise_promotes_almost_nothing():
     book, _, _, _ = intake(rows, [])
     promote_queue(book)
     rng = random.Random(8)
-    for _ in range(MIN_SHADOW_DAYS + 60):
+    for _ in range(VERDICT_MIN_TRADES + 60):
         record_day(book, {c.cell: rng.gauss(0, 0.5) for c in book})
     live = sum(1 for c in book if c.status is Status.LIVE)
     assert live <= 2, f"{live} of 40 pure-noise cells reached LIVE"
@@ -137,7 +137,7 @@ def test_a_real_edge_still_promotes_among_noise():
     book, _, _, _ = intake(rows, [])
     promote_queue(book)
     rng = random.Random(5)
-    for _ in range(MIN_SHADOW_DAYS + 60):
+    for _ in range(VERDICT_MIN_TRADES + 60):
         obs = {c.cell: rng.gauss(0, 0.5) for c in book}
         obs["REAL|fam|rr=2.0"] = 0.45 + rng.gauss(0, 0.4)
         record_day(book, obs)

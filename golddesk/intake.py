@@ -116,12 +116,18 @@ def promote_queue(book: list, slots: Optional[int] = MAX_SHADOW) -> list:
     return started
 
 
-def record_day(book: list, returns: dict, day: Optional[str] = None) -> int:
+def record_day(book: list, returns: dict, day: Optional[str] = None,
+                trades: Optional[dict] = None) -> int:
     """Post one forward day per shadow/live cell, then re-evaluate every one.
 
     `day` is passed through to observe() because the marginal-growth gate needs
     to know which calendar days two sleeves shared. Omitting it does not break
     anything; it downgrades promotion to the significance test alone.
+
+    `trades` carries how many FILLS produced each day's R. The promotion floor
+    counts fills rather than rows, because one row is one day and a day can hold
+    six fills or one — judging a slow sleeve on rows is how a calendar clock ends
+    up executing it on three trades.
 
     Cells absent from `returns` get NOTHING, not a zero. A day a sleeve did not
     trade is not a day it broke even, and writing zeros would dilute the forward
@@ -135,7 +141,8 @@ def record_day(book: list, returns: dict, day: Optional[str] = None) -> int:
         v = returns.get(c.cell)
         if v is None:
             continue
-        observe(c, float(v), day=day)
+        observe(c, float(v), day=day,
+                n_trades=int((trades or {}).get(c.cell, 1)))
         n += 1
     # BOOK-LEVEL, not cell-by-cell. Promoting each cell against a fixed t
     # ignores that the forward gate is a multiple test across everything
@@ -151,7 +158,8 @@ def run(book_path: Path = DEFAULT_BOOK,
         sources: Sequence[Path] = DEFAULT_SOURCES,
         returns: Optional[dict] = None,
         slots: Optional[int] = MAX_SHADOW,
-        day: Optional[str] = None) -> tuple:
+        day: Optional[str] = None,
+        trades: Optional[dict] = None) -> tuple:
     """One daily pass. Returns (book, summary text)."""
     book = load(book_path)
     before = len(book)
@@ -159,7 +167,8 @@ def run(book_path: Path = DEFAULT_BOOK,
     book, added, skipped, rejected = intake(rows, book)
     started = promote_queue(book, slots)
     posted = record_day(book, returns or {},
-                        day=day or str(datetime.now(timezone.utc).date()))
+                        day=day or str(datetime.now(timezone.utc).date()),
+                        trades=trades)
     save(book, book_path)
 
     by = {s: sum(1 for c in book if c.status is s) for s in Status}
