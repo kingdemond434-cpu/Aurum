@@ -210,6 +210,20 @@ def test_positions_says_flat_rather_than_nothing(desk):
     assert "flat" in B.cmd_positions(desk)
 
 
+def test_growth_reports_a_derived_size_from_the_live_ledger(desk):
+    """The sizing module is reachable from the channel, not shelf-ware."""
+    out = B.cmd_growth(desk)
+    assert "DERIVED, not chosen" in out or "watched long enough" in out
+
+
+def test_growth_on_an_unwatched_book_refuses_to_name_a_size(tmp_path):
+    p = tmp_path / "l.jsonl"
+    p.write_text("")
+    cfg = B.BotConfig(token="T", chat_id="1", state_path=tmp_path / "s.json",
+                      ledger_path=p, halt_path=tmp_path / "H")
+    assert "watched long enough" in B.cmd_growth(cfg)
+
+
 def test_help_lists_exactly_the_whitelist(desk):
     """A command reachable but undocumented is a command nobody audits."""
     text = B.cmd_help(desk)

@@ -102,4 +102,10 @@ echo
 echo "3. Only once preflight passes:"
 echo "     sudo systemctl enable --now aurum-desk"
 echo "     journalctl -u aurum-desk -f"
+echo
+echo "4. The control channel, so you can ask the desk things instead of"
+echo "   SSH-ing in to read files. Separate unit on purpose: a bot that dies"
+echo "   with the desk cannot answer 'is the desk alive?'."
+echo "     sudo systemctl enable --now aurum-bot"
+echo "     then message your bot /help"
 echo "=============================================================="

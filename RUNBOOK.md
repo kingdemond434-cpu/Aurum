@@ -331,6 +331,46 @@ curl -s -X POST "https://api.telegram.org/botYOUR_TOKEN/sendMessage" \
 **Every message will be tagged `[SHADOW]`.** That is correct. Do not remove
 `--shadow` until you have weeks of forward evidence.
 
+### The control channel
+
+```bash
+sudo systemctl enable --now aurum-bot
+```
+
+Then message your bot `/help`. It answers:
+
+| command | what it tells you |
+|---|---|
+| `/status` | alive, halted, bars, ticks, reconnects, stale suspensions |
+| `/positions` | the open position in the checkpoint |
+| `/recent` | last 10 decisions |
+| `/refusals` | last 10 refusals **and what each one cost** |
+| `/pnl` | resolved R and hit rate — R, never currency |
+| `/growth` | risk per trade and heat budget, solved from the ledger |
+| `/why` | the reasoning behind the last decision |
+| `/halt` / `/resume` | stand the desk down, and bring it back |
+
+Three things worth knowing about it:
+
+**It is a separate unit from the desk, deliberately.** A bot running inside
+`aurum-desk` dies with it, so the one question you most want answered — *is the
+desk alive?* — is exactly the one it could not answer.
+
+**Only your chat id can command it.** Checked on every message, not just the
+first. Anyone else who finds the bot gets silence; an error reply would confirm
+there is something there worth attacking. If you ever change chat (new group,
+new account), update `secrets/telegram_chat_id` or the bot will ignore you too.
+
+**`/halt` stops the desk deciding; it closes nothing.** Aurum has never held a
+position — whatever is open is open in your terminal, and stays open. The halt
+is a file (`state/HALTED`), so it survives a restart and you can set or clear it
+by hand during an incident:
+
+```bash
+sudo -u aurum touch /opt/aurum/state/HALTED     # same as /halt
+sudo -u aurum rm    /opt/aurum/state/HALTED     # same as /resume
+```
+
 ### Tick integrity
 
 Every quote is checked before anything acts on it — crossed quotes, decimal

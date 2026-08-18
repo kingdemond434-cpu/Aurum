@@ -1,0 +1,72 @@
+# /etc/systemd/system/aurum-bot.service
+#
+# The Telegram control channel. Read-only interrogation of the desk, plus the
+# halt flag.
+#
+#   sudo systemctl enable --now aurum-bot
+#   journalctl -u aurum-bot -f
+#
+# WHY THIS IS A SEPARATE UNIT AND NOT A THREAD IN THE DESK
+#
+# The whole value of a control channel is answering when the thing it monitors
+# is in trouble. A thread inside aurum-desk dies with it, so the one question
+# you most want answered — "is the desk alive?" — is exactly the one it cannot
+# answer. Separate process, separate restart policy, no shared memory: they
+# communicate through the state files the desk already writes and through one
+# flag file.
+#
+# It is also why the hardening below is TIGHTER than the desk's. This process
+# accepts input from the internet; the desk does not.
+
+[Unit]
+Description=Aurum Telegram control bot (read-only + halt)
+After=network-online.target
+Wants=network-online.target
+# Deliberately NOT After=aurum-desk.service. The bot must come up and stay up
+# whether or not the desk is running — a control channel that only works when
+# the monitored process is healthy is a status light wired to its own power.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=aurum
+Group=aurum
+WorkingDirectory=/opt/aurum
+EnvironmentFile=-/opt/aurum/.env
+ExecStart=/opt/aurum/.venv/bin/python -m golddesk.bot \
+    --secrets /opt/aurum/secrets \
+    --state /opt/aurum/state/service_state.json \
+    --ledger /opt/aurum/state/ledger.jsonl
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Hardening. This process takes instructions from outside the machine, so it
+# gets less than the desk does, not more.
+#
+# ReadWritePaths is /opt/aurum/state ALONE — the bot's only write is the halt
+# flag. It cannot touch the ledger it reads, the logs, or the code. A control
+# channel that could rewrite the evidence would make the evidence worthless.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/aurum/state
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# Outbound HTTPS to api.telegram.org only needs INET; nothing here listens.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

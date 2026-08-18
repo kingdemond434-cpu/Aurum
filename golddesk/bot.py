@@ -268,6 +268,24 @@ def cmd_pnl(cfg: BotConfig) -> str:
     ])
 
 
+def cmd_growth(cfg: BotConfig) -> str:
+    """The derived risk fraction and heat budget, solved from the live ledger.
+
+    Read-only like everything else here: it reports what the evidence currently
+    supports. Nothing in this process sizes anything — the desk is advisory and
+    the operator places every order by hand.
+    """
+    rows = _tail_ledger(cfg.ledger_path, n=20000)
+    rs = [float(r["realised_r"]) for r in rows
+          if isinstance(r.get("realised_r"), (int, float))]
+    if not rs:
+        return ("no resolved R-multiples yet, so no size is supported.\n"
+                "That is not a zero-risk book — it is a book nobody has watched "
+                "long enough to solve a size from.")
+    from golddesk.growth import recommend
+    return recommend(rs, rows=rows).render()
+
+
 def cmd_why(cfg: BotConfig) -> str:
     """The reasoning behind the most recent decision, whatever kind it was."""
     rows = _tail_ledger(cfg.ledger_path)
@@ -309,6 +327,7 @@ def cmd_help(cfg: BotConfig) -> str:
         "/recent      last 10 decisions",
         "/refusals    last 10 refusals and what they cost",
         "/pnl         resolved R, hit rate",
+        "/growth      risk per trade and heat, derived from the ledger",
         "/why         the reasoning behind the last decision",
         "/halt        ask the desk to stand down",
         "/resume      clear the halt",
@@ -331,6 +350,7 @@ COMMANDS: dict[str, Callable[[BotConfig], str]] = {
     "/recent": cmd_recent,
     "/refusals": cmd_refusals,
     "/pnl": cmd_pnl,
+    "/growth": cmd_growth,
     "/why": cmd_why,
     "/halt": cmd_halt,
     "/resume": cmd_resume,
