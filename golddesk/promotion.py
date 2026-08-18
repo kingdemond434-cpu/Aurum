@@ -95,6 +95,10 @@ class Candidate:
     registered_at: str = ""
     shadow_days: int = 0
     forward_r: list = field(default_factory=list)
+    #: Dates parallel to forward_r, when the caller supplies them. Needed to
+    #: align two sleeves for the marginal-growth test — a bare list of returns
+    #: cannot say which days two sleeves shared.
+    forward_days_idx: list = field(default_factory=list)
     notes: list = field(default_factory=list)
 
     # ------------------------------------------------------------- forward stats
@@ -169,15 +173,40 @@ def to_shadow(c: Candidate) -> Candidate:
     return c
 
 
-def observe(c: Candidate, r: float) -> Candidate:
-    """Record one forward day. The only kind of evidence that promotes."""
+def observe(c: Candidate, r: float, day: Optional[str] = None) -> Candidate:
+    """Record one forward day. The only kind of evidence that promotes.
+
+    `day` is optional but wanted: marginal-growth ranking needs to know WHICH
+    days two sleeves shared, and a bare list of returns cannot say. Without
+    dates the growth test falls back to positional alignment, which is only
+    correct when every sleeve traded every day — so a caller that omits dates
+    gets the weaker test rather than a silently wrong one.
+    """
     if c.status not in (Status.SHADOW, Status.LIVE):
         return c
     if not math.isfinite(r):
         return c
     c.forward_r.append(float(r))
+    if day is not None:
+        c.forward_days_idx.append(str(day))
     c.shadow_days = len(c.forward_r)
     return c
+
+
+def _aligned(a: Candidate, b_series: dict) -> tuple:
+    """A candidate's forward returns aligned to a dated portfolio series.
+
+    Returns (portfolio_on_shared_days, candidate_on_shared_days). Empty when the
+    candidate carries no dates — absence of alignment must not be papered over
+    with positional zipping of two differently-scheduled series.
+    """
+    if not a.forward_days_idx or len(a.forward_days_idx) != len(a.forward_r):
+        return [], []
+    shared = [d for d in a.forward_days_idx if d in b_series]
+    if not shared:
+        return [], []
+    idx = {d: r for d, r in zip(a.forward_days_idx, a.forward_r)}
+    return [b_series[d] for d in shared], [idx[d] for d in shared]
 
 
 def _normal_sf(t: float) -> float:
@@ -226,9 +255,269 @@ def consider_promotion(c: Candidate, min_days: int = MIN_SHADOW_DAYS,
 FALSE_DISCOVERY_RATE = 0.10
 
 
+#: Drawdown the marginal-growth comparison is solved to. Both books are sized to
+#: the SAME tolerance before their growth is compared, so the winner is the one
+#: with the better edge rather than the one handed more leverage.
+GROWTH_TOLERANCE = 0.35
+
+
+def _log_growth(q: float, v: Sequence[float]) -> float:
+    tot = 0.0
+    for r in v:
+        x = 1.0 + q * r
+        if x <= 0:
+            return float("-inf")
+        tot += math.log(x)
+    return tot / len(v) if v else 0.0
+
+
+def _solve_q(v: Sequence[float], tolerance: float) -> float:
+    """Largest q whose worst drawdown stays inside `tolerance`. Half-edge."""
+    if len(v) < 30:
+        return 0.0
+    shift = 0.5 * (sum(v) / len(v))
+    s = [r - shift for r in v]
+    if sum(s) / len(s) <= 0:
+        return 0.0
+
+    def dd(q: float) -> float:
+        eq = peak = 1.0
+        worst = 0.0
+        for r in s:
+            eq *= (1.0 + q * r)
+            if eq <= 0:
+                return 1.0
+            peak = max(peak, eq)
+            worst = max(worst, 1.0 - eq / peak)
+        return worst
+
+    lo, hi = 0.0, 0.60
+    for _ in range(50):
+        mid = 0.5 * (lo + hi)
+        if dd(mid) > tolerance:
+            hi = mid
+        else:
+            lo = mid
+    return lo
+
+
+def marginal_growth(candidate: Candidate, live_series: dict,
+                    n_live: int = 1,
+                    tolerance: float = GROWTH_TOLERANCE) -> Optional[float]:
+    """Change in the book's LOG GROWTH from adding this sleeve. None if unknowable.
+
+    THE QUESTION A FORWARD t-STATISTIC DOES NOT ASK
+
+    A significant forward edge says the sleeve makes money on its own. It does
+    not say the BOOK grows faster for holding it, and those come apart exactly
+    when the sleeve is correlated with what is already held: adding a real edge
+    at rho 0.7 raises risk more than return and lowers geometric growth. The
+    admission condition SR_new > SR_book x rho is the closed form of the same
+    idea, and this is its direct measurement on forward days.
+
+    Both books are solved to the SAME drawdown tolerance before comparison, so
+    the answer is about edge quality and not about which was handed more
+    leverage. Growth is E[ln(1+qR)] — the rate the account actually compounds at
+    — because the arithmetic mean is what makes a book look good while it
+    shrinks.
+    """
+    port, cand = _aligned(candidate, live_series)
+    if len(port) < 30:
+        return None
+    before = [p for p in port]
+    # THE NEW SLEEVE'S WEIGHT IS 1/(N+1), NOT ONE HALF.
+    #
+    # A 50/50 blend is not "add a sleeve", it is "rewrite the book around it",
+    # and this module's own test caught the difference: two mutually redundant
+    # candidates BOTH cleared the gate, because at 50% weight each was really
+    # being scored on how far it dragged the book toward its own higher mean
+    # rather than on what it added. Weighting the addition correctly makes the
+    # measurement marginal, which is the only thing the answer is useful for.
+    n = max(int(n_live), 1)
+    w_new = 1.0 / (n + 1)
+    after = [p * (1.0 - w_new) + c * w_new for p, c in zip(port, cand)]
+    q0, q1 = _solve_q(before, tolerance), _solve_q(after, tolerance)
+    if q0 <= 0 or q1 <= 0:
+        return None
+    s0 = 0.5 * (sum(before) / len(before))
+    s1 = 0.5 * (sum(after) / len(after))
+    g0 = _log_growth(q0, [r - s0 for r in before])
+    g1 = _log_growth(q1, [r - s1 for r in after])
+    if not (math.isfinite(g0) and math.isfinite(g1)):
+        return None
+    return g1 - g0
+
+
+def live_series_of(book: Sequence[Candidate]) -> dict:
+    """Dated daily series of the current LIVE book, equal-weighted by day."""
+    return series_of([c for c in book if c.status is Status.LIVE])
+
+
+def series_of(cells: Sequence[Candidate]) -> dict:
+    """Dated daily series of ANY set of cells, equal-weighted per day.
+
+    Weighted by the sleeves that actually traded each day, not by the full
+    roster: a sleeve that sat out contributes nothing rather than a zero, so a
+    quiet day is not scored as a break-even day for everyone.
+    """
+    acc: dict = {}
+    for c in cells:
+        if len(c.forward_days_idx) != len(c.forward_r):
+            continue
+        for d, r in zip(c.forward_days_idx, c.forward_r):
+            acc.setdefault(d, []).append(r)
+    return {d: sum(v) / len(v) for d, v in acc.items()}
+
+
+def book_growth(series: dict, tolerance: float = GROWTH_TOLERANCE) -> Optional[float]:
+    """E[ln(1+qR)] of a dated book at the q its own drawdown tolerance allows.
+
+    THE OBJECTIVE THE WHOLE PIPELINE MAXIMISES. Log growth, not arithmetic
+    return, because the account compounds geometrically and the two come apart
+    exactly where it matters — a book can have a rising arithmetic mean and a
+    falling geometric one, and that book shrinks while its statistics improve.
+
+    Solved to a fixed drawdown so two books are always compared at the same
+    risk. Comparing at the same SIZE would just report which was handed more
+    leverage.
+    """
+    if len(series) < 30:
+        return None
+    v = [series[d] for d in sorted(series)]
+    q = _solve_q(v, tolerance)
+    if q <= 0:
+        return None
+    shift = 0.5 * (sum(v) / len(v))
+    g = _log_growth(q, [r - shift for r in v])
+    return g if math.isfinite(g) else None
+
+
+#: Correlation above which two sleeves are the SAME BET wearing two names.
+#: Matches deflation.CLONE_RHO. Below it, two correlated sleeves genuinely
+#: diversify a little; above it they do not, and only the better may be held.
+CLONE_RHO = 0.90
+
+
+def _corr(a: Sequence[float], b: Sequence[float]) -> Optional[float]:
+    n = len(a)
+    if n < 30:
+        return None
+    ma, mb = sum(a) / n, sum(b) / n
+    saa = sum((x - ma) ** 2 for x in a)
+    sbb = sum((y - mb) ** 2 for y in b)
+    if saa <= 0 or sbb <= 0:
+        return None
+    return sum((x - ma) * (y - mb) for x, y in zip(a, b)) / math.sqrt(saa * sbb)
+
+
+def clone_of(candidate: Candidate, live: Sequence[Candidate]) -> Optional[Candidate]:
+    """The live sleeve this candidate duplicates, if any.
+
+    WITHOUT THIS THE GROWTH TEST CANNOT SEE A DUPLICATE. The book series is
+    equal-weighted per day, so adding a second copy of a strong sleeve shifts
+    the average toward it and the log growth genuinely RISES — the measurement
+    cannot distinguish "a new source of return" from "more weight on the one
+    already held". This module's own test caught two near-identical candidates
+    both clearing the gate at +0.0236 and +0.0095 a day.
+
+    Correlation answers directly what the weighting cannot. Above CLONE_RHO the
+    only legal move is REPLACE, so the book keeps the better of the two rather
+    than both.
+    """
+    idx = {d: r for d, r in zip(candidate.forward_days_idx, candidate.forward_r)}
+    if not idx:
+        return None
+    for c in live:
+        shared = [d for d in c.forward_days_idx if d in idx]
+        if len(shared) < 30:
+            continue
+        cmap = {d: r for d, r in zip(c.forward_days_idx, c.forward_r)}
+        r = _corr([cmap[d] for d in shared], [idx[d] for d in shared])
+        if r is not None and r >= CLONE_RHO:
+            return c
+    return None
+
+
+@dataclass
+class Action:
+    """What to do with one shadow candidate, and what it is worth.
+
+    `gain` is the improvement in the book's log growth per day. Positive means
+    the book compounds faster for acting; ADD and REPLACE are both permitted and
+    the larger gain wins, because "can these coexist" is a question about
+    correlation rather than about seniority.
+    """
+    kind: str                    # "ADD" | "REPLACE" | "HOLD"
+    candidate: Candidate
+    gain: float = 0.0
+    victim: Optional[Candidate] = None
+    why: str = ""
+    #: Growth could not be scored at all — an empty book, or too few shared
+    #: days. NOT the same as a gain of zero, and conflating them is a real bug:
+    #: the greedy loop filters on gain > 0, so a "not applicable" action worth
+    #: 0.0 was silently dropped and the FIRST sleeve could never reach live.
+    #: Not-measurable must fall through to the significance test, never to a
+    #: refusal.
+    forced: bool = False
+
+
+def best_action(candidate: Candidate, book: Sequence[Candidate],
+                tolerance: float = GROWTH_TOLERANCE) -> Action:
+    """ADD, REPLACE or HOLD — whichever maximises the book's log growth.
+
+    REPLACEMENT IS A FIRST-CLASS MOVE. A new sleeve that cannot be added because
+    it duplicates an incumbent may still be BETTER than that incumbent, and a
+    pipeline that can only append will hold the worse of two correlated edges
+    forever purely because it arrived first. Every live sleeve is tested as a
+    swap target and the best move wins.
+    """
+    live = [c for c in book if c.status is Status.LIVE]
+    if not live:
+        return Action("ADD", candidate, 0.0, None,
+                      "empty book: nothing to be correlated with, so growth is "
+                      "not applicable rather than failed", forced=True)
+    now = book_growth(live_series_of(book), tolerance)
+    if now is None:
+        return Action("ADD", candidate, 0.0, None,
+                      "live book has too few shared days to score; admitted on "
+                      "significance alone", forced=True)
+    best = Action("HOLD", candidate, 0.0, None, "")
+    twin = clone_of(candidate, live)
+    g_add = None if twin is not None else book_growth(
+        series_of(live + [candidate]), tolerance)
+    if twin is None and g_add is None:
+        return Action("ADD", candidate, 0.0, None,
+                      "candidate shares too few days with the book to score "
+                      "growth; admitted on significance alone", forced=True)
+    if g_add is not None and g_add - now > best.gain:
+        best = Action("ADD", candidate, g_add - now, None,
+                      f"adding raises book log growth {now:+.6f} -> {g_add:+.6f}")
+    for victim in live:
+        keep = [c for c in live if c is not victim]
+        g_sw = book_growth(series_of(keep + [candidate]), tolerance)
+        if g_sw is None:
+            continue
+        if g_sw - now > best.gain:
+            best = Action("REPLACE", candidate, g_sw - now, victim,
+                          f"replacing {victim.cell} raises book log growth "
+                          f"{now:+.6f} -> {g_sw:+.6f}; the two cannot both pay "
+                          f"because they overlap, and this one pays more")
+    if best.kind == "HOLD":
+        best.why = (
+            (f"duplicates {twin.cell} at rho >= {CLONE_RHO} and does not beat it, "
+             f"so it cannot be added and is not worth swapping in. "
+             if twin is not None else "")
+            + f"neither adding nor replacing raises book log growth from "
+              f"{now:+.6f}. A real edge that does not compound the book is a "
+              f"correlated edge, not a new one.")
+    return best
+
+
 def promote_book(book: Sequence[Candidate], min_days: int = MIN_SHADOW_DAYS,
                  fdr: float = FALSE_DISCOVERY_RATE,
-                 floor_t: float = MIN_FORWARD_T) -> list:
+                 floor_t: float = MIN_FORWARD_T,
+                 require_growth: bool = True,
+                 tolerance: float = GROWTH_TOLERANCE) -> list:
     """Promote across the whole shadow book at a controlled false-discovery rate.
 
     Benjamini-Hochberg over every cell eligible on days: sort the one-sided
@@ -252,17 +541,66 @@ def promote_book(book: Sequence[Candidate], min_days: int = MIN_SHADOW_DAYS,
     for i, (p, _) in enumerate(scored, start=1):
         if p <= i * fdr / m:
             cutoff = i
-    promoted = []
-    for p, c in scored[:cutoff]:
-        if c.forward_t < floor_t:
-            continue
+    # TWO GATES, AND THEY ASK DIFFERENT QUESTIONS.
+    #
+    #   BH on the forward t  ->  is this sleeve's edge REAL?
+    #   marginal log growth  ->  does the BOOK compound faster for holding it?
+    #
+    # A sleeve can pass the first and fail the second: a genuine edge at rho 0.7
+    # against the existing book adds more risk than return and LOWERS geometric
+    # growth. Promoting on significance alone would keep adding real edges until
+    # the book stopped growing, which is the failure the five-versus-twelve
+    # comparison already demonstrated on historical data.
+    passed_stat = [(p, c) for p, c in scored[:cutoff] if c.forward_t >= floor_t]
+    if not require_growth:
+        out = []
+        for p, c in passed_stat:
+            c.status = Status.LIVE
+            c.notes.append(f"PROMOTED on significance alone (t={c.forward_t:+.2f},"
+                           f" p={p:.4f}); growth gate disabled by the caller")
+            out.append(c)
+        return out
+
+    # GREEDY MAXIMISATION OF BOOK LOG GROWTH, RE-SCORED AFTER EVERY MOVE.
+    #
+    # Deploy as many edges as the book will carry, take every gain however
+    # small, and take none that shrink it. Each pass scores every remaining
+    # candidate as ADD or REPLACE against the CURRENT book, executes the single
+    # best positive move, and starts again — because one promotion changes what
+    # every other candidate is worth. Scoring once and executing a whole list
+    # would let two mutually redundant sleeves both clear the same stale
+    # baseline, which this module's own test caught happening.
+    # A list of pairs, not a dict: Candidate is a mutable dataclass and
+    # therefore unhashable, and making it hashable to suit a lookup here would
+    # invite identity bugs everywhere else it is stored.
+    pending = list(passed_stat)                 # [(p, candidate), ...]
+    promoted: list = []
+    while pending:
+        moves = [(best_action(c, book, tolerance), p) for p, c in pending]
+        moves = [(a, p) for a, p in moves
+                 if a.kind != "HOLD" and (a.gain > 0 or a.forced)]
+        if not moves:
+            break
+        moves.sort(key=lambda ap: -ap[0].gain)
+        act, p = moves[0]
+        c = act.candidate
+        if act.kind == "REPLACE" and act.victim is not None:
+            act.victim.status = Status.RETIRED
+            act.victim.notes.append(
+                f"REPLACED by {c.cell}: {act.why}. Retired for growth, not for "
+                f"decay — it may still have a positive edge of its own.")
         c.status = Status.LIVE
         c.notes.append(
-            f"PROMOTED on {c.shadow_days} forward days, mean "
+            f"PROMOTED ({act.kind}) on {c.shadow_days} forward days, mean "
             f"{c.forward_mean:+.4f}R, t={c.forward_t:+.2f}, p={p:.4f} — cleared "
             f"Benjamini-Hochberg at FDR {fdr:.0%} against {m} concurrent shadow "
-            f"cells, so the forward gate was corrected for its own multiplicity")
+            f"cells. {act.why}. Book log growth +{act.gain:.6f}/day.")
         promoted.append(c)
+        pending = [(pp, cc) for pp, cc in pending if cc is not c]
+
+    for _, c in pending:
+        a = best_action(c, book, tolerance)
+        c.notes.append(f"HELD IN SHADOW: {a.why}")
     return promoted
 
 

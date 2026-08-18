@@ -263,3 +263,153 @@ def test_per_sleeve_heat_zeroes_negative_sleeves():
 def test_per_sleeve_heat_all_negative_gives_nothing():
     w = per_sleeve_heat(0.05, {"a": -0.1, "b": -0.2})
     assert sum(w.values()) == 0.0
+
+
+# ------------------------------------------------- the marginal-growth gate
+#
+# These are the tests that separate "this sleeve makes money" from "the book
+# compounds faster for holding it". Every one supplies DATES, because without
+# them the growth test is not applicable and the gate silently degrades to the
+# significance test it is meant to sit behind.
+
+from golddesk.promotion import (GROWTH_TOLERANCE, live_series_of,  # noqa: E402
+                                marginal_growth, promote_book)
+
+
+def _days(n):
+    return [f"2026-01-{i + 1:04d}" for i in range(n)]
+
+
+def _shadow(cell, seq, dates):
+    c = to_shadow(screen(cell, 1.0, 0.99))
+    for r, d in zip(seq, dates):
+        observe(c, r, day=d)
+    return c
+
+
+def test_a_redundant_edge_is_held_even_though_it_is_real():
+    """THE POINT OF THE GATE. A duplicate of the live book has a real forward
+    edge and adds nothing, so it must not be promoted."""
+    rng = random.Random(3)
+    n = 300
+    dates = _days(n)
+    base = [0.35 + rng.gauss(0, 0.4) for _ in range(n)]
+    live = _shadow("LIVE|fam", base, dates)
+    live.status = Status.LIVE
+    # a near-copy: same days, same returns plus a whisper of noise
+    dup = _shadow("DUP|fam", [b + rng.gauss(0, 0.02) for b in base], dates)
+    promote_book([live, dup])
+    assert dup.status is Status.SHADOW
+    assert any("does not compound the book" in n for n in dup.notes)
+
+
+def test_an_uncorrelated_edge_of_the_same_size_is_promoted():
+    """The control for the test above: same edge, independent, must go live."""
+    rng = random.Random(4)
+    n = 300
+    dates = _days(n)
+    live = _shadow("LIVE|fam", [0.35 + rng.gauss(0, 0.4) for _ in range(n)], dates)
+    live.status = Status.LIVE
+    indep = _shadow("INDEP|fam",
+                    [0.35 + rng.gauss(0, 0.4) for _ in range(n)], dates)
+    promote_book([live, indep])
+    assert indep.status is Status.LIVE
+
+
+def test_marginal_growth_is_negative_for_a_duplicate():
+    rng = random.Random(5)
+    n = 300
+    dates = _days(n)
+    base = [0.35 + rng.gauss(0, 0.4) for _ in range(n)]
+    live = _shadow("L|f", base, dates)
+    live.status = Status.LIVE
+    dup = _shadow("D|f", [b + rng.gauss(0, 0.02) for b in base], dates)
+    g = marginal_growth(dup, live_series_of([live]))
+    assert g is not None and g <= 0
+
+
+def test_first_sleeve_into_an_empty_book_needs_no_growth_test():
+    """Nothing to be correlated with — not applicable, not failed."""
+    rng = random.Random(6)
+    n = 300
+    c = _shadow("FIRST|f", [0.35 + rng.gauss(0, 0.4) for _ in range(n)], _days(n))
+    promote_book([c])
+    assert c.status is Status.LIVE
+
+
+def test_growth_unknowable_without_dates_falls_back_not_wrong():
+    """A caller that omits dates gets the weaker test, never a bogus alignment."""
+    rng = random.Random(7)
+    n = 300
+    live = to_shadow(screen("L|f", 1.0, 0.99))
+    cand = to_shadow(screen("C|f", 1.0, 0.99))
+    for _ in range(n):
+        observe(live, 0.35 + rng.gauss(0, 0.4))
+        observe(cand, 0.35 + rng.gauss(0, 0.4))
+    live.status = Status.LIVE
+    assert marginal_growth(cand, live_series_of([live])) is None
+    promote_book([live, cand])
+    assert cand.status is Status.LIVE
+
+
+def test_two_mutually_redundant_candidates_do_not_both_go_live():
+    """The baseline must refresh after every move.
+
+    Scoring once and executing a whole list lets two copies of the same idea
+    both clear the same stale baseline. Whichever wins may ADD or REPLACE; what
+    must not happen is both ending up live, because the second adds nothing the
+    first has not already brought.
+    """
+    rng = random.Random(8)
+    n = 300
+    dates = _days(n)
+    live = _shadow("L|f", [0.30 + rng.gauss(0, 0.5) for _ in range(n)], dates)
+    live.status = Status.LIVE
+    twin = [0.40 + rng.gauss(0, 0.4) for _ in range(n)]
+    a = _shadow("A|f", twin, dates)
+    b = _shadow("B|f", [t + rng.gauss(0, 0.02) for t in twin], dates)
+    promote_book([live, a, b])
+    assert not (a.status is Status.LIVE and b.status is Status.LIVE)
+
+
+def test_a_better_edge_replaces_a_worse_correlated_incumbent():
+    """REPLACEMENT IS A FIRST-CLASS MOVE. A pipeline that can only append holds
+    the worse of two correlated edges forever because it arrived first."""
+    rng = random.Random(12)
+    n = 320
+    dates = _days(n)
+    weak = [0.12 + rng.gauss(0, 0.45) for _ in range(n)]
+    incumbent = _shadow("WEAK|f", weak, dates)
+    incumbent.status = Status.LIVE
+    # same shape, materially better mean -> cannot coexist, should take over
+    better = _shadow("BETTER|f", [w + 0.28 for w in weak], dates)
+    promote_book([incumbent, better])
+    assert better.status is Status.LIVE
+    assert incumbent.status is Status.RETIRED
+    assert any("REPLACED by" in x for x in incumbent.notes)
+
+
+def test_every_positive_gain_is_taken_however_small():
+    """"Add everything that boosts growth, even a little." Three independent
+    edges must all reach live rather than stopping at the first."""
+    rng = random.Random(14)
+    n = 320
+    dates = _days(n)
+    cells = [_shadow(f"IND{i}|f",
+                     [0.30 + rng.gauss(0, 0.45) for _ in range(n)], dates)
+             for i in range(3)]
+    cells[0].status = Status.LIVE
+    promote_book(cells)
+    assert sum(1 for c in cells if c.status is Status.LIVE) == 3
+
+
+def test_require_growth_false_restores_significance_only():
+    rng = random.Random(9)
+    n = 300
+    dates = _days(n)
+    base = [0.35 + rng.gauss(0, 0.4) for _ in range(n)]
+    live = _shadow("L|f", base, dates)
+    live.status = Status.LIVE
+    dup = _shadow("D|f", [x + rng.gauss(0, 0.02) for x in base], dates)
+    promote_book([live, dup], require_growth=False)
+    assert dup.status is Status.LIVE
