@@ -347,6 +347,11 @@ def heat_budget(k_eff: Optional[float], base: float = BASE_HEAT) -> tuple:
     None routes to base. NOT-YET-MEASURED MUST NEVER READ AS INDEPENDENT — that
     is precisely how a correlated book sizes like a diversified one and finds
     out during the drawdown instead of before it.
+
+    PREFER solve_heat() WHERE DAILY RETURNS EXIST. This function multiplies a
+    CONSTANT by sqrt(k_eff), and that constant is a ceiling nobody derived — it
+    caps the book at 3.81% x sqrt(k) forever regardless of what the book
+    actually does. solve_heat measures the answer instead of assuming it.
     """
     if k_eff is None:
         return base, ("no measured breadth; heat at base. Absence of a "
@@ -355,6 +360,105 @@ def heat_budget(k_eff: Optional[float], base: float = BASE_HEAT) -> tuple:
     h = base * math.sqrt(k)
     return h, (f"heat {h:.2%} = base {base:.2%} x sqrt(k_eff {k:.2f}). Breadth "
                f"earned, budget widened.")
+
+
+def solve_heat(daily_returns: Sequence[float],
+               tolerance: float = MAX_DRAWDOWN_TOLERANCE,
+               half_edge: bool = True, hi: float = 0.60,
+               iters: int = 60) -> tuple:
+    """Total heat that puts THIS book at exactly `tolerance` drawdown. No constant.
+
+    WHY THIS REPLACES A HARDCODED BASE
+
+    BASE_HEAT is 3.81%, and nothing derives it. Multiplying it by sqrt(k_eff)
+    scales a number that was never measured, so the book is permanently capped
+    by a literal — it cannot grow past 3.81% x sqrt(k) however good it gets, and
+    it cannot shrink below it however bad. Both directions are wrong.
+
+    This solves instead. Bisect for the heat whose worst drawdown on the book's
+    OWN daily series equals the stated tolerance. Everything then moves on its
+    own: a book that adds genuinely independent sleeves has shallower drawdowns,
+    so the solve returns MORE heat without anyone widening a constant; a book
+    whose edge decays has deeper ones and the solve returns less on the next
+    call. The only input is the drawdown the principal will sit through.
+
+    HALF-EDGE BY DEFAULT, AND THAT IS WHAT MAKES IT SAFE TO BE AGGRESSIVE
+
+    The measured edge is biased upward — this book is the survivor of a search.
+    Solving on the raw series would size to a drawdown that only holds if the
+    in-sample number is exact. Solving on the half-edge series (a LOCATION
+    SHIFT, not a rescale) returns the heat that still respects the tolerance
+    when the edge turns out half as good, which is the aggressive choice rather
+    than the timid one: it is the largest size that survives being wrong.
+
+    Returns (heat, why). Heat of 0.0 when the series cannot support any size.
+    """
+    vals = [float(r) for r in daily_returns if math.isfinite(float(r))]
+    if len(vals) < 30:
+        return 0.0, (f"only {len(vals)} daily observations; a drawdown solved on "
+                     f"this is noise. No size authorised — the fix is more days, "
+                     f"not a fallback constant.")
+    if not 0 < tolerance < 1:
+        raise ValueError(f"tolerance {tolerance} must be in (0, 1)")
+    shift = 0.5 * (sum(vals) / len(vals)) if half_edge else 0.0
+    v = [r - shift for r in vals]
+
+    # A DRAWDOWN SOLVE IS NOT A PROFITABILITY TEST, and on its own it will
+    # cheerfully size a book that only loses. Bisecting on drawdown alone finds
+    # that a monotonically losing series stays inside ANY tolerance at a small
+    # enough q — a 200-day book of straight losses came back authorised at
+    # 0.21% heat, which is not safety, it is losing money slowly on purpose.
+    # Expectancy has to be checked separately and first.
+    mean_v = sum(v) / len(v)
+    if mean_v <= 0:
+        return 0.0, (f"mean daily return {mean_v:+.5f} at "
+                     + ("half edge" if half_edge else "full edge")
+                     + "; no size is correct for a book with no expectancy. A "
+                       "drawdown solve would still return a small positive heat "
+                       "here, because losing slowly stays inside any tolerance.")
+
+    def worst_dd(q: float) -> float:
+        eq, peak, worst = 1.0, 1.0, 0.0
+        for r in v:
+            eq *= (1.0 + q * r)
+            if eq <= 0:
+                return 1.0                      # ruin: treat as total drawdown
+            peak = max(peak, eq)
+            worst = max(worst, 1.0 - eq / peak)
+        return worst
+
+    lo, high = 0.0, float(hi)
+    for _ in range(iters):
+        mid = 0.5 * (lo + high)
+        if worst_dd(mid) > tolerance:
+            high = mid
+        else:
+            lo = mid
+    if lo <= 1e-6:
+        return 0.0, (f"no positive heat keeps this book inside a {tolerance:.0%} "
+                     f"drawdown; its own history is worse than the tolerance.")
+    return lo, (f"heat {lo:.2%} SOLVED from {len(vals)} days at a {tolerance:.0%} "
+                f"tolerance"
+                + (" on the half-edge series" if half_edge else " IN-SAMPLE")
+                + ". No constant: rises as the book earns breadth, falls as it "
+                  "decays, on every call.")
+
+
+def per_sleeve_heat(heat: float, expectancies: dict) -> dict:
+    """Split total heat by measured edge, not evenly.
+
+    EQUAL WEIGHTS ARE WHY BREADTH LOOKED DESTRUCTIVE. Splitting a fixed budget
+    N ways forces the best sleeve to surrender size to fund the worst: a
+    twelve-sleeve book cut its +0.21R gold sleeve to 0.42% in order to pay for a
+    +0.01R sleeve. Weighting by expectancy keeps the good sleeve whole and gives
+    the weak ones only what they earn, and a sleeve measured at or below zero
+    gets nothing at all rather than a share.
+    """
+    pos = {k: max(float(v), 0.0) for k, v in expectancies.items()}
+    tot = sum(pos.values())
+    if tot <= 0:
+        return {k: 0.0 for k in expectancies}
+    return {k: heat * v / tot for k, v in pos.items()}
 
 
 # ------------------------------------------------------------ the recommendation
