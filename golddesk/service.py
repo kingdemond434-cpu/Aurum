@@ -112,6 +112,11 @@ class ServiceConfig:
     state_path: Path = Path("state/service_state.json")
     ledger_path: Path = Path("state/ledger.jsonl")
     heartbeat_every_s: float = 900.0
+    # Presence of this file stands the desk down. A FILE rather than a signal or
+    # an in-process flag, so it survives a restart, can be set from the Telegram
+    # bot or by hand with `touch`, and is legible during an incident with `ls`.
+    # See golddesk/bot.py — a halt command nothing reads is theatre.
+    halt_path: Path = Path("state/HALTED")
 
 
 @dataclass
@@ -142,6 +147,7 @@ class DeskService:
         self._atrs: list = []
         self._rehydrated = False
         self._venue_shut = False
+        self._halted = False
         self._htf_cache = None
         self._htf_cached_at = 0.0
         from .tickguard import TickArchive, TickGuard
@@ -336,6 +342,37 @@ class DeskService:
         while not self._stop:
             if max_seconds and (time.monotonic() - started) > max_seconds:
                 return
+
+            # ---- STAND DOWN IF ASKED -----------------------------------
+            #
+            # Checked here, above the quote, because everything below this line
+            # either acts on price or spends a request to fetch it. A halt that
+            # only took effect at the next bar close would leave up to fifteen
+            # minutes between the operator asking the desk to stop and it
+            # stopping, which is the entire duration of the incident they are
+            # halting for.
+            #
+            # The desk keeps RUNNING — connection alive, state intact — it just
+            # decides nothing. Exiting the process instead would mean the way
+            # back is an SSH session rather than a chat message, and would drop
+            # the rehydration state that makes a mid-trade restart safe.
+            halted = self.cfg.halt_path.exists()
+            if halted != self._halted:
+                self._halted = halted
+                if halted:
+                    log.warning("HALT FLAG SET (%s) — the desk will decide nothing "
+                                "until it is cleared. Any position you hold is "
+                                "untouched; this desk has never placed an order.",
+                                self.cfg.halt_path)
+                    self._notify("*DESK HALTED* standing down — no new signals. "
+                                 "Your open trades are untouched. /resume to clear.")
+                else:
+                    log.info("halt flag cleared — desk active")
+                    self._notify("*DESK RESUMED* watching again.")
+            if halted:
+                time.sleep(self.cfg.idle_poll_seconds)
+                continue
+
             # ---- ONE quote per iteration -------------------------------
             #
             # This used to be `tick_is_stale()` immediately followed by

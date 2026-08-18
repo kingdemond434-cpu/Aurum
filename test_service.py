@@ -327,13 +327,61 @@ def test_multi_thesis():
     shutil.rmtree(out, ignore_errors=True)
 
 
+def test_halt_flag_stands_the_desk_down():
+    """A halt command nothing reads is theatre. The bot writes a file; this is
+    the half that makes the file mean something.
+
+    Checked by QUOTE COUNT rather than by a log line: the property is that the
+    desk stops LOOKING at the market, and a loop that kept polling while
+    printing "halted" would satisfy any weaker assertion.
+    """
+    print("\nHALT  the flag written by the bot actually stops the loop")
+    out = Path(tempfile.mkdtemp())
+    halt = out / "HALTED"
+    halt.write_text("set by test")
+
+    sink = RecordingSink()
+    f = FakeFeed(bars())
+    quotes = {"n": 0}
+    inner = f.quote
+
+    def counted():
+        quotes["n"] += 1
+        return inner()
+    f.quote = counted
+
+    svc = DeskService(make_desk(out, sink), f,
+                      ServiceConfig(state_path=out / "s.json",
+                                    ledger_path=out / "l.jsonl",
+                                    halt_path=halt, poll_seconds=0.001,
+                                    idle_poll_seconds=0.01))
+    svc.run(max_seconds=0.3)
+    check("halted desk fetches no quotes at all", quotes["n"] == 0,
+          f"quotes fetched while halted: {quotes['n']}")
+    check("the operator is told, once",
+          sum(1 for s in sink.sent if "HALTED" in s) == 1,
+          f"halt notices: {[s[:40] for s in sink.sent if 'HALTED' in s]}")
+
+    # ...and clearing it brings the desk back without a restart.
+    halt.unlink()
+    f2 = FakeFeed(bars())
+    svc2 = DeskService(make_desk(out, RecordingSink()), f2,
+                       ServiceConfig(state_path=out / "s2.json",
+                                     ledger_path=out / "l2.jsonl",
+                                     halt_path=halt, poll_seconds=0.001))
+    svc2.run(max_seconds=0.3)
+    check("cleared flag lets the desk look again", f2.connects >= 1)
+    shutil.rmtree(out, ignore_errors=True)
+
+
 def main():
     print("=" * 78)
     print("DESKSERVICE INTEGRATION TESTS — the daemon, not LiveDesk")
     print("=" * 78)
     for fn in (test_p0_1_stale_tuple, test_p0_3_closed_bar_contract,
                test_p0_2_rehydrate, test_p0_4_execution_side_and_cost,
-               test_reconnect_and_sink, test_multi_thesis):
+               test_reconnect_and_sink, test_multi_thesis,
+               test_halt_flag_stands_the_desk_down):
         try:
             fn()
         except Exception as e:
