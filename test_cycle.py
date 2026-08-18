@@ -287,3 +287,33 @@ def test_nothing_in_the_cycle_can_promote_or_loosen_a_gate():
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
             and n.func.attr in banned]
     assert not hits, f"the cycle can change authority: {hits}"
+
+
+# ------------------------------------------------- free driver feed is wired
+
+def test_attribution_falls_back_to_the_free_live_reading(desk, monkeypatch):
+    """A fitted decomposition needs history; today's reading is free and is
+    worth reporting on its own."""
+    from golddesk.drivers_free import DriverPoint
+    monkeypatch.setattr(
+        "golddesk.drivers_free.build_drivers",
+        lambda *a, **k: {"dxy": DriverPoint("dxy", 0.4, 104.0, None, "yahoo/X"),
+                         "vix": DriverPoint("vix", -2.0, 15.0, None, "yahoo/^VIX")})
+    out = C.step_attribution({})
+    assert "DRIVER COVERAGE" in out and "EXACT" in out
+
+
+def test_a_driver_fetch_failure_is_UNAVAILABLE_not_neutral(desk, monkeypatch):
+    monkeypatch.setattr("golddesk.drivers_free.build_drivers",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("net")))
+    out = C.step_attribution({})
+    assert "UNAVAILABLE" in out
+    assert "not the same as 'nothing was driving gold'" in out
+
+
+def test_nothing_observed_is_still_not_a_neutral_reading(desk, monkeypatch):
+    from golddesk.drivers_free import DriverPoint
+    monkeypatch.setattr(
+        "golddesk.drivers_free.build_drivers",
+        lambda *a, **k: {"dxy": DriverPoint("dxy", None, None, None, "UNAVAILABLE")})
+    assert "UNAVAILABLE" in C.step_attribution({})

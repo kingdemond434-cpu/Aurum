@@ -144,12 +144,26 @@ def step_attribution(ctx: dict) -> str:
     from golddesk.attribution import ATTRIBUTION_VERSION
     drivers = ctx.get("driver_series")
     if not drivers:
-        # HONEST UNAVAILABLE, not a neutral reading. The desk has no driver feed
-        # wired; saying "no drivers moved" would assert something nobody measured.
-        return (f"{ATTRIBUTION_VERSION}: no driver series supplied (DXY, real "
-                f"yields, breakevens, SPX, VIX). Attribution is UNAVAILABLE, "
-                f"which is not the same as 'nothing was driving gold'. Wire a "
-                f"provider into crossmarket.build_state to enable it.")
+        # No fitted decomposition without a history of driver moves, but the
+        # LIVE READING is available for free and is worth reporting on its own:
+        # "gold is up with the dollar up and real yields up" is a genuinely
+        # unusual configuration whether or not a regression is fitted yet.
+        try:
+            from golddesk.drivers_free import build_drivers, coverage_note
+            pts = build_drivers()
+        except Exception as e:                        # noqa: BLE001
+            return (f"{ATTRIBUTION_VERSION}: driver fetch failed "
+                    f"({type(e).__name__}: {e}). UNAVAILABLE, which is not the "
+                    f"same as 'nothing was driving gold'.")
+        ctx["drivers_today"] = pts
+        obs = sum(1 for p in pts.values() if p.observed)
+        head = coverage_note(pts)
+        if obs == 0:
+            return (head + "\n\n  Nothing observed. UNAVAILABLE, which is not the "
+                           "same as 'nothing was driving gold'.")
+        return (head + f"\n\n  Today's reading only. A fitted decomposition needs "
+                       f"a history of driver moves aligned to gold's; supply "
+                       f"`driver_series` in the context to enable it.")
     from golddesk.attribution import report as attrib_report
     from golddesk.attribution import rolling_attribution
     y, x, keys = drivers["y"], drivers["x"], drivers["keys"]
