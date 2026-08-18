@@ -433,8 +433,13 @@ def ablate(baskets: Sequence[Basket]) -> dict:
     deep = [t for b in baskets if b.depth >= 3 for t in b.trades]
 
     arms = [
-        _score("original (all fills)", all_t,
-               "the record as traded, in price units"),
+        # NOT "as traded". Every arm here is scored equal-weight in price units,
+        # so this one is the record with the sizing ladder already removed —
+        # naming it "original" implied it was the provider's actual result and
+        # made the verdict compare the wrong two numbers. What he actually
+        # earned is lot-weighted and lives in `lot_weighted` below.
+        _score("all fills, equal weight", all_t,
+               "every fill counted once, sizing ladder removed"),
         _score("first entry only", firsts,
                "THE DECISIVE ARM: the entry signal with no recovery layer"),
         _score("later entries only", later,
@@ -449,16 +454,26 @@ def ablate(baskets: Sequence[Basket]) -> dict:
     ]
     by_name = {a.name: a for a in arms}
     rec_free = by_name["first entry only"]
-    original = by_name["original (all fills)"]
+    equal_w = by_name["all fills, equal weight"]
+
+    # WHAT HE ACTUALLY EARNED. Lots times price movement — the only arm on this
+    # page that reflects the sizing ladder, and therefore the only one the
+    # verdict may compare against. Comparing an equal-weighted "original" to an
+    # equal-weighted ablation asks whether removing sizing changes a number that
+    # never contained sizing.
+    lot_weighted = sum(t.lots * t.pnl_price() for t in all_t if t.closed)
 
     if rec_free.n_trades == 0:
         verdict = "nothing closed; no decomposition possible"
-    elif rec_free.mean_price <= 0 < original.mean_price:
+    elif rec_free.mean_price <= 0 < lot_weighted:
         verdict = (
-            "THE RETURN IS THE RECOVERY LAYER. Entries alone lose in price terms; "
-            "the record is positive only because losers are held and added to "
-            "until they come back. There is no entry edge here to extract, and "
-            "copying this is taking the other side of a rare, total loss.")
+            f"THE RETURN IS THE RECOVERY LAYER. As traded the record is positive "
+            f"({lot_weighted:+.1f} lot-price units), but first entries alone "
+            f"average {rec_free.mean_price:+.3f} and every fill at equal weight "
+            f"averages {equal_w.mean_price:+.3f}. The record is positive only "
+            f"because losers are held and added to until they come back. There "
+            f"is no entry edge here to extract, and copying this is taking the "
+            f"other side of a rare, total loss.")
     elif rec_free.mean_price > 0:
         verdict = (
             f"THERE IS AN ENTRY EDGE. First entries alone average "
@@ -473,7 +488,8 @@ def ablate(baskets: Sequence[Basket]) -> dict:
         "version": REVERSE_VERSION,
         "arms": arms,
         "recovery_free_mean": rec_free.mean_price,
-        "original_mean": original.mean_price,
+        "equal_weight_mean": equal_w.mean_price,
+        "lot_weighted_total": lot_weighted,
         "verdict": verdict,
         "note": ("Scored in PRICE units, never currency. Currency folds the "
                  "sizing decision into the entry measurement — a martingale's "
@@ -481,6 +497,111 @@ def ablate(baskets: Sequence[Basket]) -> dict:
                  "currency-scored 'first entry only' arm looks terrible for "
                  "reasons unrelated to the entry."),
     }
+
+
+# -------------------------------------------------- fixed-risk normalisation
+
+@dataclass
+class FixedRisk:
+    """The provider's record with the sizing decision removed.
+
+    THE TEST THAT SETTLES IT. Everything else here describes the machine; this
+    one asks whether the machine would still make money if it were not allowed
+    to bet more after losing.
+    """
+    n: int
+    lot_weighted: float          # what the provider actually earned, in lot-price units
+    equal_weighted: float        # the same entries, every trade the same size
+    risk_normalised: Optional[float]   # same entries, every trade the same RISK
+    basis: str                   # STOP_DISTANCE | EQUAL_WEIGHT
+    sl_coverage: float
+    sizing_share: Optional[float]
+    verdict: str
+
+    def render(self) -> str:
+        rn = ("n/a" if self.risk_normalised is None else f"{self.risk_normalised:+.3f}")
+        share = ("n/a" if self.sizing_share is None else f"{self.sizing_share:.0%}")
+        return "\n".join([
+            f"FIXED-RISK NORMALISATION  (basis: {self.basis}, "
+            f"SL on {self.sl_coverage:.0%} of fills)",
+            f"  as traded (lot-weighted)   {self.lot_weighted:+.3f}",
+            f"  every trade same size      {self.equal_weighted:+.3f}",
+            f"  every trade same RISK      {rn}",
+            f"  share of return from sizing {share}",
+            f"  {self.verdict}",
+        ])
+
+
+def fixed_risk_normalisation(baskets: Sequence[Basket]) -> FixedRisk:
+    """Re-run the record with every trade carrying identical risk.
+
+    Three numbers, and the gaps between them are the finding:
+
+      LOT-WEIGHTED    what the provider earned. Lots times price movement, so a
+                      martingale's biggest leg dominates — as it does in reality.
+      EQUAL-WEIGHTED  the same entries, same order, every trade one unit. The
+                      sizing decision is gone; only entry and exit remain.
+      RISK-NORMALISED the same entries at constant RISK, dividing each trade's
+                      result by its own stop distance. This is the honest
+                      version when stops are reported, because equal SIZE on a
+                      $53 stop and a $6 stop are not equal risk.
+
+    If lot-weighted is positive and the others are not, the return is the sizing
+    ladder — the provider is paid for adding to losers, and that payment has a
+    counterparty in a tail the record does not contain.
+    """
+    trades = [t for b in baskets for t in b.trades if t.closed]
+    if not trades:
+        return FixedRisk(0, 0.0, 0.0, None, "EQUAL_WEIGHT", 0.0, None,
+                         "no closed trades")
+    lot_w = sum(t.lots * t.pnl_price() for t in trades)
+    eq_w = sum(t.pnl_price() for t in trades) / len(trades)
+
+    with_sl = [t for t in trades
+               if t.sl is not None and abs(t.open_price - t.sl) > 1e-9]
+    cov = len(with_sl) / len(trades)
+    if cov >= 0.5:
+        # R-multiples: each trade's outcome divided by what it risked. The only
+        # basis on which trades with different stops are commensurable.
+        rn = sum(t.pnl_price() / abs(t.open_price - t.sl) for t in with_sl) / len(with_sl)
+        basis = "STOP_DISTANCE"
+    else:
+        rn = None
+        basis = "EQUAL_WEIGHT"
+
+    # Share of the return attributable to sizing: how much of the lot-weighted
+    # result disappears once every trade is the same size. Normalised by total
+    # lots so the two are on the same scale.
+    total_lots = sum(t.lots for t in trades)
+    eq_at_scale = eq_w * total_lots
+    share = None
+    if abs(lot_w) > 1e-12:
+        share = max(0.0, min(1.0, 1.0 - (eq_at_scale / lot_w))) if lot_w > 0 else None
+
+    normalised = rn if rn is not None else eq_w
+    if lot_w > 0 and normalised <= 0:
+        verdict = (
+            "THE RETURN DOES NOT SURVIVE FIXED-RISK NORMALISATION. As traded it "
+            "is positive; with every trade carrying the same risk it is not. The "
+            "provider is not paid for being right, he is paid for betting more "
+            "after being wrong — and the counterparty to that payment is a tail "
+            "the record cannot contain. Do not deploy a descendant that inherits "
+            "the ladder.")
+    elif lot_w > 0 and normalised > 0:
+        verdict = (
+            f"THE RETURN SURVIVES FIXED-RISK NORMALISATION ({normalised:+.3f} per "
+            f"trade on a {basis.lower().replace('_', ' ')} basis). There is "
+            f"something in the entries and exits independent of the sizing "
+            f"ladder, and THAT is what a descendant should be built from.")
+    else:
+        verdict = ("the record is not positive as traded, so there is nothing for "
+                   "normalisation to explain away.")
+    if cov < 0.5:
+        verdict += (f" STOPS REPORTED ON ONLY {cov:.0%} OF FILLS, so this falls "
+                    f"back to equal SIZE rather than equal RISK. Equal size on a "
+                    f"wide stop and a tight one are not the same bet, and closing "
+                    f"that gap is the highest-value thing more data would buy.")
+    return FixedRisk(len(trades), lot_w, eq_w, rn, basis, cov, share, verdict)
 
 
 # -------------------------------------------------------- behavioural replication
@@ -548,9 +669,10 @@ def report(trades: Sequence[Trade], equity: Optional[float] = None) -> str:
     st = infer_structure(baskets)
     rf = ruin_forensics(baskets, st, equity)
     ab = ablate(baskets)
+    fr = fixed_risk_normalisation(baskets)
     lines = [f"REVERSE-ENGINEERING REPORT  ({REVERSE_VERSION})",
              f"  {len(trades)} fills -> {len(baskets)} baskets", "",
-             st.render(), "", rf.render(), "", "DECOMPOSITION"]
+             st.render(), "", fr.render(), "", rf.render(), "", "DECOMPOSITION"]
     lines += [a.render() for a in ab["arms"]]
     lines += ["", f"  {ab['verdict']}", "", f"  {ab['note']}", "",
               "  Nothing here promotes anything. A reconstructed strategy is a "

@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from golddesk.reverse import (
-    MIN_BASKETS, Basket, Trade, ablate, build_baskets, infer_structure,
+    MIN_BASKETS, Basket, Trade, ablate, build_baskets, fixed_risk_normalisation,
+    infer_structure,
     replicate, report, ruin_forensics)
 
 UTC = timezone.utc
@@ -23,26 +24,32 @@ def t(i, *, side="BUY", lots=0.01, opened=None, closed=None, op=2000.0,
                  open_price=op, close_price=cp, mae_price=mae)
 
 
-def martingale(n_baskets=40, depth=4, esc=2.0, retrace=True):
-    """A grid: adds only while underwater, all legs exit together, small net win."""
-    out = []
-    k = 0
+def martingale(n_baskets=40, depth=4, esc=2.0, spacing=10.0, tp=3.0):
+    """A grid, modelled the way a real one actually exits.
+
+    THE EXIT RULE IS THE WHOLE FIXTURE. A martingale does not close at a fixed
+    price — it closes when the LOT-WEIGHTED basket reaches a small profit, and
+    because the last leg is the biggest, that weighted average sits far below
+    the arithmetic average of the entries. Getting this wrong (a fixed, generous
+    exit) makes the later entries look individually profitable and hides the
+    finding: as traded the basket wins, and with equal risk per fill it loses.
+    """
+    out, k = [], 0
     for b in range(n_baskets):
         base = T0 + timedelta(days=b)
-        entry = 2000.0
-        exit_all = base + timedelta(hours=depth + 2)
-        # the basket exits at a price that nets a small win overall
-        exit_px = entry - 3.0 if retrace else entry - 40.0
+        entries = [2000.0 - spacing * d for d in range(depth)]
+        lots = [round(0.01 * (esc ** d), 6) for d in range(depth)]
+        weighted_entry = sum(e * l for e, l in zip(entries, lots)) / sum(lots)
+        exit_px = weighted_entry + tp          # basket TP, lot-weighted
         for d in range(depth):
             k += 1
             out.append(Trade(
-                ticket=str(k), symbol="XAUUSD", direction="BUY",
-                lots=round(0.01 * (esc ** d), 4),
+                ticket=str(k), symbol="XAUUSD", direction="BUY", lots=lots[d],
                 open_utc=base + timedelta(hours=d),
-                close_utc=exit_all,
-                open_price=entry - 10.0 * d,        # each add is deeper underwater
+                close_utc=base + timedelta(hours=depth + 2),
+                open_price=entries[d],          # each add is deeper underwater
                 close_price=exit_px,
-                mae_price=-10.0 * (depth - 1) - 5.0))
+                mae_price=-spacing * (depth - 1) - 5.0))
     return out
 
 
@@ -184,9 +191,20 @@ def test_a_grid_with_no_entry_edge_is_exposed_as_selling_insurance():
     """THE DECISIVE FINDING. Entries alone lose; the record is positive only
     because losers are held and added to until they come back."""
     out = ablate(build_baskets(martingale()))
-    assert out["recovery_free_mean"] <= 0 < out["original_mean"]
+    assert out["recovery_free_mean"] <= 0 < out["lot_weighted_total"]
     assert "THE RETURN IS THE RECOVERY LAYER" in out["verdict"]
     assert "rare, total loss" in out["verdict"]
+
+
+def test_the_verdict_compares_as_traded_against_the_ablations_not_two_ablations():
+    """The 'original' arm is scored equal-weight like every other arm, so it
+    never contained the sizing ladder. Comparing it to an ablation asks whether
+    removing sizing changes a number that had no sizing in it — which is how a
+    grid gets declared edge-free in both directions at once."""
+    out = ablate(build_baskets(martingale()))
+    assert out["equal_weight_mean"] < 0 < out["lot_weighted_total"], (
+        "the fixture must be a grid that only wins lot-weighted")
+    assert not any(a.name.startswith("original") for a in out["arms"])
 
 
 def test_a_genuine_entry_edge_is_found_and_named_as_the_part_to_rebuild():
@@ -214,6 +232,65 @@ def test_ablation_is_scored_in_price_units_not_currency():
 def test_an_empty_book_decomposes_to_nothing_rather_than_crashing():
     out = ablate([])
     assert "no decomposition possible" in out["verdict"]
+
+
+# ------------------------------------------------ fixed-risk normalisation
+
+def test_a_martingale_return_does_not_survive_fixed_risk_normalisation():
+    """THE TEST THAT SETTLES IT. As traded the record is positive; with every
+    trade carrying the same risk it is not. The provider is paid for betting
+    more after being wrong."""
+    fr = fixed_risk_normalisation(build_baskets(martingale()))
+    assert fr.lot_weighted > 0 > fr.equal_weighted
+    assert "DOES NOT SURVIVE FIXED-RISK NORMALISATION" in fr.verdict
+    assert "betting more after being wrong" in fr.verdict
+
+
+def test_a_real_edge_survives_normalisation_and_is_named_as_the_thing_to_build():
+    fr = fixed_risk_normalisation(build_baskets(single_entries()))
+    assert fr.equal_weighted > 0
+    assert "SURVIVES FIXED-RISK NORMALISATION" in fr.verdict
+    assert "what a descendant should be built from" in fr.verdict
+
+
+def test_equal_risk_beats_equal_size_when_stops_are_reported():
+    """Equal SIZE on a $53 stop and a $6 stop are not the same bet."""
+    trades = [
+        Trade("1", "XAUUSD", "BUY", 0.01, T0, T0 + timedelta(hours=1),
+              2000.0, 2010.0, sl=1990.0),                      # +1.0R on a $10 stop
+        Trade("2", "XAUUSD", "BUY", 0.01, T0 + timedelta(days=2),
+              T0 + timedelta(days=2, hours=1), 2000.0, 2010.0, sl=1900.0),  # +0.1R
+    ]
+    fr = fixed_risk_normalisation(build_baskets(trades))
+    assert fr.basis == "STOP_DISTANCE"
+    assert fr.risk_normalised == pytest.approx(0.55, abs=0.01)
+
+
+def test_missing_stops_fall_back_to_equal_size_and_say_so():
+    """Naming the gap is what tells you which extra data is worth chasing."""
+    fr = fixed_risk_normalisation(build_baskets(martingale()))
+    assert fr.basis == "EQUAL_WEIGHT" and fr.sl_coverage == 0.0
+    assert "highest-value thing more data would buy" in fr.verdict
+
+
+def test_the_sizing_share_of_the_return_is_quantified():
+    fr = fixed_risk_normalisation(build_baskets(martingale()))
+    assert fr.sizing_share is not None and fr.sizing_share > 0.5
+
+
+def test_an_unprofitable_record_has_nothing_to_explain_away():
+    losers = [t(i, opened=T0 + timedelta(days=i), op=2000.0, cp=1997.0)
+              for i in range(20)]
+    fr = fixed_risk_normalisation(build_baskets(losers))
+    assert "nothing for normalisation to explain away" in fr.verdict
+
+
+def test_no_closed_trades_is_reported_rather_than_crashing():
+    assert fixed_risk_normalisation([]).n == 0
+
+
+def test_the_report_carries_the_normalisation_verdict():
+    assert "FIXED-RISK NORMALISATION" in report(martingale(), equity=10_000)
 
 
 # ------------------------------------------------------------- replication
