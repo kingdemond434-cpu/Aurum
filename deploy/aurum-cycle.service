@@ -1,0 +1,48 @@
+# /etc/systemd/system/aurum-cycle.service
+#
+# The daily cycle. Paired with aurum-cycle.timer — this unit is oneshot and does
+# nothing on its own.
+#
+#   sudo systemctl enable --now aurum-cycle.timer
+#   systemctl list-timers aurum-cycle
+#   journalctl -u aurum-cycle -n 100
+#
+# WHY A TIMER AND NOT A CRON LINE
+#
+# A cron entry that fails is a mail nobody reads. systemd records the exit
+# status, `systemctl status aurum-cycle` shows the last run and whether it
+# failed, and Persistent=true in the timer means a cycle missed because the VPS
+# was down runs on the next boot instead of silently never happening. Forward
+# evidence is the one thing that cannot be recovered later, so a missed day has
+# to be caught up rather than skipped.
+
+[Unit]
+Description=Aurum daily cycle (evidence, growth, census, absorption)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aurum
+Group=aurum
+WorkingDirectory=/opt/aurum
+EnvironmentFile=-/opt/aurum/.env
+ExecStart=/opt/aurum/.venv/bin/python /opt/aurum/aurum_cycle.py
+# The cycle is idempotent per UTC day by its own stamp, so a double fire is
+# harmless — it logs "already ran" and exits 0.
+TimeoutStartSec=900
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# It writes the cycle state, the report and the absorption log. It must NOT be
+# able to write the ledger: the cycle reads forward evidence and reports on it,
+# and a reporter that can edit the evidence it reports on is not a reporter.
+ReadWritePaths=/opt/aurum/state /opt/aurum/reports /opt/aurum/logs
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true

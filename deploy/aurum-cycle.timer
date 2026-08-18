@@ -1,0 +1,27 @@
+# /etc/systemd/system/aurum-cycle.timer
+#
+#   sudo systemctl enable --now aurum-cycle.timer
+#   systemctl list-timers aurum-cycle
+#
+# 21:45 UTC: after the NY afternoon session has closed and the day's outcomes
+# have resolved, and before the Asia range starts forming — so the cycle reports
+# on a finished day rather than a running one.
+
+[Unit]
+Description=Run the Aurum daily cycle
+Requires=aurum-cycle.service
+
+[Timer]
+OnCalendar=*-*-* 21:45:00 UTC
+# A CYCLE MISSED BECAUSE THE BOX WAS DOWN RUNS ON THE NEXT BOOT. Forward
+# evidence is the one thing that cannot be recovered later, so a missed day is
+# caught up rather than skipped. The cycle is idempotent per UTC day, so a
+# catch-up that lands on a day already stamped exits immediately.
+Persistent=true
+# Spread the start slightly so a VPS running several timers does not fire them
+# all into the same second.
+RandomizedDelaySec=120
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
