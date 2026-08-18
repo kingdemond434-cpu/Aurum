@@ -148,6 +148,7 @@ class DeskService:
         self._rehydrated = False
         self._venue_shut = False
         self._halted = False
+        self._notify_errors = 0
         self._htf_cache = None
         self._htf_cached_at = 0.0
         from .tickguard import TickArchive, TickGuard
@@ -218,8 +219,13 @@ class DeskService:
             "observer": {"mfe_r": t.observer.mfe_r, "mae_r": t.observer.mae_r,
                          "ticks": t.observer.ticks},
             "mgmt_log": t.mgmt_log}
+        # DELIVERY HEALTH GOES IN THE CHECKPOINT. The message is this desk's
+        # only product, so "is the channel working" belongs beside "is there a
+        # position" rather than in a log line nobody greps. The bot reads it.
+        payload = asdict(self.state)
+        payload["notification_health"] = self.notification_health()
         tmp = self.cfg.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(asdict(self.state), indent=2, default=str))
+        tmp.write_text(json.dumps(payload, indent=2, default=str))
         os.replace(tmp, self.cfg.state_path)
 
     def rehydrate(self) -> bool:
@@ -600,10 +606,37 @@ class DeskService:
             return None
 
     def _notify(self, text: str) -> None:
+        """Never propagates — but no longer discards.
+
+        This was `except Exception: pass`, which meant a revoked bot or a wrong
+        chat id produced a desk that ran perfectly and delivered nothing, with
+        no trace anywhere. Aurum places no orders; the message IS the product,
+        so a silently dead channel is not a degraded mode, it is total failure
+        wearing a healthy process.
+
+        The exception still cannot reach the loop. It is now COUNTED, and
+        `notification_health()` surfaces the counters to the checkpoint and to
+        the bot's /status.
+        """
         try:
             self.desk._notify(text)
-        except Exception:
-            pass
+        except Exception as e:                        # noqa: BLE001
+            self._notify_errors += 1
+            log.warning("notification failed (%d total): %s", self._notify_errors, e)
+
+    def notification_health(self) -> dict:
+        """What the channel has actually delivered. Read by the checkpoint.
+
+        Walks to the wrapped sink rather than asking the desk, because the desk
+        holds whatever `build_sink` returned and only the wrapper counts.
+        """
+        sink = getattr(self.desk, "sink", None) or getattr(self.desk, "_sink", None)
+        stats = sink.stats() if hasattr(sink, "stats") else {
+            "sink": type(sink).__name__,
+            "note": "this sink does not track delivery; health is UNKNOWN, "
+                    "which is not the same as healthy"}
+        stats["notify_exceptions"] = self._notify_errors
+        return stats
 
 
 # --------------------------------------------------------------------------

@@ -195,6 +195,23 @@ def cmd_status(cfg: BotConfig) -> str:
         lines.append("position        OPEN — see /positions")
     else:
         lines.append("position        flat")
+
+    # THE CHANNEL'S OWN HEALTH. If you are reading this, the bot works — but the
+    # bot and the desk are separate processes, so a working bot and a dead sink
+    # is both possible and exactly the case worth surfacing: the desk would be
+    # producing signals that reach nobody while looking perfectly alive.
+    h = st.get("notification_health") or {}
+    if h:
+        if h.get("healthy") is False:
+            lines.append(f"SIGNAL CHANNEL  DOWN — {h.get('consecutive_failures')} "
+                         f"consecutive failures, {h.get('sent', 0)} delivered ever. "
+                         f"Signals are going NOWHERE.")
+        elif h.get("sent") is not None:
+            lines.append(f"signal channel  ok — {h.get('sent')} delivered, "
+                         f"{h.get('failed', 0)} failed")
+        else:
+            lines.append(f"signal channel  UNKNOWN — {h.get('sink', '?')} does not "
+                         f"track delivery, which is not the same as healthy")
     return "\n".join(lines)
 
 

@@ -67,20 +67,37 @@ def assert_no_orders(pkg: Path = Path("golddesk")) -> Check:
                  if not hits else f"ORDER CALLS FOUND: {hits}")
 
 
-def _telegram_check(want: bool, secrets: Path) -> Check:
+def _telegram_check(want: bool, secrets: Path, deliver: bool = True) -> Check:
     """Shared by every feed backend. It was previously only reachable on the MT5
-    path, so an OANDA launch could pass preflight with signals going nowhere."""
-    from golddesk.notify import resolve_telegram
+    path, so an OANDA launch could pass preflight with signals going nowhere.
+
+    AND IT ONLY CHECKED THAT CREDENTIALS EXISTED. A non-empty token file proves
+    somebody typed something into a file. A revoked bot, a wrong chat id, a bot
+    the user has never pressed Start on, and an egress firewall all pass that
+    check and deliver nothing — which for a desk whose only product is the
+    message is total failure that preflight calls PASS.
+
+    So preflight now SENDS. `deliver=False` keeps the old credentials-only
+    behaviour for tests and for anyone who does not want a message every launch.
+    """
+    from golddesk.notify import probe, resolve_telegram
     tok, cid, where = resolve_telegram(secrets)
     have = bool(tok and cid)
-    return Check("telegram", have or not want,
-                 f"credentials found in {where}" if have else
-                 (f"missing or EMPTY {secrets}/telegram_token and/or "
-                  f"telegram_chat_id (and no TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID "
-                  f"in the environment) — signals will go nowhere. install.sh "
-                  f"creates these files empty; fill them in."
-                  if want else "not requested"),
-                 fatal=want)
+    if not want:
+        return Check("telegram", True, "not requested", fatal=False)
+    if not have:
+        return Check("telegram", False,
+                     f"missing or EMPTY {secrets}/telegram_token and/or "
+                     f"telegram_chat_id (and no TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID "
+                     f"in the environment) — signals will go nowhere. install.sh "
+                     f"creates these files empty; fill them in.", fatal=True)
+    if not deliver:
+        return Check("telegram", True,
+                     f"credentials found in {where} — NOT verified by delivery",
+                     fatal=False)
+    from golddesk.notify import build_sink
+    ok, why = probe(build_sink(secrets), "preflight")
+    return Check("telegram", ok, f"{why} (credentials from {where})", fatal=True)
 
 
 def preflight(symbol: str, want_telegram: bool, secrets: Path,
