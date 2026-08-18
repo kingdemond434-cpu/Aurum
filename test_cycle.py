@@ -77,6 +77,77 @@ def test_a_thin_sample_gets_no_deflated_sharpe(desk):
 
 # --------------------------------------------------- it actually runs them
 
+def test_mining_refuses_to_guess_the_server_offset(desk):
+    """Parsing broker time as UTC shifts every trade two or three hours and
+    misaligns every session inference, while every timestamp still looks
+    ordinary. There is no safe default."""
+    (desk / "inbox" / "copytrade").mkdir(parents=True)
+    (desk / "inbox" / "copytrade" / "s.csv").write_text("x\n")
+    out = C.step_mining({})
+    assert "no safe default" in out
+
+
+def test_mining_says_where_to_put_the_files_when_there_are_none(desk):
+    out = C.step_mining({})
+    assert "nothing to mine" in out
+
+
+def test_mining_ingests_and_reverse_engineers(desk):
+    inbox = desk / "inbox" / "copytrade"
+    inbox.mkdir(parents=True)
+    (desk / "state" / "ingest_offset.txt").write_text("3")
+    rows = ["Ticket,Position,Symbol,Type,Entry,Volume,Price,Time,S/L,T/P,Profit"]
+    for i in range(30):
+        rows.append(f"{i*2+1},P{i},XAUUSD,BUY,in,0.10,2000.00,"
+                    f"2026-06-{(i % 28)+1:02d} 10:00:00,1990.00,2030.00,0")
+        rows.append(f"{i*2+2},P{i},XAUUSD,SELL,out,0.10,2010.00,"
+                    f"2026-06-{(i % 28)+1:02d} 14:00:00,,,100")
+    (inbox / "s.csv").write_text("\n".join(rows) + "\n")
+    ctx = {}
+    out = C.step_mining(ctx)
+    assert "30 paired trades" in out
+    assert "REVERSE-ENGINEERING REPORT" in out
+    assert len(ctx["copytrades"]) == 30
+
+
+def test_mining_is_idempotent_across_runs(desk):
+    inbox = desk / "inbox" / "copytrade"
+    inbox.mkdir(parents=True)
+    (desk / "state" / "ingest_offset.txt").write_text("3")
+    (inbox / "s.csv").write_text(
+        "Ticket,Position,Symbol,Type,Entry,Volume,Price,Time\n"
+        "1,P1,XAUUSD,BUY,in,0.10,2000.00,2026-06-01 10:00:00\n"
+        "2,P1,XAUUSD,SELL,out,0.10,2010.00,2026-06-01 14:00:00\n")
+    C.step_mining({})
+    assert "0 new deal(s)" in C.step_mining({})
+
+
+def test_the_regime_contest_not_running_is_not_the_incumbent_winning(desk):
+    out = C.step_regime({})
+    assert "not the same as" in out and "incumbent won" in out
+
+
+def test_a_thin_series_gets_no_regime_verdict(desk):
+    import numpy as np
+    rng = np.random.default_rng(0)
+    ctx = {"regime_series": {"returns": rng.normal(size=100),
+                             "incumbent": rng.integers(0, 3, 100),
+                             "forward": rng.normal(size=100)}}
+    assert "needed before a contest means anything" in C.step_regime(ctx)
+
+
+def test_the_regime_contest_runs_on_a_real_series(desk):
+    import numpy as np
+    rng = np.random.default_rng(3)
+    n = 2000
+    r = rng.normal(size=n)
+    ctx = {"regime_series": {"returns": r, "incumbent": rng.integers(0, 3, n),
+                             "forward": np.roll(r, -1)}}
+    out = C.step_regime(ctx)
+    assert "REGIME CONTEST" in out
+    assert ctx["regime_contest"]["n_test"] > 0
+
+
 def test_the_cycle_invokes_every_wired_module(desk):
     seed_ledger(desk)
     ctx = {}

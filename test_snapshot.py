@@ -260,3 +260,40 @@ def test_the_league_serialises_to_a_reviewable_record():
     txt = lg.to_jsonl()
     assert '"kind": "snapshot"' in txt and '"kind": "decision"' in txt
     assert "swept the low" in txt
+
+
+# --------------------------------------------------- wired into the live path
+
+def test_the_live_desk_builds_a_snapshot_at_every_decision():
+    """A snapshot harness nothing calls is a plan. This is the seam that makes
+    the model league real rather than theoretical."""
+    from pathlib import Path
+    src = Path("golddesk/live.py").read_text()
+    assert "self._pending_snapshot = self._snapshot(bars, i, brief)" in src
+    assert "def _snapshot(" in src
+
+
+def test_the_snapshot_identifiers_reach_the_ledger():
+    """state_id says WHICH MOMENT and is what a paired comparison joins on;
+    content_hash says WHAT WAS SHOWN. Without the second, two arms can join
+    cleanly having been given different facts."""
+    from pathlib import Path
+    src = Path("golddesk/live.py").read_text()
+    assert '"state_id": s.state_id' in src
+    assert '"content_hash": s.content_hash' in src
+
+
+def test_a_snapshot_failure_never_costs_a_trade():
+    from pathlib import Path
+    src = Path("golddesk/live.py").read_text()
+    i = src.index("self._pending_snapshot = self._snapshot")
+    window = src[i - 200:i + 400]
+    assert "except Exception" in window and "log.warning" in window
+
+
+def test_the_live_snapshot_excludes_the_forming_bar():
+    """bars[i] closes AT bars[i].ts; the one after has not happened. Passing the
+    whole series would hand the model the candle it is predicting."""
+    from pathlib import Path
+    src = Path("golddesk/live.py").read_text()
+    assert 'b.add_bars("entry", bars[:i + 1]' in src

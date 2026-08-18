@@ -572,6 +572,19 @@ class LiveDesk:
         self.last_spread = max(0.0, ask - bid)
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             timeframe=ENTRY_TF)
+        # THE CAUSAL SNAPSHOT OF THIS DECISION MOMENT, built before anything
+        # decides. It is what makes the model league real rather than
+        # theoretical: a competitor -- another model, a rule, the user -- can be
+        # handed this exact state later and scored against what Claude did on
+        # it. Built here and not at scoring time, because reconstructing "what
+        # was knowable" after the fact is precisely the reconstruction that
+        # leaks. Never fatal: a snapshot failure must not cost a trade.
+        self._pending_snapshot = None
+        try:
+            self._pending_snapshot = self._snapshot(bars, i, brief)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("snapshot skipped at %s: %s", ts, e)
+
         try:
             imgs = self._render_charts(bars, i)
         except AnalystError as e:
@@ -1219,6 +1232,31 @@ class LiveDesk:
             self.open_trades.remove(t)
 
     # -- journalling -------------------------------------------------------
+    def _snapshot(self, bars: Sequence[Bar], i: int, brief):
+        """A causal snapshot of this decision moment, for the model league.
+
+        Every observation is stamped with the instant it became KNOWABLE, and
+        `SnapshotBuilder` refuses anything after `as_of` — so a competitor
+        handed this state later is provably seeing what the desk saw and not one
+        field more. Bars go in through `add_bars`, which drops the forming
+        candle: bar `i` closes AT `bars[i].ts`, and the one after it has not
+        happened.
+        """
+        from golddesk.snapshot import SnapshotBuilder
+        as_of = bars[i].ts
+        b = SnapshotBuilder(brief.symbol, ENTRY_TF, as_of)
+        b.add_bars("entry", bars[:i + 1], ENTRY_TF, count=40)
+        for key, val in (("bid", brief.bid), ("ask", brief.ask),
+                         ("spread", brief.spread), ("atr", brief.atr)):
+            if val is not None:
+                b.add(key, float(val), as_of, source="feed")
+        b.add("session", brief.session, as_of, source="calendar")
+        for lv in getattr(brief, "levels", ()) or ():
+            price = getattr(lv, "price", None)
+            if price is not None:
+                b.add(f"level.{lv.id}", float(price), as_of, source="structure")
+        return b.build()
+
     def _record(self, bars, i, brief, kind, by, decision, reason, direction,
                 risk_price, suffix: str = ""):
         # `suffix` keeps decision ids unique when one bar produces several
@@ -1251,10 +1289,20 @@ class LiveDesk:
             log.debug("forward window truncated to %d bars at %s — forgone value "
                       "from here is a LOWER BOUND", len(fwd), bars[i].ts)
         lb = [LBar(b.ts, b.open, b.high, b.low, b.close) for b in fwd]
+        # THE SNAPSHOT'S TWO IDENTIFIERS TRAVEL WITH THE DECISION. state_id says
+        # WHICH MOMENT and is what a paired comparison joins on; content_hash
+        # says WHAT WAS SHOWN, and without it two arms can join cleanly having
+        # been given different facts. Carried in `context` because that is what
+        # the ledger already persists per row.
+        snap_keys = {}
+        if getattr(self, "_pending_snapshot", None) is not None:
+            s = self._pending_snapshot
+            snap_keys = {"state_id": s.state_id, "content_hash": s.content_hash}
         self.ledger.append(DecisionRecord(
             decision_id=did, kind=kind,
             t0=bars[i].ts, symbol=brief.symbol,
-            context=dict(brief.context.__dict__) | {"session": brief.session},
+            context=dict(brief.context.__dict__) | {"session": brief.session}
+            | snap_keys,
             brief_render=brief.render(), decided_by=by, decision=decision,
             reason=reason, path_ref=PathRef.of(brief.symbol, ENTRY_TF, lb),
             outcome=resolve_forward(lb, bars[i].ts, bars[i].close, direction, risk_price)))

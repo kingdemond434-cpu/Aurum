@@ -230,12 +230,90 @@ def step_channel(ctx: dict) -> str:
             f"last ok {h.get('last_ok_at')}")
 
 
+def step_mining(ctx: dict) -> str:
+    """Ingest any new mirrored copy-trade history and re-read the provider.
+
+    Runs daily because the mandate is daily and because a statement exported
+    weekly is a week of behaviour reconstructed from memory. Ingestion is
+    idempotent on the broker's deal ticket, so pointing it at an overlapping
+    export costs nothing.
+    """
+    from golddesk.ingest import IngestError, IngestLog, ingest_file
+    inbox = BASE / "inbox" / "copytrade"
+    if not inbox.exists():
+        return (f"no {inbox} directory: nothing to mine. Drop MT5 statements or "
+                f"CSV exports there and set the server offset in "
+                f"state/ingest_offset.txt (broker time is UTC+2/+3 and the "
+                f"statement does not say which).")
+    off_file = STATE_DIR / "ingest_offset.txt"
+    if not off_file.exists():
+        return (f"{inbox} has files but {off_file} is missing. The server offset "
+                f"has no safe default: parsing broker time as UTC shifts every "
+                f"trade two or three hours and misaligns every session inference "
+                f"while every timestamp still looks ordinary. Write the offset "
+                f"(e.g. 3) to that file.")
+    try:
+        offset = float(off_file.read_text().strip())
+    except ValueError:
+        return f"{off_file} is not a number; refusing to guess an offset."
+
+    log_path = STATE_DIR / "copytrade_deals.json"
+    ilog = IngestLog.load(log_path)
+    notes, total_new = [], 0
+    for f in sorted(inbox.iterdir()):
+        if f.suffix.lower() not in (".html", ".htm", ".csv"):
+            continue
+        try:
+            ilog, n, note = ingest_file(f, server_offset_hours=offset, log=ilog)
+        except IngestError as e:
+            notes.append(f"{f.name}: REFUSED — {e}")
+            continue
+        total_new += n
+        notes.append(f"{f.name}: {note}")
+    ilog.save(log_path)
+
+    trades, unmatched = ilog.trades()
+    ctx["copytrades"] = trades
+    out = [f"{total_new} new deal(s) across {len(notes)} file(s); "
+           f"{len(trades)} paired trades, {len(unmatched)} unmatched"]
+    out += [f"  {n}" for n in notes[:8]]
+    if not trades:
+        return "\n".join(out + ["  nothing paired yet — no provider analysis."])
+    from golddesk.reverse import report as reverse_report
+    return "\n".join(out) + "\n\n" + reverse_report(trades)
+
+
+def step_regime(ctx: dict) -> str:
+    """The learned regime challenger against the incumbent rule labels.
+
+    Only run once there is enough series to fit on. A three-state HMM on two
+    hundred bars is a description of two hundred bars.
+    """
+    from golddesk.regime_hmm import MIN_TRAIN, contest, render
+    series = ctx.get("regime_series")
+    if not series:
+        return (f"no return series supplied. The contest needs bars plus the "
+                f"incumbent's own labels on the SAME bars; wire a bar source "
+                f"into the cycle to enable it. Not run is not the same as "
+                f"'the incumbent won'.")
+    r, inc, fwd = series["returns"], series["incumbent"], series["forward"]
+    if len(r) < MIN_TRAIN * 3:
+        return (f"{len(r)} bars, {MIN_TRAIN * 3} needed before a contest means "
+                f"anything. A three-state HMM on fewer is a description of the "
+                f"sample, not a challenger.")
+    out = contest(r, inc, fwd)
+    ctx["regime_contest"] = out
+    return render(out)
+
+
 STEPS = (
     ("evidence", step_evidence),
     ("channel", step_channel),
     ("growth", step_growth),
     ("attribution", step_attribution),
+    ("regime", step_regime),
     ("census", step_census),
+    ("mining", step_mining),
     ("absorb", step_absorb),
 )
 
