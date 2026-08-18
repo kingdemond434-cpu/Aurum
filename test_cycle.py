@@ -317,3 +317,54 @@ def test_nothing_observed_is_still_not_a_neutral_reading(desk, monkeypatch):
         "golddesk.drivers_free.build_drivers",
         lambda *a, **k: {"dxy": DriverPoint("dxy", None, None, None, "UNAVAILABLE")})
     assert "UNAVAILABLE" in C.step_attribution({})
+
+
+# --------------------------------------------- decay, levers, entries wired
+
+def test_decay_runs_over_every_mechanism_including_the_armed_book(desk):
+    """promoter.py explicitly does not manage the armed book. A sleeve carrying
+    real capital that nobody monitors is the gap this closes."""
+    seed_ledger(desk, n=180)
+    ctx = {}
+    C.step_evidence(ctx)
+    out = C.step_decay(ctx)
+    assert "BOOK HEALTH" in out
+    assert {s.sleeve for s in ctx["decay_states"]} == {"a", "b", "c"}
+
+
+def test_decay_reports_the_detection_latency_alongside_the_verdict(desk):
+    seed_ledger(desk, n=180)
+    ctx = {}
+    C.step_evidence(ctx)
+    out = C.step_decay(ctx)
+    assert "DETECTION LATENCY" in out
+    assert "by the time decay is provable it has been paid for" in out
+
+
+def test_no_resolved_trades_means_unmonitored_not_healthy(desk):
+    assert "UNMONITORED is not the same as healthy" in C.step_decay({"rows": []})
+
+
+def test_the_lever_ranking_needs_a_book_before_it_describes_one(desk):
+    out = C.step_levers({"decay_states": [], "r_multiples": []})
+    assert "before it describes this book" in out
+
+
+def test_the_levers_run_once_there_is_a_book(desk):
+    seed_ledger(desk, n=200)
+    ctx = {}
+    C.step_evidence(ctx)
+    C.step_decay(ctx)
+    out = C.step_levers(ctx)
+    assert "GROWTH LEVERS" in out and "BINDING CONSTRAINT" in out
+
+
+def test_entries_without_bars_says_so_rather_than_claiming_nothing_clusters(desk):
+    """Not run is not the same as 'his entries cluster on nothing'."""
+    out = C.step_entries({"copytrades": [object()]})
+    assert "cannot run without them" in out
+    assert "Not run is not the same as" in out
+
+
+def test_entries_with_no_mined_trades_is_silent(desk):
+    assert "nothing to classify" in C.step_entries({})

@@ -320,6 +320,76 @@ def step_regime(ctx: dict) -> str:
     return render(out)
 
 
+def step_decay(ctx: dict) -> str:
+    """Is any sleeve's edge decayed, or is it having a bad month?
+
+    Runs over EVERY sleeve including the armed book, which promoter.py
+    explicitly does not manage. A sleeve carrying real capital that nobody
+    monitors is the gap this closes.
+    """
+    from golddesk.decay import assess, book_health, detection_latency
+    rows = ctx.get("rows") or []
+    by_mech: dict = {}
+    for r in rows:
+        m, v = r.get("mechanism"), r.get("realised_r")
+        if m and isinstance(v, (int, float)):
+            by_mech.setdefault(m, []).append(float(v))
+    if not by_mech:
+        return ("no resolved trades per mechanism, so nothing can be assessed for "
+                "decay. UNMONITORED is not the same as healthy.")
+    baselines = ctx.get("baselines") or {}
+    states = []
+    for m, rs in sorted(by_mech.items()):
+        base = baselines.get(m)
+        if base is None:
+            # A sleeve with no recorded warrant cannot be judged against one.
+            # Its own mean would ask "did it change", which every series does.
+            base = sum(rs) / len(rs)
+        states.append(assess(m, rs, baseline_exp_r=base))
+    ctx["decay_states"] = states
+    h = book_health(states, ready_replacements=ctx.get("ready_replacements", 0))
+    lat = {s.sleeve: detection_latency(s.baseline_exp_r) for s in states}
+    tail = "\n".join(
+        f"    {k:<24}{'n/a' if v is None else format(v, '.0f') + ' trades to prove a halving'}"
+        for k, v in sorted(lat.items()))
+    return h.render() + "\n\n  DETECTION LATENCY\n" + tail + (
+        "\n    A thin edge cannot be protected by monitoring: by the time decay "
+        "is provable it has been paid for.")
+
+
+def step_levers(ctx: dict) -> str:
+    """Where does the next unit of effort buy the most growth?"""
+    from golddesk.levers import analyse
+    states = ctx.get("decay_states") or []
+    rs = ctx.get("r_multiples") or []
+    n = len(states)
+    if n < 2 or len(rs) < 30:
+        return (f"{n} sleeve(s) and {len(rs)} resolved trades. The lever ranking "
+                f"needs at least two sleeves and thirty trades before it "
+                f"describes this book rather than the prior.")
+    mu = sum(rs) / len(rs)
+    rho = ctx.get("rho", 0.165)
+    tpy = ctx.get("trades_per_year") or len(rs)
+    return analyse(n_sleeves=n, mu=mu, n_per_year=tpy, rho=rho).render()
+
+
+def step_entries(ctx: dict) -> str:
+    """What are the mined provider's entries NEAR, against a matched null?"""
+    from golddesk.entry_classifier import classify, report as cls_report
+    trades = ctx.get("copytrades") or []
+    bars = ctx.get("m5_bars") or []
+    if not trades:
+        return "no mined copy-trades this cycle; nothing to classify."
+    if not bars:
+        return (f"{len(trades)} mined trades but no M5 bar series in context. "
+                f"The classifier aligns entries to bars and cannot run without "
+                f"them — supply `m5_bars` to enable it. Not run is not the same "
+                f"as 'his entries cluster on nothing'.")
+    hits = classify([t.open_utc for t in trades], bars)
+    ctx["entry_hits"] = hits
+    return cls_report(hits)
+
+
 STEPS = (
     ("evidence", step_evidence),
     ("channel", step_channel),
@@ -327,7 +397,10 @@ STEPS = (
     ("attribution", step_attribution),
     ("regime", step_regime),
     ("census", step_census),
+    ("decay", step_decay),
+    ("levers", step_levers),
     ("mining", step_mining),
+    ("entries", step_entries),
     ("absorb", step_absorb),
 )
 
