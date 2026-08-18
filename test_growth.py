@@ -9,9 +9,9 @@ import pytest
 
 from golddesk.growth import (
     BASE_HEAT, MAX_DRAWDOWN_TOLERANCE, Recommendation, daily_returns,
-    effective_bets, half_edge_check, heat_budget, kelly_optimum, log_growth,
-    mean_pairwise_corr, measure_k_eff, min_equity_for, recommend,
-    risk_per_trade, saturation, worst_drawdown_r)
+    effective_bets, floor_report, half_edge_check, heat_budget, kelly_optimum,
+    log_growth, max_stop_for_budget, mean_pairwise_corr, measure_k_eff,
+    min_equity_for, recommend, risk_per_trade, saturation, worst_drawdown_r)
 
 
 # ------------------------------------------------------ nothing is hardcoded
@@ -245,6 +245,50 @@ def test_the_minimum_equity_for_a_recommendation_is_reported():
 
 def test_no_price_means_no_expressibility_claim():
     assert min_equity_for(0.0127, 0.0, 100.0) is None
+
+
+# ------------------------------------------------- margin is not risk
+
+def test_margin_and_risk_are_reported_separately():
+    """CONFLATING THESE IS A REAL ERROR AND I MADE IT. Margin asks whether the
+    broker will let you open the trade; at 0.01 lots on gold the answer is yes
+    at almost any funded balance. Risk asks what fraction of the account the
+    STOP costs, and that is set by the stop distance."""
+    r = floor_report(equity=300, stop_distance=53.4, legs=3)
+    assert r.margin_pct < 10.0, "margin was never the constraint"
+    assert r.total_heat_pct > 50.0, "risk very much is"
+    assert r.margin_binds is False and r.within_budget is False
+
+
+def test_the_stop_distance_is_what_moves_the_answer():
+    """Same lot, same equity, same leverage — only the stop changes."""
+    tight = floor_report(300, 6.0, legs=3)
+    wide = floor_report(300, 53.4, legs=3)
+    assert tight.margin_pct == pytest.approx(wide.margin_pct)
+    assert wide.total_heat_pct > 8 * tight.total_heat_pct
+
+
+def test_a_small_account_with_tight_stops_is_viable():
+    """The intuition from trading gold at 0.01 lots on a small account is
+    CORRECT — for tight stops. A EUR 300 account carries three legs fine at a
+    $3.80 stop and not at all at the $53 session-range stop the armed gold
+    sleeve actually uses. The lot size was never the variable."""
+    tight = max_stop_for_budget(300, legs=3)
+    assert tight > 3.5, f"a EUR 300 account cannot even carry a ${tight:.2f} stop"
+    assert floor_report(300, tight, legs=3).total_heat_pct <= BASE_HEAT * 100 + 1e-9
+    assert floor_report(300, 53.4, legs=3).total_heat_pct > 50
+
+
+def test_the_widest_survivable_stop_is_reported_rather_than_a_yes_or_no():
+    """The operator's real question is not 'can I trade this account' but 'how
+    tight must the stop be for this account to carry the book'."""
+    from golddesk.growth import max_stop_for_budget
+    s = max_stop_for_budget(1000, legs=3)
+    assert floor_report(1000, s, legs=3).total_heat_pct == pytest.approx(BASE_HEAT * 100)
+
+
+def test_zero_equity_does_not_divide_by_zero():
+    assert floor_report(0.0, 10.0).risk_pct_per_leg == float("inf")
 
 
 # ------------------------------------------------------------ the whole thing

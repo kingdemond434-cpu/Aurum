@@ -410,6 +410,89 @@ def min_equity_for(q: float, r_per_trade_price: float, contract_size: float,
     return risk_at_min_lot / q
 
 
+@dataclass
+class FloorReport:
+    """What the venue's minimum lot actually costs at a given equity.
+
+    MARGIN AND RISK ARE DIFFERENT QUESTIONS AND CONFLATING THEM IS A REAL ERROR.
+    Margin asks "will the broker let me open this?" — at 0.01 lots on gold with
+    retail leverage the answer is yes at almost any funded balance, and anyone
+    who has traded a small account knows it. Risk asks "what fraction of the
+    account does the STOP cost?", and that is set by the stop distance, not by
+    the lot size or the leverage.
+
+    A desk that answers the margin question when it was asked the risk question
+    sounds prudent and is simply wrong. So this reports both, separately, and
+    lets the stop distance decide — because that is the variable that actually
+    moves the answer.
+    """
+    equity: float
+    stop_distance: float
+    legs: int
+    contract_size: float
+    min_lot: float
+    risk_per_leg: float
+    risk_pct_per_leg: float
+    total_heat_pct: float
+    margin_per_leg: float
+    margin_pct: float
+    budget_pct: float
+
+    @property
+    def margin_binds(self) -> bool:
+        return self.margin_pct > 50.0
+
+    @property
+    def within_budget(self) -> bool:
+        return self.total_heat_pct <= self.budget_pct * 100.0
+
+    def render(self) -> str:
+        return (f"  stop {self.stop_distance:>5.1f}  "
+                f"risk/leg {self.risk_per_leg:>6.2f} = {self.risk_pct_per_leg:>5.2f}%  "
+                f"{self.legs} legs = {self.total_heat_pct:>5.2f}%  "
+                f"margin {self.margin_pct:>5.1f}%  "
+                f"{'OK' if self.within_budget else 'OVER BUDGET'}")
+
+
+def floor_report(equity: float, stop_distance: float, legs: int = 1,
+                 contract_size: float = 100.0, min_lot: float = 0.01,
+                 leverage: float = 500.0, price: float = 4400.0,
+                 budget: float = BASE_HEAT) -> FloorReport:
+    """Risk and margin at the minimum lot, kept apart.
+
+    `stop_distance` is in price units (dollars of gold). At 0.01 lots on a 100oz
+    contract, one dollar of gold move is one dollar of P&L, so the stop distance
+    IS the risk in account currency — which is why it, and not the lot size,
+    decides whether a small account can carry the book.
+    """
+    units = min_lot * contract_size
+    risk = units * stop_distance
+    notional = units * price
+    margin = notional / max(leverage, 1.0)
+    pct = (lambda v: 100.0 * v / equity) if equity > 0 else (lambda v: float("inf"))
+    return FloorReport(
+        equity=equity, stop_distance=stop_distance, legs=legs,
+        contract_size=contract_size, min_lot=min_lot,
+        risk_per_leg=risk, risk_pct_per_leg=pct(risk),
+        total_heat_pct=pct(risk * legs),
+        margin_per_leg=margin, margin_pct=pct(margin * legs),
+        budget_pct=budget)
+
+
+def max_stop_for_budget(equity: float, legs: int = 1,
+                        contract_size: float = 100.0, min_lot: float = 0.01,
+                        budget: float = BASE_HEAT) -> float:
+    """The widest stop that keeps `legs` legs inside the heat budget at min lot.
+
+    The number the operator actually needs: not "can I trade this account" but
+    "how tight does the stop have to be for this account to carry the book".
+    """
+    units = min_lot * contract_size * legs
+    if units <= 0:
+        return 0.0
+    return budget * equity / units
+
+
 def recommend(r_multiples: Sequence[float], rows: Iterable[dict] = (),
               tolerance: float = MAX_DRAWDOWN_TOLERANCE,
               base_heat: float = BASE_HEAT,
