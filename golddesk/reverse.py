@@ -499,6 +499,246 @@ def ablate(baskets: Sequence[Basket]) -> dict:
     }
 
 
+# ------------------------------------------- is it a ladder or is it structure?
+
+#: CV at or below this and the adds sit on a ladder. A fixed grid is ~0; noise
+#: in fill prices lifts a real grid slightly above it.
+LADDER_CV = 0.35
+#: CV at or above this and the adds are not on any ladder at all.
+STRUCTURE_CV = 0.60
+
+
+@dataclass
+class Spacing:
+    """How regular are the gaps between adds?
+
+    THE DISCRIMINATOR THAT WORKS WHEN ADDS-WHILE-LOSING DOES NOT. A provider who
+    both pyramids into strength and averages into weakness lands near 50% on the
+    underwater test and reads UNKNOWN -- honest, and useless. Spacing separates
+    the two hypotheses directly and independently of P&L direction:
+
+        A GRID HAS A LADDER. Adds land at a fixed interval by construction, so
+        the coefficient of variation of the gaps is near zero however the market
+        moved.
+
+        A STRUCTURE-DRIVEN SYSTEM adds at levels the market supplies -- an FVG,
+        a sweep, a prior high -- and those arrive at irregular distances. The
+        gaps scatter and the CV is large.
+
+    A martingale can pyramid when price whipsaws back through its ladder, so
+    direction alone cannot tell them apart. Only the spacing can.
+
+    The distinction is not academic: a grid's basket depth is bounded by its own
+    spacing, so its worst case is computable. A structure-driven basket's depth
+    is bounded by how far the market runs before it stops offering levels, which
+    is not.
+    """
+    n_gaps: int
+    mean_gap: float
+    cv: float
+    min_gap: float
+    max_gap: float
+    kind: str                    # LADDER | STRUCTURE | UNCLEAR
+    why: str
+
+    @property
+    def spread_ratio(self) -> float:
+        return self.max_gap / self.min_gap if self.min_gap > 0 else 0.0
+
+    def render(self) -> str:
+        head = (f"ADD SPACING — {self.kind}\n"
+                f"  gaps               {self.n_gaps}\n"
+                f"  mean / cv          {self.mean_gap:.2f} / {self.cv:.2f}\n"
+                f"  min / max          {self.min_gap:.2f} / {self.max_gap:.2f}")
+        if self.spread_ratio:
+            head += f"   ({self.spread_ratio:.0f}x)"
+        return f"{head}\n  {self.why}"
+
+
+def spacing(baskets: Sequence[Basket]) -> Spacing:
+    """Coefficient of variation of the price gaps between consecutive adds."""
+    gaps: list = []
+    for b in baskets:
+        o = b.ordered()
+        gaps += [abs(o[i + 1].open_price - o[i].open_price)
+                 for i in range(len(o) - 1)
+                 if abs(o[i + 1].open_price - o[i].open_price) > 1e-9]
+    if len(gaps) < 5:
+        return Spacing(len(gaps), 0.0, 0.0, 0.0, 0.0, "UNCLEAR",
+                       f"{len(gaps)} gap(s); at least 5 before the regularity of "
+                       f"a spacing means anything.")
+    mean = statistics.mean(gaps)
+    cv = statistics.pstdev(gaps) / mean if mean > 0 else 0.0
+    lo, hi = min(gaps), max(gaps)
+    if cv <= LADDER_CV:
+        kind = "LADDER"
+        why = (f"gaps are regular (cv {cv:.2f}). The adds sit on a price ladder, "
+               f"which is a grid whether or not the lots escalate -- the level is "
+               f"chosen by arithmetic rather than by the market, and the worst "
+               f"case is therefore computable from the spacing.")
+    elif cv >= STRUCTURE_CV:
+        kind = "STRUCTURE"
+        why = (f"gaps are highly irregular (cv {cv:.2f}, {hi / lo:.0f}x from "
+               f"smallest to largest). This is NOT a ladder: the add levels are "
+               f"supplied by something in the market -- structure, liquidity, a "
+               f"pullback -- not by a fixed interval. The tail is different in "
+               f"kind: a grid's depth is bounded by its own spacing, this one's "
+               f"by how far the market runs before it stops offering levels.")
+    else:
+        kind = "UNCLEAR"
+        why = (f"cv {cv:.2f} sits between the ladder and structure signatures. "
+               f"More baskets, or spacing measured per-basket rather than "
+               f"pooled, would separate them.")
+    return Spacing(len(gaps), mean, cv, lo, hi, kind, why)
+
+
+@dataclass
+class LotTiers:
+    """Distinct size regimes, and whether they are confidence or just equity."""
+    tiers: tuple                 # (representative_lot, count, first_utc, last_utc)
+    interleaved: bool
+    kind: str                    # CONFIDENCE | EQUITY_SCALING | SINGLE | UNCLEAR
+    why: str
+
+    def render(self) -> str:
+        lines = [f"LOT TIERS — {self.kind}"]
+        for lot, n, a, b in self.tiers:
+            lines.append(f"  {lot:>9.4f}  x{n:<5} {str(a)[:10]} -> {str(b)[:10]}")
+        return "\n".join(lines) + f"\n  {self.why}"
+
+
+def lot_tiers(baskets: Sequence[Basket], ratio: float = 1.6,
+              overlap_days: int = 14) -> LotTiers:
+    """Cluster lot sizes, then ask what explains the clusters.
+
+    TWO HYPOTHESES, DISTINGUISHABLE BY TIME. If the sizes are CONFIDENCE tiers --
+    the provider betting more on better setups -- then different tiers appear
+    close together, because a good setup and a mediocre one occur in the same
+    week. If they are EQUITY SCALING, or a copy platform applying a proportional
+    multiplier, each tier owns its own era and they do not interleave: the
+    account grew, so the lots grew, monotonically.
+
+    That distinction matters more than it looks. Confidence tiers are alpha --
+    the provider knowing which of his own setups are better is a second edge on
+    top of direction, and a rarer one. Equity scaling is bookkeeping and says
+    nothing about the strategy.
+    """
+    trades = sorted((t for b in baskets for t in b.trades),
+                    key=lambda t: t.open_utc)
+    if not trades:
+        return LotTiers((), False, "UNCLEAR", "no trades")
+    lots = sorted({round(t.lots, 6) for t in trades})
+    # Single-link clustering on RATIO, not absolute distance: 0.01 -> 0.02 is a
+    # doubling and 0.23 -> 0.24 is not, and an absolute threshold cannot tell
+    # those apart across two orders of magnitude of size.
+    groups: list = [[lots[0]]]
+    for x in lots[1:]:
+        if x < groups[-1][-1] * ratio:
+            groups[-1].append(x)
+        else:
+            groups.append([x])
+    if len(groups) < 2:
+        return LotTiers(((statistics.median(lots), len(trades),
+                          trades[0].open_utc, trades[-1].open_utc),),
+                        False, "SINGLE", "one size regime; no tiering to explain.")
+
+    tiers, spans = [], []
+    for g in groups:
+        lo, hi = min(g), max(g)
+        members = [t for t in trades if lo <= round(t.lots, 6) <= hi]
+        if not members:
+            continue
+        tiers.append((statistics.median(g), len(members),
+                      members[0].open_utc, members[-1].open_utc))
+        spans.append((members[0].open_utc, members[-1].open_utc))
+
+    gap = timedelta(days=overlap_days)
+    interleaved = any(a1 <= b2 + gap and a2 <= b1 + gap
+                      for i, (a1, b1) in enumerate(spans)
+                      for (a2, b2) in spans[i + 1:])
+    if interleaved:
+        kind = "CONFIDENCE"
+        why = (f"{len(tiers)} size regimes that OVERLAP in time. Equity scaling "
+               f"cannot produce that -- an account grows monotonically -- so size "
+               f"is being chosen per setup. That is a second edge on top of "
+               f"direction and the part most worth reverse-engineering: knowing "
+               f"which of your own signals are better is rarer than having "
+               f"signals.")
+    else:
+        kind = "EQUITY_SCALING"
+        why = (f"{len(tiers)} size regimes, each owning its own era with no "
+               f"overlap. That is an account growing, or a copy platform's "
+               f"proportional multiplier -- bookkeeping, not strategy. It says "
+               f"nothing about which setups he rates, and the tiering must not "
+               f"be copied as if it were a signal.")
+    return LotTiers(tuple(tiers), interleaved, kind, why)
+
+
+@dataclass
+class SkewProfile:
+    """Many small wins, rare large losses -- and what that does to the estimate."""
+    n: int
+    win_rate: float
+    median_win: float
+    worst_loss: float
+    tail_ratio: float
+    observed_tail_events: int
+    why: str
+
+    def render(self) -> str:
+        return "\n".join([
+            f"SKEW PROFILE  n={self.n}",
+            f"  win rate           {self.win_rate:.0%}",
+            f"  median win         {self.median_win:+,.2f}",
+            f"  worst loss         {self.worst_loss:+,.2f}",
+            f"  one tail erases    {self.tail_ratio:.0f} ordinary winners",
+            f"  tail events seen   {self.observed_tail_events}",
+            f"  {self.why}",
+        ])
+
+
+def skew_profile(baskets: Sequence[Basket], tail_multiple: float = 5.0) -> SkewProfile:
+    """The shape: high win rate, negatively skewed, occasional very large loss.
+
+    THE ESTIMATE'S WEAKEST PARAMETER IS THE ONE THAT DECIDES IT. Expected value
+    for a book of this shape is roughly
+
+        p * median_win  -  (1 - p) * tail_loss
+
+    and the tail term is estimated from the handful of tail events the record
+    happens to contain. Two or three observations set the frequency of the thing
+    that pays for everything else, so the interval around the expectancy is
+    enormous and asymmetric -- and the equity curve is at its most convincing
+    exactly when the fewest tails have arrived.
+
+    This does not say the provider has no edge. It says a record of this shape
+    cannot distinguish a real edge from an unpaid tail, and the number of
+    ordinary wins one tail erases is the honest headline.
+    """
+    pnls = [float(t.profit) for b in baskets for t in b.trades
+            if t.profit is not None and math.isfinite(float(t.profit))]
+    if len(pnls) < 10:
+        return SkewProfile(len(pnls), 0.0, 0.0, 0.0, 0.0, 0,
+                           "fewer than ten resolved trades; no shape to describe.")
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+    if not wins or not losses:
+        return SkewProfile(len(pnls), len(wins) / len(pnls), 0.0, 0.0, 0.0, 0,
+                           "one-sided record; a skew profile needs both.")
+    mw = statistics.median(wins)
+    worst = min(losses)
+    ratio = abs(worst) / mw if mw > 0 else 0.0
+    tails = [p for p in losses if abs(p) >= tail_multiple * mw]
+    why = (f"{len(tails)} loss(es) at or beyond {tail_multiple:.0f}x the median "
+           f"win. The expectancy of a book shaped like this is decided by how "
+           f"OFTEN those arrive, and that frequency rests on {len(tails)} "
+           f"observation(s). One of them erases {ratio:.0f} ordinary winners, so "
+           f"a run of {ratio:.0f} clean trades between tails is what the strategy "
+           f"looks like when it is merely breaking even.")
+    return SkewProfile(len(pnls), len(wins) / len(pnls), mw, worst, ratio,
+                       len(tails), why)
+
+
 # -------------------------------------------------- fixed-risk normalisation
 
 @dataclass

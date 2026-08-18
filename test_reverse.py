@@ -9,6 +9,7 @@ import pytest
 
 from golddesk.reverse import (
     MIN_BASKETS, Basket, Trade, ablate, build_baskets, fixed_risk_normalisation,
+    lot_tiers, skew_profile, spacing,
     infer_structure,
     replicate, report, ruin_forensics)
 
@@ -341,3 +342,142 @@ def test_the_report_refuses_to_promote_anything():
 def test_the_report_leads_with_the_structure_verdict():
     txt = report(martingale(), equity=10_000)
     assert "RECOVERY_GRID" in txt and "DO NOT INHERIT" in txt
+
+
+# ------------------------------------------ ladder or structure
+
+def _spaced(gaps, lot=0.05, n_baskets=4):
+    """Baskets whose adds sit at the given gaps."""
+    out, k = [], 0
+    for b in range(n_baskets):
+        base = T0 + timedelta(days=b)
+        px = 2000.0
+        for j, g in enumerate([0.0] + list(gaps)):
+            px += g
+            k += 1
+            out.append(Trade(str(k), "XAUUSD", "BUY", lot,
+                             base + timedelta(hours=j),
+                             base + timedelta(hours=len(gaps) + 2), px, px + 3.0,
+                             profit=3.0))
+    return out
+
+
+def test_a_fixed_ladder_is_recognised_as_a_grid():
+    """A grid's gaps are constant by construction, however the market moved."""
+    s = spacing(build_baskets(_spaced([10.0, 10.0, 10.0])))
+    assert s.kind == "LADDER" and s.cv <= 0.35
+    assert "chosen by arithmetic" in s.why
+
+
+def test_irregular_gaps_are_recognised_as_structure_driven():
+    """THE DISCRIMINATOR THAT WORKS WHEN ADDS-WHILE-LOSING DOES NOT."""
+    s = spacing(build_baskets(_spaced([0.09, 1.0, 1.15, 16.48])))
+    assert s.kind == "STRUCTURE" and s.cv >= 0.60
+    assert "NOT a ladder" in s.why
+
+
+def test_the_structure_verdict_names_the_unbounded_tail():
+    """A grid's depth is bounded by its spacing; a structure basket's is bounded
+    by how far the market runs."""
+    s = spacing(build_baskets(_spaced([0.09, 1.0, 16.48])))
+    assert "how far the market runs before it stops offering levels" in s.why
+    assert "bounded by its own spacing" in s.why
+
+
+def test_too_few_gaps_makes_no_claim():
+    s = spacing(build_baskets(_spaced([5.0], n_baskets=1)))
+    assert s.kind == "UNCLEAR" and "before the regularity" in s.why
+
+
+def test_spacing_is_independent_of_pnl_direction():
+    """A martingale can pyramid when price whipsaws through its ladder, so
+    direction alone cannot separate them. Spacing can."""
+    up = spacing(build_baskets(_spaced([10.0, 10.0, 10.0])))
+    down = spacing(build_baskets(_spaced([-10.0, -10.0, -10.0])))
+    assert up.kind == down.kind == "LADDER"
+
+
+# ---------------------------------------------- confidence or equity scaling
+
+def _tiered(pairs):
+    """pairs: (day_offset, lot). One single-entry basket each."""
+    out = []
+    for i, (d, lot) in enumerate(pairs):
+        t = T0 + timedelta(days=d)
+        out.append(Trade(str(i), "XAUUSD", "BUY", lot, t, t + timedelta(hours=2),
+                         2000.0, 2003.0, profit=3.0))
+    return out
+
+
+def test_tiers_that_overlap_in_time_are_confidence_not_equity():
+    """An account grows monotonically; it cannot produce interleaved regimes."""
+    lt = lot_tiers(build_baskets(_tiered(
+        [(0, 0.01), (1, 0.20), (2, 0.01), (3, 0.20), (4, 0.01), (5, 0.20)])))
+    assert lt.kind == "CONFIDENCE" and lt.interleaved
+    assert "rarer than having signals" in lt.why
+
+
+def test_tiers_in_separate_eras_are_equity_scaling():
+    lt = lot_tiers(build_baskets(_tiered(
+        [(0, 0.01), (1, 0.01), (2, 0.01),
+         (200, 0.20), (201, 0.20), (202, 0.20)])))
+    assert lt.kind == "EQUITY_SCALING" and not lt.interleaved
+    assert "must not be copied as if it were a signal" in lt.why
+
+
+def test_one_size_regime_has_nothing_to_explain():
+    lt = lot_tiers(build_baskets(_tiered([(0, 0.05), (1, 0.05), (2, 0.052)])))
+    assert lt.kind == "SINGLE"
+
+
+def test_clustering_is_on_ratio_not_absolute_distance():
+    """0.01 -> 0.02 is a doubling; 0.23 -> 0.24 is not. An absolute threshold
+    cannot tell those apart across two orders of magnitude."""
+    lt = lot_tiers(build_baskets(_tiered(
+        [(0, 0.23), (1, 0.24), (2, 0.25), (3, 0.01), (4, 0.011)])))
+    assert len(lt.tiers) == 2
+
+
+# ------------------------------------------------------------- the skew
+
+def _skewed(n_wins=45, win=20.0, n_tails=1, tail=-400.0):
+    out = []
+    for i in range(n_wins):
+        t = T0 + timedelta(days=i)
+        out.append(Trade(f"w{i}", "XAUUSD", "BUY", 0.05, t,
+                         t + timedelta(hours=2), 2000.0, 2001.0, profit=win))
+    for j in range(n_tails):
+        t = T0 + timedelta(days=200 + j)
+        out.append(Trade(f"L{j}", "XAUUSD", "BUY", 0.05, t,
+                         t + timedelta(hours=8), 2000.0, 1980.0, profit=tail))
+    return out
+
+
+def test_a_high_win_rate_negatively_skewed_book_is_described_as_such():
+    s = skew_profile(build_baskets(_skewed()))
+    assert s.win_rate > 0.9
+    assert s.tail_ratio >= 20
+
+
+def test_the_verdict_names_the_tail_frequency_as_the_weak_parameter():
+    """Two or three observations set the frequency of the thing that pays for
+    everything else."""
+    s = skew_profile(build_baskets(_skewed()))
+    assert "rests on 1 observation" in s.why
+    assert "decided by how OFTEN" in s.why
+
+
+def test_it_says_what_break_even_looks_like():
+    """A run of N clean trades between tails is what merely breaking even looks
+    like — which is indistinguishable from working."""
+    s = skew_profile(build_baskets(_skewed()))
+    assert "merely breaking even" in s.why
+
+
+def test_a_one_sided_record_gets_no_skew_profile():
+    out = [t for t in _skewed(n_tails=0)]
+    assert "needs both" in skew_profile(build_baskets(out)).why
+
+
+def test_a_thin_record_describes_no_shape():
+    assert "no shape to describe" in skew_profile(build_baskets(_skewed(3, 20.0, 0))).why
