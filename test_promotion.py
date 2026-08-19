@@ -511,3 +511,93 @@ def test_no_positive_means_falls_back_rather_than_returning_nothing():
     b = _shadow("B|f", [-0.3] * 200, dates)
     s = series_of([a, b], edge_weighted=True)
     assert s and s[dates[0]] == pytest.approx(-0.2)
+
+
+# ------------------------------------------------------------- the lot ladder
+#
+# The step policy is the growth lever nobody sets: a venue sells lots in 0.01
+# steps and nothing forces a rule for climbing them, so the default is the worst
+# one. On the JPY asia trio from EUR300 "hold one lot for ever" scores E[log]
+# 0.196 and "+1 lot per EUR100" scores 0.372 — ninety percent more compounding
+# from a rule rather than an edge.
+
+from golddesk.growth import lot_ladder  # noqa: E402
+
+
+def _book(n=600, mean=0.15, sd=0.6, risk=2.5, seed=3):
+    rng = random.Random(seed)
+    return ([mean + rng.gauss(0, sd) for _ in range(n)], [risk] * n)
+
+
+def test_a_small_ticket_book_wants_a_ladder():
+    """Tickets tiny against equity: stepping up is free growth."""
+    rs, risk = _book(risk=2.5)
+    step, rep = lot_ladder(rs, risk, equity=300.0, paths=400, seed=1)
+    assert step > 0, rep
+    assert "RULE, not an edge" in rep
+
+
+def test_a_large_ticket_gets_a_more_conservative_ladder():
+    """THE TEST I FIRST WROTE WAS WRONG AND THE CODE WAS RIGHT.
+
+    It asserted that a ticket too large for the account must refuse to ladder at
+    all. But with a positive edge the account GROWS past the step, so a wide step
+    is not inert — it simply fires later. HOLD is only correct when no step
+    improves E[log], which a strong edge makes rare.
+
+    The true property is the ordering: a bigger ticket must earn a WIDER step,
+    because each additional lot is a larger share of the account.
+    """
+    rs, small = _book(risk=2.5)
+    _, large = _book(risk=25.0)
+    step_small, _ = lot_ladder(rs, small, equity=300.0, paths=400, seed=1)
+    step_large, _ = lot_ladder(rs, large, equity=300.0, paths=400, seed=1)
+    assert step_large == 0.0 or step_large >= step_small, (
+        f"a 10x larger ticket laddered at {step_large} against {step_small} for "
+        f"the small one")
+
+
+def test_hold_is_reachable_when_no_step_helps():
+    """A book with a marginal edge and a ticket near the account size: every
+    ladder raises ruin faster than growth, so HOLD must be selectable."""
+    rng = random.Random(17)
+    rs = [0.005 + rng.gauss(0, 0.9) for _ in range(400)]
+    step, rep = lot_ladder(rs, [70.0] * 400, equity=300.0, paths=400, seed=4,
+                           steps=(400, 300, 200, 100))
+    assert step == 0.0, rep
+    assert "HOLD" in rep
+
+
+def test_the_objective_is_e_log_not_the_median():
+    """A ladder with real ruin risk must lose to a slower one even when its
+    median looks better. Ruin removes ALL future compounding, not one year."""
+    rs, risk = _book(risk=2.5)
+    step, rep = lot_ladder(rs, risk, equity=300.0, paths=400, seed=1,
+                           steps=(200, 100, 10))
+    assert step != 10, "picked a ladder whose ruin risk destroys E[log]"
+
+
+def test_refuses_to_solve_on_too_few_trades():
+    step, rep = lot_ladder([0.1] * 30, [2.0] * 30, equity=300.0)
+    assert step == 0.0
+    assert "absence of one" in rep
+
+
+def test_mismatched_risk_and_returns_is_refused():
+    step, rep = lot_ladder([0.1] * 200, [2.0] * 50, equity=300.0)
+    assert step == 0.0
+
+
+def test_zero_equity_raises():
+    rs, risk = _book()
+    with pytest.raises(ValueError):
+        lot_ladder(rs, risk, equity=0.0)
+
+
+def test_more_equity_permits_a_tighter_step():
+    """The same book at more capital should ladder at least as aggressively —
+    the ticket is a smaller fraction of the account, so a step costs less."""
+    rs, risk = _book(risk=2.5)
+    small, _ = lot_ladder(rs, risk, equity=300.0, paths=400, seed=2)
+    large, _ = lot_ladder(rs, risk, equity=3000.0, paths=400, seed=2)
+    assert large <= small or small == 0.0
