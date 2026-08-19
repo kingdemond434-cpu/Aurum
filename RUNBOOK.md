@@ -82,19 +82,20 @@ Mt5Client Protocol; nothing else in the desk changes.
 
 Where signals arrive.
 
+Where signals arrive. Two things you must do yourself, then one command.
+
 1. Telegram → message **@BotFather** → `/newbot` → follow prompts → copy the token
-2. **Send your new bot any message** (it cannot message you first)
-3. Get your chat id:
+2. **Send your new bot any message** — press Start, or type `hello`. A bot
+   cannot open a conversation with you, so until you do this there is no chat
+   for it to send to, and no way to discover the id.
 
-```bash
-curl -s "https://api.telegram.org/botYOUR_BOT_TOKEN/getUpdates" | head -c 600
-```
+That is the whole of your part. The chat id is not something you need to look
+up: step 5 runs `deploy/telegram_setup.py`, which finds it, writes both files,
+and then **sends a real message to prove the channel works**. If nothing
+arrives in Telegram, it failed and printed why — it does not report success on
+a write.
 
-Find `"chat":{"id":123456789`. That number is your chat id (negative for groups).
-
-**Done when:** you have a bot token and a chat id.
-
-**Empty `getUpdates`?** You skipped step 2 — send the bot a message first.
+**Done when:** you have a bot token, and you have messaged the bot.
 
 ---
 
@@ -149,12 +150,29 @@ visible in `systemctl show`, in crash logs, and to anything that can read
 `/proc`):
 
 ```bash
-printf '%s' 'YOUR_BOT_TOKEN' | sudo -u aurum tee /opt/aurum/secrets/telegram_token >/dev/null
-printf '%s' 'YOUR_CHAT_ID'   | sudo -u aurum tee /opt/aurum/secrets/telegram_chat_id >/dev/null
-sudo chmod 600 /opt/aurum/secrets/*
+echo 'YOUR_BOT_TOKEN' | sudo -u aurum /opt/aurum/.venv/bin/python \
+  /opt/aurum/deploy/telegram_setup.py --stdin --secrets /opt/aurum/secrets
 ```
 
-`printf` not `echo` — `echo` appends a newline into the token.
+That verifies the token with `getMe`, discovers your chat id from the message
+you sent in step 2, writes both files `0600`, and then sends a message through
+`notify.build_sink` — the same sink the desk itself uses. **Exit 0 means a
+message arrived.** Anything else is a named failure with the remedy attached.
+
+Piped, not `--token`, so the token stays out of your shell history and out of
+`ps`. Trailing whitespace is stripped, so `echo` is safe here.
+
+Things it deliberately refuses rather than guesses:
+
+| It says | What is actually true |
+|---|---|
+| no messages for this bot | you skipped step 2, **or** `aurum-bot` is already running and eating the updates — `sudo systemctl stop aurum-bot` first |
+| N chats have messaged this bot | more than one person messaged it; re-run with `--chat-id <id>` rather than have signals go to a stranger |
+| this bot has a webhook registered | something else owns this bot's updates; if it is not yours the token is shared and should be revoked |
+| 401 Unauthorized | token revoked or mistyped — `/token` in @BotFather |
+
+To point the desk at a different chat later, run the same command again with
+`--chat-id`; it warns you which chat it is replacing.
 
 ### Your Anthropic API key
 

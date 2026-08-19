@@ -93,8 +93,14 @@ echo
 echo "1. Fill in the secrets:"
 echo "     sudo -u $AURUM_USER nano $AURUM_HOME/.env"
 echo "       ANTHROPIC_API_KEY, OANDA_TOKEN, OANDA_ACCOUNT"
-echo "     printf '%s' '<bot token>' | sudo -u $AURUM_USER tee $AURUM_HOME/secrets/telegram_token >/dev/null"
-echo "     printf '%s' '<chat id>'   | sudo -u $AURUM_USER tee $AURUM_HOME/secrets/telegram_chat_id >/dev/null"
+echo
+echo "   Telegram is ONE command — message your bot on your phone first"
+echo "   (press Start), then let it find the chat id itself. It verifies the"
+echo "   token, writes both files 0600, and sends a real message to prove the"
+echo "   channel works. If no message arrives, it failed and says why."
+echo "     echo '<bot token>' | sudo -u $AURUM_USER \\"
+echo "       $AURUM_HOME/.venv/bin/python $AURUM_HOME/deploy/telegram_setup.py \\"
+echo "       --stdin --secrets $AURUM_HOME/secrets"
 echo
 echo "2. Prove it is configured:"
 echo "     sudo -u $AURUM_USER $AURUM_HOME/.venv/bin/python $AURUM_HOME/run_desk.py --preflight"
