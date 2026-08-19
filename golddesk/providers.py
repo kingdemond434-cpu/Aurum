@@ -17,6 +17,7 @@ import abc
 import base64
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
@@ -324,8 +325,178 @@ class DeterministicProvider(AnalystProvider):
                             (time.monotonic() - t0) * 1000, {"in": 0, "out": 0})
 
 
+class ClaudeCodeAnalyst(AnalystProvider):
+    """The same model, reached through the Claude Code CLI instead of the API.
+
+    WHY THIS EXISTS. The metered API bills per token, and at this desk's
+    configured cadence -- a 30-minute heartbeat with min_gap=0 on M15 bars --
+    that is 46 to 92 reads a day, which prices out at roughly $290-580 a month
+    against an account of EUR 1,500. budget.py's own docstring predicted this
+    exactly: at a small account an analyst call can cost more than the trade
+    makes. The CLI authenticates against a Pro/Max subscription, so the same
+    read consumes subscription quota rather than dollars.
+
+    WHAT IT COSTS INSTEAD, MEASURED NOT ASSUMED. Claude Code injects its own
+    scaffolding: a trivial prompt with --system-prompt replacing the default
+    and --allowed-tools disabled still reported 26,488 cache-creation tokens.
+    That is free of DOLLARS under a subscription but it is not free of QUOTA,
+    and it is the reason this provider does not make the heartbeat affordable
+    so much as make it unnecessary -- three session-anchored reads a day is
+    ~80k tokens of overhead, ninety-two is 2.4M.
+
+    WHAT IT CANNOT DO. The CLI has no structured-output mode, so the schema is
+    requested in the prompt and enforced here by validation; a read that does
+    not parse is an error, never a shrug. It also has no image input on stdin,
+    so `charts` RAISES rather than being quietly dropped -- a chart arm that
+    silently ran without charts would make competition.py's paired comparison
+    and budget.py's "does the chart arm pay for itself" question return
+    confident fiction.
+    """
+
+    name = "claudecode"
+
+    #: Requested in-band because the CLI cannot enforce a JSON schema. The
+    #: model is then held to it by model_validate_json, which is the only part
+    #: that actually guarantees anything.
+    _SCHEMA_INSTRUCTION = (
+        "Return ONLY a single JSON object conforming to this JSON Schema. No "
+        "prose, no explanation, no markdown code fences.\n\nSCHEMA:\n{schema}\n")
+
+    def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
+                 timeout_s: float = 240.0, cwd: Optional[str] = None,
+                 billed: Optional[bool] = None, runner: Any = None):
+        self.model, self.binary, self.timeout_s = model, binary, timeout_s
+        self.cwd, self._billed, self._runner = cwd, billed, runner
+
+    def billed(self) -> bool:
+        """Whether these tokens are being charged in dollars.
+
+        HEURISTIC, AND LABELLED AS ONE. Claude Code bills against a metered API
+        key when one is present and against the subscription otherwise, and it
+        does not report which it used. So this reads the environment and the
+        operator can override it. It matters because budget.py prices tokens at
+        API list: reporting real dollars for a subscription read would overstate
+        cost, and reporting zero for an API-key read would hide it. Guessing
+        silently in either direction corrupts every net-value number downstream.
+        """
+        if self._billed is not None:
+            return self._billed
+        return bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+
+    @staticmethod
+    def _unfence(text: str) -> str:
+        """Strip a markdown code fence if the model wrapped its JSON in one.
+
+        Not defensive programming -- observed. Asked for bare JSON with an
+        explicit "no markdown code fences", the CLI still returned
+        ```json\\n{...}\\n```. The instruction reduces it; it does not remove it.
+        """
+        s = text.strip()
+        if not s.startswith("```"):
+            return s
+        s = s.split("\n", 1)[1] if "\n" in s else ""
+        return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
+
+    def _argv(self) -> list[str]:
+        return [self.binary, "-p",
+                "--output-format", "json",
+                "--model", self.model,
+                "--system-prompt", ANALYST_SYSTEM,
+                "--allowed-tools", "",
+                "--max-turns", "1"]
+
+    def _env(self) -> dict:
+        """The child's environment.
+
+        When the operator has declared this UNBILLED, the API key is actively
+        REMOVED rather than merely unused. A key sitting in the environment is
+        how a desk configured for a subscription quietly runs up a metered bill,
+        and the failure is invisible until the invoice.
+        """
+        env = dict(os.environ)
+        if not self.billed():
+            env.pop("ANTHROPIC_API_KEY", None)
+            env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        return env
+
+    def _invoke(self, prompt: str) -> dict:
+        if self._runner is not None:                  # injected for tests
+            return self._runner(self._argv(), prompt)
+        import subprocess
+        try:
+            p = subprocess.run(self._argv(), input=prompt, env=self._env(),
+                               cwd=self.cwd, capture_output=True, text=True,
+                               timeout=self.timeout_s)
+        except FileNotFoundError as e:
+            raise AnalystError(
+                f"{self.binary!r} not found. Install Claude Code on this box and "
+                f"log in once interactively, or use provider 'anthropic:' and "
+                f"pay per token.") from e
+        except subprocess.TimeoutExpired as e:
+            raise AnalystError(f"claude timed out after {self.timeout_s}s") from e
+        if p.returncode != 0:
+            raise AnalystError(f"claude exited {p.returncode}: "
+                               f"{(p.stderr or p.stdout)[:300]}")
+        try:
+            return json.loads(p.stdout)
+        except json.JSONDecodeError as e:
+            raise AnalystError(f"claude did not return JSON: "
+                               f"{p.stdout[:300]!r}") from e
+
+    def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        if charts:
+            raise AnalystError(
+                f"{self.name!r} cannot send charts: the CLI takes no image input. "
+                f"Run the chart arm on provider 'anthropic:' or pass no charts — "
+                f"silently dropping them would make every chart-vs-text "
+                f"comparison meaningless.")
+        prompt = (self._SCHEMA_INSTRUCTION.format(
+            schema=json.dumps(ANALYST_SCHEMA)) + "\n" + brief.render())
+
+        t0 = time.monotonic()
+        env = self._invoke(prompt)
+        dt = (time.monotonic() - t0) * 1000
+
+        if env.get("is_error") or env.get("subtype") not in (None, "success"):
+            raise AnalystError(f"claude reported failure: "
+                               f"{env.get('subtype')} {str(env.get('result'))[:200]}")
+        if env.get("permission_denials"):
+            raise AnalystError(f"claude was denied a permission it wanted: "
+                               f"{env['permission_denials']}")
+        text = self._unfence(str(env.get("result") or ""))
+        if not text:
+            raise AnalystError("claude returned an empty result")
+        try:
+            read = AnalystRead.model_validate_json(text)
+        except Exception as e:                                   # noqa: BLE001
+            raise AnalystError(f"claude returned text that is not a valid "
+                               f"AnalystRead: {e}; got {text[:300]!r}") from e
+
+        u = env.get("usage") or {}
+        fresh = int(u.get("input_tokens") or 0)
+        created = int(u.get("cache_creation_input_tokens") or 0)
+        cached = int(u.get("cache_read_input_tokens") or 0)
+        billed = self.billed()
+        return ProviderRead(read, self.name, self.model, dt, {
+            # budget.Pricing expects `in` to include cache reads and derives
+            # fresh by subtraction. Cache CREATION is folded into fresh: it is
+            # actually dearer than fresh input, so this understates rather than
+            # flatters, which is the right direction for a cost estimate.
+            "in": fresh + created + cached,
+            "cache_read": cached,
+            "out": int(u.get("output_tokens") or 0),
+            # The CLI always reports API-equivalent dollars. Under a
+            # subscription nobody is charged them, so they are labelled rather
+            # than passed off as spend.
+            "billed": billed,
+            "cost_usd_api_equivalent": env.get("total_cost_usd"),
+            "cost_usd": env.get("total_cost_usd") if billed else 0.0,
+        })
+
+
 PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
-             "deterministic": DeterministicProvider}
+             "deterministic": DeterministicProvider,
+             "claudecode": ClaudeCodeAnalyst}
 
 
 def build_provider(spec: str, **kw) -> AnalystProvider:

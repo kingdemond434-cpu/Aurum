@@ -174,11 +174,60 @@ Things it deliberately refuses rather than guesses:
 To point the desk at a different chat later, run the same command again with
 `--chat-id`; it warns you which chat it is replacing.
 
-### Your Anthropic API key
+### Paying for the analyst read — pick a backend first
 
-<https://console.anthropic.com/> → API Keys. Set a **monthly spend limit** while
-you are there. Rough cost at default settings: **$3–8/day** with charts,
-**$1–3/day** numeric-only.
+`--provider` chooses this, and it is the single largest running cost in the
+whole desk. The earlier "$3–8/day" estimate in this runbook was **too low**; the
+numbers below are measured, not assumed.
+
+**One read, measured** (Claude Code 2.1.235, a real `MarketBrief`): 5,737 fresh
+input + 22,914 cache-read + **6,798 output** tokens. Priced at `budget.py`'s
+opus-class table that is **$0.63 per read** — output alone is 81% of it.
+
+The desk's live path (`live.py:224`) runs a 30-minute heartbeat with
+**`min_gap=0`, i.e. no throttle at all**, on M15 bars. Gold trades ~23h/day, so:
+
+| Cadence | reads/mo | `anthropic:` | `claudecode:` |
+|---|---|---|---|
+| heartbeat only, 46/day | 1,012 | **$638** | **$0** |
+| realistic, 60/day | 1,320 | **$832** | **$0** |
+| every M15, 92/day | 2,024 | **$1,276** | **$0** |
+| session-anchored, 3/day | 66 | **$42** | **$0** |
+
+On a €1,500 account at 1% risk, a €15 risk unit, the middle row costs about
+**2.5R of thinking per signal.** You would have to average +2.5R per trade
+before the desk earned its first cent. That is not a margin, and `budget.py`
+called it in its own docstring before any of this was measured.
+
+**`--provider claudecode:claude-opus-5`** runs the same model through the Claude
+Code CLI, which authenticates against a Pro/Max subscription. No metered bill.
+
+```bash
+# once, interactively, as the service account:
+sudo -u aurum claude          # log in, then quit
+sudo -u aurum /opt/aurum/.venv/bin/python /opt/aurum/run_desk.py \
+    --preflight --provider claudecode:claude-opus-5
+```
+
+What you are trading away for that, honestly:
+
+- **Latency.** A measured read took **77.6s**, against ~8s for the API. Fine on
+  a 30-minute heartbeat; too slow to react inside an M15 bar.
+- **Quota, not dollars.** Claude Code injects ~26.5k tokens of its own
+  scaffolding per cold call even with `--system-prompt` replacing the default
+  and tools disabled. Free of money, not free of subscription limits — 3
+  reads/day is ~80k tokens, 92 reads/day is 2.4M. **Lower the wake rate.**
+- **No charts.** The CLI takes no image input, so `claudecode:` *raises* if you
+  pass charts rather than quietly running text-only. Run the chart arm on
+  `anthropic:` or not at all.
+
+> **Watch for this:** if `ANTHROPIC_API_KEY` is set, Claude Code may bill it per
+> token instead of using your subscription. Preflight warns you. The provider
+> strips the key from the CLI's environment when it is in subscription mode, so
+> a stray key is harmless rather than expensive.
+
+If you do use `anthropic:`: <https://console.anthropic.com/> → API Keys, and set
+a **monthly spend limit** while you are there.
 
 > A key was pasted into a chat earlier in this project. **Treat it as burned —
 > revoke it and issue a new one.** Anything pasted into a chat window should be

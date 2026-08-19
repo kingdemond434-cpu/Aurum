@@ -100,17 +100,53 @@ def _telegram_check(want: bool, secrets: Path, deliver: bool = True) -> Check:
     return Check("telegram", ok, f"{why} (credentials from {where})", fatal=True)
 
 
+def check_analyst_backend(provider_spec: str) -> Check:
+    """The credential the CHOSEN provider actually needs.
+
+    Checking ANTHROPIC_API_KEY unconditionally was right while there was one
+    backend and is wrong now: under `claudecode:` the key is not merely
+    unnecessary, it is actively removed from the child environment, so a
+    preflight demanding it would fail a correctly-configured desk — and, worse,
+    a preflight that PASSED on a stray key would tell an operator running on
+    their subscription that everything was fine while the CLI quietly billed
+    them per token. Each backend is asked for the thing it uses.
+    """
+    name = provider_spec.partition(":")[0]
+    if name == "deterministic":
+        return Check("analyst backend", True,
+                     "deterministic rules — no model, no credential, no cost")
+    if name == "claudecode":
+        import shutil
+        exe = shutil.which("claude")
+        if not exe:
+            return Check("analyst backend", False,
+                         "provider 'claudecode' needs the Claude Code CLI on "
+                         "PATH and it is not installed here")
+        billed = bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+        note = ("but ANTHROPIC_API_KEY is set, so reads may be BILLED per "
+                "token rather than drawn from your subscription — unset it, or "
+                "pass billed=False to strip it from the CLI's environment"
+                if billed else
+                "subscription mode — no metered bill. Verify the CLI is logged "
+                "in: `claude -p hello`")
+        return Check("analyst backend", True, f"claudecode at {exe}; {note}")
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    return Check("ANTHROPIC_API_KEY", bool(key),
+                 f"set ({len(key)} chars) — reads are BILLED per token"
+                 if key else
+                 "NOT SET — export ANTHROPIC_API_KEY=sk-ant-... "
+                 "The desk cannot analyse anything without it. Or run "
+                 "--provider claudecode:claude-opus-5 to use a subscription")
+
+
 def preflight(symbol: str, want_telegram: bool, secrets: Path,
               feed: str = "mt5", min_stop: float = 0.0,
-              declared_spread: float = 0.0) -> list[Check]:
+              declared_spread: float = 0.0,
+              provider_spec: str = "anthropic:claude-opus-5") -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    checks.append(Check("ANTHROPIC_API_KEY", bool(key),
-                        f"set ({len(key)} chars)" if key else
-                        "NOT SET — export ANTHROPIC_API_KEY=sk-ant-... "
-                        "The desk cannot analyse anything without it"))
+    checks.append(check_analyst_backend(provider_spec))
 
     # --- feed ------------------------------------------------------------
     if feed == "yahoo":
@@ -247,6 +283,14 @@ def main() -> int:
                          "the FEED's spread — a cost you will not pay, and "
                          "usually a smaller one, so marginal trades look better "
                          "than they are")
+    ap.add_argument("--provider", default="anthropic:claude-opus-5",
+                    help="analyst backend. 'anthropic:<model>' bills per token. "
+                         "'claudecode:<model>' runs the same model through the "
+                         "Claude Code CLI, which authenticates against a Pro/Max "
+                         "subscription — no metered bill, but it consumes "
+                         "subscription quota and a read takes ~78s rather than "
+                         "~8s, so pair it with a low wake rate. 'deterministic' "
+                         "is the rule-based baseline and costs nothing at all.")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
@@ -262,7 +306,8 @@ def main() -> int:
     print("=" * 78)
     checks = preflight(args.symbol, not args.no_telegram, Path(args.secrets),
                        feed=args.feed, min_stop=args.min_stop,
-                       declared_spread=args.declared_spread or 0.0)
+                       declared_spread=args.declared_spread or 0.0,
+                       provider_spec=args.provider)
     for c in checks:
         print(c.render())
     fatal = [c for c in checks if c.fatal and not c.ok]
@@ -314,6 +359,7 @@ def main() -> int:
     svc = build_service(symbol=args.symbol, shadow=shadow, vision=vision,
                         cfg=ServiceConfig(symbol=args.symbol),
                         secrets_dir=args.secrets, feed_backend=args.feed,
+                        provider_spec=args.provider,
                         management=args.management,
                         declared_spread=args.declared_spread,
                         shadow_management=args.shadow_management,
