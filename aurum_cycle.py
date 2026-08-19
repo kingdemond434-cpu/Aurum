@@ -390,6 +390,41 @@ def step_entries(ctx: dict) -> str:
     return cls_report(hits)
 
 
+def step_shadow(ctx: dict) -> str:
+    """What each shadow cell earned yesterday, from bars the desk already has.
+
+    Runs BEFORE intake so the returns are in ctx when the pipeline reads them.
+    Needs a bar loader and a cost function in ctx; without them it says so
+    rather than posting an empty day, because "no data" and "no fills" advance
+    the shadow clock differently and only one of them is evidence.
+    """
+    from datetime import date, timedelta
+    from golddesk.promotion import Status, load as load_book
+    from golddesk.shadow_eval import evaluate, render
+    from pathlib import Path
+    loader = ctx.get("bar_loader")
+    fams = ctx.get("families_module")
+    windows = ctx.get("session_windows") or {}
+    costs = ctx.get("costs_for")
+    runner = ctx.get("run_backtest")
+    if not all((loader, fams, costs, runner)):
+        return ("shadow evaluation SKIPPED: needs bar_loader, families_module, "
+                "costs_for and run_backtest in context. Not run is not the same "
+                "as no fills — an absent evaluator must not advance any shadow "
+                "clock, so nothing is posted.")
+    book = load_book(Path(ctx.get("pipeline_path", "state/pipeline.json")))
+    cells = [c.cell for c in book
+             if c.status in (Status.SHADOW, Status.LIVE)]
+    if not cells:
+        return "no cell is shadowing or live yet; nothing to evaluate."
+    day = ctx.get("as_of") or (date.today() - timedelta(days=1))
+    if isinstance(day, str):
+        day = date.fromisoformat(day)
+    r, t, notes = evaluate(cells, day, loader, fams, windows, costs, runner)
+    ctx["forward_returns"], ctx["forward_trades"] = r, t
+    return render(r, t, notes, day)
+
+
 def step_intake(ctx: dict) -> str:
     """Hunt output -> shadow book, with nobody asked.
 
@@ -400,9 +435,16 @@ def step_intake(ctx: dict) -> str:
     """
     from golddesk.intake import budget_note, run as intake_run
     from pathlib import Path
+    # FORWARD EVIDENCE, PRODUCED RATHER THAN ASSUMED. ctx["forward_returns"] was
+    # read here and written by nothing, so every candidate sat at zero fills
+    # for ever — a pipeline that reports cleanly every morning and can never
+    # promote. step_shadow fills it now; an empty dict still means "no fills
+    # today", which correctly advances no clock.
     book, text = intake_run(
         book_path=Path(ctx.get("pipeline_path", "state/pipeline.json")),
-        returns=ctx.get("forward_returns") or {})
+        returns=ctx.get("forward_returns") or {},
+        trades=ctx.get("forward_trades") or {},
+        day=ctx.get("as_of"))
     ctx["pipeline"] = book
     rs = ctx.get("r_multiples") or []
     if len(rs) >= 30:
@@ -413,6 +455,7 @@ def step_intake(ctx: dict) -> str:
 
 STEPS = (
     ("evidence", step_evidence),
+    ("shadow", step_shadow),
     ("intake", step_intake),
     ("channel", step_channel),
     ("growth", step_growth),

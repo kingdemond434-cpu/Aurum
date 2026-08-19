@@ -392,20 +392,45 @@ def live_series_of(book: Sequence[Candidate]) -> dict:
     return series_of([c for c in book if c.status is Status.LIVE])
 
 
-def series_of(cells: Sequence[Candidate]) -> dict:
-    """Dated daily series of ANY set of cells, equal-weighted per day.
+def series_of(cells: Sequence[Candidate], edge_weighted: bool = True) -> dict:
+    """Dated daily series of ANY set of cells, weighted the way the book trades.
 
-    Weighted by the sleeves that actually traded each day, not by the full
-    roster: a sleeve that sat out contributes nothing rather than a zero, so a
-    quiet day is not scored as a break-even day for everyone.
+    EDGE WEIGHTS, BECAUSE THAT IS WHAT per_sleeve_heat ACTUALLY DOES. An earlier
+    version equal-weighted here while the risk layer allocated by measured
+    expectancy, so every promotion decision was scored against a portfolio the
+    desk does not hold. The gap is small while sleeve edges are similar and
+    widens exactly when they are not — which is precisely the case where the
+    decision matters.
+
+    Weights are the sleeves' forward means, floored at zero and renormalised per
+    day over whoever actually traded. A sleeve that sat out contributes nothing
+    rather than a zero, so a quiet day is not scored as a break-even day for
+    everyone; a sleeve with no positive forward mean contributes nothing either,
+    because that is the size the risk layer would give it.
     """
+    w = {}
+    for c in cells:
+        m = c.forward_mean
+        w[id(c)] = max(float(m), 0.0) if m is not None else 0.0
+    if edge_weighted and sum(w.values()) <= 0:
+        # Nothing has a positive forward mean yet. Falling back to equal weights
+        # is right here: it is not evidence of equality, it is the absence of
+        # any basis for preference, and a zero-weight book has no series at all.
+        edge_weighted = False
     acc: dict = {}
     for c in cells:
         if len(c.forward_days_idx) != len(c.forward_r):
             continue
+        wt = w[id(c)] if edge_weighted else 1.0
+        if wt <= 0:
+            continue
         for d, r in zip(c.forward_days_idx, c.forward_r):
-            acc.setdefault(d, []).append(r)
-    return {d: sum(v) / len(v) for d, v in acc.items()}
+            acc.setdefault(d, []).append((wt, r))
+    out = {}
+    for d, pairs in acc.items():
+        tot = sum(x for x, _ in pairs)
+        out[d] = (sum(x * r for x, r in pairs) / tot) if tot > 0 else 0.0
+    return out
 
 
 def book_growth(series: dict, tolerance: float = GROWTH_TOLERANCE) -> Optional[float]:

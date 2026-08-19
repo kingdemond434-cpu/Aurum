@@ -11,6 +11,8 @@ import random
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from golddesk.growth import (MAX_DRAWDOWN_TOLERANCE, per_sleeve_heat,
                              solve_heat)
 from golddesk.promotion import (MIN_FORWARD_T, MIN_VERDICT_TRADES, VERDICT_MIN_TRADES,
@@ -468,3 +470,44 @@ def test_the_trade_floor_outranks_the_clock_in_both_directions():
         observe(c, 0.4, day=f"2026-06-{i + 1:03d}", n_trades=0)
     assert c.forward_trades == 0
     assert not eligible_for_verdict(c), "ninety days of no fills is not evidence"
+
+
+def test_the_book_series_is_weighted_the_way_the_book_trades():
+    """THE MEASUREMENT MUST MATCH THE ALLOCATION.
+
+    series_of once equal-weighted while per_sleeve_heat allocated by measured
+    expectancy, so every promotion decision was scored against a portfolio the
+    desk does not hold. The gap is small while sleeve edges are similar and
+    widens exactly when they are not — the case where the decision matters.
+    """
+    from golddesk.promotion import series_of
+    dates = _days(200)
+    strong = _shadow("STRONG|f", [1.0] * 200, dates)
+    weak = _shadow("WEAK|f", [0.0] * 200, dates)
+    eq = series_of([strong, weak], edge_weighted=False)
+    ew = series_of([strong, weak], edge_weighted=True)
+    assert eq[dates[0]] == pytest.approx(0.5), "equal weights halve the strong one"
+    assert ew[dates[0]] == pytest.approx(1.0), (
+        "edge weights must give the zero-mean sleeve no size, matching what "
+        "per_sleeve_heat would allocate")
+
+
+def test_a_negative_sleeve_gets_no_weight_in_the_book_series():
+    from golddesk.promotion import series_of
+    dates = _days(200)
+    good = _shadow("G|f", [0.5] * 200, dates)
+    bad = _shadow("B|f", [-0.5] * 200, dates)
+    s = series_of([good, bad], edge_weighted=True)
+    assert s[dates[0]] == pytest.approx(0.5)
+
+
+def test_no_positive_means_falls_back_rather_than_returning_nothing():
+    """Absence of a basis for preference is not evidence of equality, but a
+    zero-weight book has no series at all — so equal weights are the right
+    fallback here."""
+    from golddesk.promotion import series_of
+    dates = _days(200)
+    a = _shadow("A|f", [-0.1] * 200, dates)
+    b = _shadow("B|f", [-0.3] * 200, dates)
+    s = series_of([a, b], edge_weighted=True)
+    assert s and s[dates[0]] == pytest.approx(-0.2)
