@@ -231,16 +231,22 @@ def test_the_stamp_records_the_attempt_not_the_success(desk, monkeypatch):
     re-sending notifications and re-queueing findings."""
     monkeypatch.setattr(C, "STEPS", (("boom", lambda c: (_ for _ in ()).throw(
         RuntimeError("x"))),))
-    C.run(dry=True)
+    # dry=False deliberately: this is about FAILURE not preventing the stamp,
+    # and a dry run now correctly declines to stamp at all, so running it dry
+    # would test the wrong mechanism and pass for the wrong reason.
+    C.run(dry=False)
     state = json.loads((desk / "state" / "cycle_state.json").read_text())
     assert state["last_run"]
     assert state["last_failed_steps"] == ["boom"]
 
 
 def test_the_cycle_runs_once_a_day_unless_forced(desk):
-    C.run(dry=True)
-    assert C.run(dry=True) == 0
-    C.run(dry=True, force=True)
+    # Also dry=False. With dry runs no longer stamping, the original version of
+    # this test asserted that two un-stamping runs both return 0 — true, and
+    # nothing to do with once-a-day.
+    C.run(dry=False)
+    assert C.run(dry=False) == 0
+    C.run(dry=False, force=True)
 
 
 def test_a_torn_ledger_line_costs_one_row_not_the_cycle(desk):
@@ -368,3 +374,41 @@ def test_entries_without_bars_says_so_rather_than_claiming_nothing_clusters(desk
 
 def test_entries_with_no_mined_trades_is_silent(desk):
     assert "nothing to classify" in C.step_entries({})
+
+
+# ---------------------------------------------------- a dry run is a rehearsal
+#
+# Found in operation, not in test. The documented sequence is `--dry` to read
+# the output, then the real run — and the dry run stamped the day, so the second
+# command answered "cycle already ran" and the operator had to reach for
+# --force. A rehearsal that consumes the thing it rehearses is not a rehearsal.
+
+def test_a_dry_run_does_not_consume_the_day(tmp_path, monkeypatch):
+    import aurum_cycle as C
+    monkeypatch.setattr(C, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(C, "CYCLE_STATE", tmp_path / "cycle_state.json")
+    monkeypatch.setattr(C, "REPORT_DIR", tmp_path / "reports")
+    monkeypatch.setattr(C, "LOG", tmp_path / "cycle.log")
+    monkeypatch.setattr(C, "LEDGER", tmp_path / "ledger.jsonl")
+
+    C.run(dry=True)
+    assert not (tmp_path / "cycle_state.json").exists(), (
+        "the dry run stamped the day and blocked the real one")
+
+    C.run(dry=False)
+    state = json.loads((tmp_path / "cycle_state.json").read_text())
+    assert state.get("last_run"), "the real run must stamp"
+
+
+def test_the_real_run_still_refuses_to_repeat_itself(tmp_path, monkeypatch):
+    import aurum_cycle as C
+    monkeypatch.setattr(C, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(C, "CYCLE_STATE", tmp_path / "cycle_state.json")
+    monkeypatch.setattr(C, "REPORT_DIR", tmp_path / "reports")
+    monkeypatch.setattr(C, "LOG", tmp_path / "cycle.log")
+    monkeypatch.setattr(C, "LEDGER", tmp_path / "ledger.jsonl")
+
+    C.run(dry=False)
+    before = (tmp_path / "cycle_state.json").read_text()
+    C.run(dry=False)
+    assert (tmp_path / "cycle_state.json").read_text() == before

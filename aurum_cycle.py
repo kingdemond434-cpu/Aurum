@@ -528,10 +528,20 @@ def run(force: bool = False, dry: bool = False) -> int:
     # THE ATTEMPT IS STAMPED, NOT THE SUCCESS. Stamping only on a clean run
     # means one failing step re-runs every step next invocation — re-sending
     # notifications and re-queueing findings.
-    state["last_run"] = today
-    state["last_failed_steps"] = failed
-    state["version"] = CYCLE_VERSION
-    CYCLE_STATE.write_text(json.dumps(state, indent=2))
+    #
+    # A DRY RUN IS A REHEARSAL AND MUST NOT CONSUME THE DAY. It stamped, so the
+    # documented sequence — `--dry` to read the output, then the real run —
+    # blocked itself on the second command with "cycle already ran". The
+    # operator had to discover that and reach for --force, which defeats the
+    # point of offering a rehearsal at all.
+    if dry:
+        log("dry run: nothing sent, day NOT stamped -- the real run is still "
+            "available without --force")
+    else:
+        state["last_run"] = today
+        state["last_failed_steps"] = failed
+        state["version"] = CYCLE_VERSION
+        CYCLE_STATE.write_text(json.dumps(state, indent=2))
 
     log(f"daily cycle {today} done"
         + (f" -- FAILED: {', '.join(failed)}" if failed else ""))

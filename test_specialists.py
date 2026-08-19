@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import math
 import pytest
 
 from golddesk.snapshot import SnapshotBuilder
@@ -229,3 +230,48 @@ def test_the_render_shows_the_change_rate_not_just_the_total():
     without = ["FLAT"] * 50 + ["LONG"] * 150
     mv = marginal_value("seq", with_s, without, [0.6] * n, [0.0] * n)
     assert "CHANGED" in mv.render() and "25.0%" in mv.render()
+
+
+# ------------------------------------------------- zero-variance verdicts
+#
+# Caught on a different interpreter, not by design. With every delta identical
+# the sample has zero variance, and whether floating-point summation leaves a
+# 1-ULP residue decided whether sd was tiny-positive or exactly zero — so the
+# same input returned POSITIVE on Python 3.11 and UNPROVEN on 3.12. The old
+# `t = 0.0 if sd == 0` also had the logic backwards: a specialist that improved
+# EVERY decision by the same amount is the strongest possible evidence.
+
+def test_a_perfectly_consistent_gain_is_not_called_noise():
+    n = 200
+    mv = marginal_value("seq", ["LONG"] * n, ["FLAT"] * n, [0.6] * n, [0.0] * n)
+    assert mv.verdict == "POSITIVE", (
+        "zero variance with a positive mean is the strongest evidence there is")
+    assert mv.t_stat == math.inf
+
+
+def test_a_perfectly_consistent_loss_is_negative_not_unproven():
+    n = 200
+    mv = marginal_value("seq", ["LONG"] * n, ["FLAT"] * n, [0.0] * n, [0.6] * n)
+    assert mv.verdict == "NEGATIVE"
+
+
+def test_the_verdict_does_not_depend_on_floating_point_luck():
+    """The same question asked two ways must answer the same.
+
+    One arm sums to exactly zero variance, the other leaves a rounding residue.
+    Before the fix these returned different verdicts on the same evidence.
+    """
+    n = 200
+    exact = marginal_value("a", ["LONG"] * n, ["FLAT"] * n, [0.6] * n, [0.0] * n)
+    jitter = marginal_value("b", ["LONG"] * n, ["FLAT"] * n,
+                            [0.6 + (1e-15 if i % 2 else -1e-15) for i in range(n)],
+                            [0.0] * n)
+    assert exact.verdict == jitter.verdict == "POSITIVE"
+
+
+def test_a_dead_flat_specialist_is_still_unproven():
+    """Zero mean AND zero variance is genuinely no information."""
+    n = 200
+    mv = marginal_value("seq", ["LONG"] * n, ["FLAT"] * n, [0.05] * n, [0.0] * n)
+    assert mv.t_stat == 0.0
+    assert mv.verdict in ("UNPROVEN", "NEGATIVE")

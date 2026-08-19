@@ -312,7 +312,26 @@ def marginal_value(specialist: str,
     net = sum(deltas)
     mean = net / len(deltas)
     sd = (sum((d - mean) ** 2 for d in deltas) / (len(deltas) - 1)) ** 0.5
-    t = mean / (sd / math.sqrt(len(deltas))) if sd > 0 else 0.0
+    # ZERO VARIANCE IS THE STRONGEST EVIDENCE, NOT THE WEAKEST, and the previous
+    # `t = 0.0 if sd == 0` said the opposite: a specialist that improved every
+    # single decision by an identical amount was filed as "indistinguishable
+    # from noise".
+    #
+    # It was also non-deterministic. With every delta identical, whether the
+    # summation leaves a 1-ULP residue decides whether sd is a tiny positive
+    # number or exactly zero — so the same input returned POSITIVE on one
+    # interpreter and UNPROVEN on another. A verdict must not turn on rounding.
+    # NEGLIGIBLE, not merely zero. Testing `sd <= 0` still leaves the answer to
+    # the interpreter: with identical deltas one machine's summation leaves a
+    # 1-ULP residue (sd ~1e-16, t ~4e15) and another's cancels exactly (sd = 0,
+    # t = 0). Both describe the same deterministic sample and must reach the
+    # same verdict, so the comparison is against the scale of the data rather
+    # than against zero.
+    scale = max(abs(mean), 1e-12)
+    if sd <= 1e-9 * scale:
+        t = math.inf if mean > 0 else (-math.inf if mean < 0 else 0.0)
+    else:
+        t = mean / (sd / math.sqrt(len(deltas)))
     if mean <= 0:
         return MarginalValue(specialist, n, len(deltas), net, mean, t, cost_r,
                              "NEGATIVE",
