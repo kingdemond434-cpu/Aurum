@@ -358,3 +358,23 @@ def test_two_token_shaped_strings_in_one_paste_is_refused():
     other = "222222222:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     with pytest.raises(ValueError, match="found 2 different token-shaped"):
         ts.normalise_token(f"{GOOD}\n{other}")
+
+
+def test_quote_characters_from_a_shell_example_are_stripped():
+    """cmd.exe does not treat ' or " as quoting -- it passes them through
+    literally, so following a Unix-shell example (single quotes around the
+    token) embeds real quote characters in the input."""
+    assert ts.normalise_token("'8911147517:AAquitedefinitelyafaketokenforatest0'") \
+        == "8911147517:AAquitedefinitelyafaketokenforatest0"
+    assert ts.normalise_token('"8911147517:AAquitedefinitelyafaketokenforatest0"') \
+        == "8911147517:AAquitedefinitelyafaketokenforatest0"
+
+
+def test_the_full_botfather_message_is_extracted():
+    """The whole 'Use this token...Keep your token secure' paste, not just the line."""
+    msg = ("Use this token to access the HTTP API:\n"
+          "8911147517: AAEnCsu_fmpox-Nx_P09LdcD2JNOYz_XP78\n"
+          "Keep your token secure and store it safely, it can be used by "
+          "anyone to control your bot.")
+    assert ts.normalise_token(msg) == \
+        "8911147517:AAEnCsu_fmpox-Nx_P09LdcD2JNOYz_XP78"

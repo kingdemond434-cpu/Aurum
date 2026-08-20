@@ -133,7 +133,12 @@ def normalise_token(raw: str) -> str:
     malformed token is caught here, in front of the user, instead of arriving
     as a generic auth failure from a remote API.
     """
-    cleaned = "".join(raw.split())
+    # cmd.exe does not treat ' or " as quoting -- unlike a POSIX shell it
+    # passes them through literally, so following a Unix-shell example (single
+    # quotes around the token) embeds real quote characters in the input.
+    # Stripped here because they can only ever be paste noise: a Telegram
+    # token's charset never includes them.
+    cleaned = "".join(raw.split()).strip("'\"")
     if not cleaned:
         return ""
     if not _TOKEN_RE.match(cleaned):
