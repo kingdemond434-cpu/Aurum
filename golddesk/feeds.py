@@ -187,7 +187,22 @@ _AISC_PATTERNS = (
     re.compile(r"\$\s?([0-9][0-9,]{2,6})(?:\.\d+)?\s*(?:/|per\s+)o(?:z|unce)", re.I),
 )
 
-WGC_AISC_URL = "https://www.gold.org/goldhub/data/all-in-sustaining-costs"
+#: TRIED IN ORDER. The first entry came from the recommendation pack's fetcher and is a 404 —
+#: found on the first real run, because that fetcher discards its response and could never have
+#: noticed. The live page is `aisc-gold`; `production-costs` on the beta host is the same series
+#: under an older path and is kept as a fallback for when the primary is restructured.
+#:
+#: A CHAIN, NOT A CONSTANT, because a data vendor's URL is not a stable interface. Each is tried
+#: and the first that yields a plausible figure wins; if none do, the result is ABSENT naming
+#: every URL attempted rather than a default.
+WGC_AISC_URLS = (
+    "https://www.gold.org/goldhub/data/aisc-gold",
+    "https://beta.gold.org/goldhub/data/production-costs",
+    "https://www.gold.org/about-gold/gold-supply/responsible-gold/all-in-costs",
+)
+
+#: Kept so existing callers and tests that reference a single URL still resolve.
+WGC_AISC_URL = WGC_AISC_URLS[0]
 
 
 def parse_aisc(text: str) -> Optional[float]:
@@ -242,17 +257,21 @@ def fetch_aisc(*, cache_path: Optional[Path] = None,
             return Measurement.absent(name, source,
                                       "requests is not installed and no cached value exists")
 
-    try:
-        text = getter(WGC_AISC_URL)
-    except Exception as exc:                                        # noqa: BLE001
-        if cache_path:
-            cached = cache_read(cache_path, name, source, fresh_hours)
-            if cached.usable:
-                return cached
-        return Measurement.absent(name, source,
-                                  f"fetch failed ({type(exc).__name__}: {str(exc)[:80]})")
+    val = None
+    used = ""
+    failures: list[str] = []
+    for url in WGC_AISC_URLS:
+        try:
+            text = getter(url)
+        except Exception as exc:                                    # noqa: BLE001
+            failures.append(f"{url.split('/')[-1]}: {type(exc).__name__}")
+            continue
+        val = parse_aisc(text)
+        if val is not None:
+            used = url
+            break
+        failures.append(f"{url.split('/')[-1]}: fetched, no plausible figure")
 
-    val = parse_aisc(text)
     if val is None:
         if cache_path:
             cached = cache_read(cache_path, name, source, fresh_hours)
@@ -260,13 +279,14 @@ def fetch_aisc(*, cache_path: Optional[Path] = None,
                 return cached
         return Measurement.absent(
             name, source,
-            f"page fetched but no plausible AISC found in it (bounds "
-            f"{AISC_PLAUSIBLE[0]:.0f}-{AISC_PLAUSIBLE[1]:.0f}). The page shape probably changed — "
-            "a value outside those bounds is a mis-parse, not a measurement")
+            f"no plausible AISC from any known URL (bounds {AISC_PLAUSIBLE[0]:.0f}-"
+            f"{AISC_PLAUSIBLE[1]:.0f}). Tried — {'; '.join(failures)}. If a page fetched but "
+            "yielded nothing, the figure is probably rendered by a chart widget rather than "
+            "present in the HTML, and no regex over the raw page will ever find it")
 
     m = Measurement(name, val, Provenance.MEASURED, source,
                     datetime.now(timezone.utc).isoformat(),
-                    f"parsed from {WGC_AISC_URL}")
+                    f"parsed from {used}")
     if cache_path:
         cache_write(cache_path, m)
     return m

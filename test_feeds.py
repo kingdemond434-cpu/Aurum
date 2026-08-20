@@ -187,3 +187,37 @@ class TestTheFenceDoesNotCryWolf:
     def test_the_live_golddesk_package_is_clean(self):
         found = [f for pth in (_ROOT / "golddesk").rglob("*.py") for f in fence.scan(pth)]
         assert found == [], "\n".join(f"{f['file']}:{f['line']} {f['fn']}()" for f in found)
+
+
+class TestTheURLChainSurvivesAVendorMovingThePage:
+    def test_a_404_on_the_first_url_falls_through_to_the_next(self):
+        from golddesk.feeds import WGC_AISC_URLS
+        seen = []
+        def getter(url):
+            seen.append(url)
+            if url == WGC_AISC_URLS[0]:
+                raise RuntimeError("404 Not Found")
+            return "AISC $1,456/oz"
+        m = fetch_aisc(getter=getter)
+        assert m.provenance is Provenance.MEASURED and m.value == 1456.0
+        assert len(seen) == 2 and WGC_AISC_URLS[1] in m.why
+
+    def test_every_url_failing_names_all_of_them(self):
+        """The pack's dead URL was found on the first real run. When the next one dies, the
+        refusal has to say which were tried, or the next person guesses again."""
+        def getter(url): raise RuntimeError("404")
+        m = fetch_aisc(getter=lambda u: (_ for _ in ()).throw(RuntimeError("404")))
+        assert m.provenance is Provenance.ABSENT
+        assert m.why.count("RuntimeError") >= 2 and "Tried" in m.why
+
+    def test_a_page_that_fetches_but_hides_the_number_says_it_may_be_a_widget(self):
+        m = fetch_aisc(getter=lambda u: "<html><div id='chart'></div></html>")
+        assert "chart widget" in m.why, (
+            "a JS-rendered figure is invisible to any regex over raw HTML, and the refusal "
+            "should say so rather than looking like a bad pattern")
+
+    def test_the_dead_pack_url_is_gone(self):
+        from golddesk.feeds import WGC_AISC_URLS
+        assert not any("all-in-sustaining-costs" in u for u in WGC_AISC_URLS), (
+            "that URL 404s — inherited from the pack's fetcher, which could not notice because "
+            "it discards its response")
