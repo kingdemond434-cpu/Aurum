@@ -1,45 +1,61 @@
-# Nothing secret should ever be in this folder, but the repo is going public-ish
-# (other AIs and you both write to it), so the guard is explicit rather than assumed.
+# WHAT IS HIDDEN HERE, AND THE ONE RULE THAT DECIDES IT
+#
+# This repo is read and written by several Claude sessions and by the operator.
+# Anything a future session cannot see, it will re-derive from scratch or, worse,
+# contradict without knowing it did. So the default is VISIBLE, and the ignore
+# list is short and has to justify itself.
+#
+# Exactly one thing is hidden on purpose: CREDENTIALS. A token pushed to GitHub
+# is public permanently -- deletion does not un-publish it, because the object
+# survives in the ref log and in anything that cloned or forked meanwhile. The
+# Telethon *.session file is not a bot token, it is a live login to a PERSONAL
+# Telegram account; committing one hands over the account.
+#
+# Everything else -- the ledger, the state, the reports, the absorbed findings --
+# is EVIDENCE and belongs in the history where every brain can read it.
+
+# ---- credentials: never, under any argument ------------------------------
 *.key
 *.token
 *.env
+.env
 secrets/
 credentials*
 *_token*
 *_password*
+external/*.session
+external/*.session-journal
 
-# Local scratch
+# ---- machine noise -------------------------------------------------------
 .DS_Store
 Thumbs.db
 *.tmp
-
-# Python
 __pycache__/
 *.pyc
 .venv/
+*.pyc.*
 
-# Local run artifacts — never evidence, never committed
-acceptance_out/
-state/
-*.jsonl
-backtest_out/
-drift_out/
-
-# Build artifact — regenerate with ./build_zip.sh, never commit.
-# A committed zip goes stale the moment a module changes, and a packaged
-# artifact that disagrees with the source is the failure mode this repo has
-# already hit twice.
+# ---- build artefact ------------------------------------------------------
+# Regenerate with ./build_zip.sh. A committed zip goes stale the moment a module
+# changes, and a packaged artifact that disagrees with its source is a failure
+# mode this repo has already hit twice.
 aurum_v2.zip
-# External capture. The log is shareable evidence and MAY be committed so it can
-# be analysed elsewhere; the Telethon .session file is a live Telegram
-# CREDENTIAL and must never be. Carved out explicitly rather than ignoring the
-# whole directory, because a blanket ignore silently blocks the one file worth
-# sending and does nothing to stop the one that must not be.
-external/*
-!external/signals.jsonl
-!external/channels.txt
-external/*.session
-external/*.session-journal
-state/
-*.db
-data/
+
+# ---- large binary market data -------------------------------------------
+# Parquet bars are megabytes, regenerate exactly from the fetchers, and are not
+# a claim anyone can be wrong about. Excluded for SIZE, not for secrecy: git is
+# a poor object store for them and a bloated clone slows every session down.
+# The derived reports and ledgers they produce are all committed.
+*.parquet
+data/**/*.parquet
+data/**/*.csv.gz
+
+# NOTE ON WHAT USED TO BE HERE.
+# `state/`, `*.jsonl`, `acceptance_out/`, `backtest_out/`, `drift_out/` and
+# `data/` were all ignored, under a comment reading "Local run artifacts --
+# never evidence, never committed". That was flatly contradicted by run_desk.py,
+# which prints "state/ledger.jsonl -- that file IS the forward evidence. Do not
+# delete it." Both cannot be true. The ledger is the only record of what this
+# desk actually predicted and what actually happened, it is the input to
+# adapt.py's closed loop, and hiding it meant every new session started blind to
+# every signal the desk had ever produced. They are now tracked.

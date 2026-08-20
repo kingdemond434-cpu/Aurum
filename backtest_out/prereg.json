@@ -1,0 +1,24 @@
+{
+  "spec": {
+    "hypothesis": "Each rung of the ablation ladder adds positive incremental net R per state over the rung beneath it, out of sample.",
+    "arms": [
+      "A"
+    ],
+    "primary_metric": "net_r_per_state",
+    "secondary_metrics": [
+      "capture_rate",
+      "forgone_r",
+      "max_dd_r"
+    ],
+    "holdout_start": "2024-05-22",
+    "holdout_end": "2026-08-11",
+    "min_ess": 20.0,
+    "fdr_q": 0.1,
+    "trials_declared": 1,
+    "trials_inflation": 8.0,
+    "promote_rule": "paired CI lower bound > 0 and survives BH-FDR",
+    "demote_rule": "fails either, at any scheduled review",
+    "frozen_at": "2026-08-14T19:55:32.574058+00:00"
+  },
+  "hash": "301456dfdb48e5e2585837c05688e9f27628be625f3d99bb7aad2a9ed1b5e2a8"
+}
