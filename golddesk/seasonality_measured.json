@@ -1,0 +1,260 @@
+{
+ "version": "seasonality-2026-08-20-a",
+ "measured_at": "2026-08-20T19:40:59.427836+00:00",
+ "bars": 49735,
+ "span": [
+  "2018-03-19T01:00:00+00:00",
+  "2026-08-14T23:00:00+00:00"
+ ],
+ "min_years": 8,
+ "t_neutral": 2.0,
+ "months": [
+  {
+   "month": 1,
+   "n_years": 8,
+   "mean_return": 0.03242312423459791,
+   "sd_return": 0.05206147132719814,
+   "win_rate": 0.625,
+   "t_stat": 1.761503117685471,
+   "verdict": "NEUTRAL",
+   "why": "mean +3.24% over 8 years, t=+1.76 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ]
+  },
+  {
+   "month": 2,
+   "n_years": 8,
+   "mean_return": 0.009339146737680923,
+   "sd_return": 0.058144801727086165,
+   "win_rate": 0.5,
+   "t_stat": 0.45429849565617164,
+   "verdict": "NEUTRAL",
+   "why": "mean +0.93% over 8 years, t=+0.45 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ]
+  },
+  {
+   "month": 3,
+   "n_years": 9,
+   "mean_return": 0.012295775296383149,
+   "sd_return": 0.07059271289559911,
+   "win_rate": 0.5555555555555556,
+   "t_stat": 0.522537304150682,
+   "verdict": "NEUTRAL",
+   "why": "mean +1.23% over 9 years, t=+0.52 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ]
+  },
+  {
+   "month": 4,
+   "n_years": 9,
+   "mean_return": 0.016291130715623284,
+   "sd_return": 0.031656227590294184,
+   "win_rate": 0.5555555555555556,
+   "t_stat": 1.5438792258953324,
+   "verdict": "NEUTRAL",
+   "why": "mean +1.63% over 9 years, t=+1.54 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ]
+  },
+  {
+   "month": 5,
+   "n_years": 9,
+   "mean_return": 0.006929738369628069,
+   "sd_return": 0.0328456131437355,
+   "win_rate": 0.5555555555555556,
+   "t_stat": 0.6329373428929045,
+   "verdict": "NEUTRAL",
+   "why": "mean +0.69% over 9 years, t=+0.63 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ]
+  },
+  {
+   "month": 6,
+   "n_years": 9,
+   "mean_return": -0.018610537930445228,
+   "sd_return": 0.055213205031611604,
+   "win_rate": 0.2222222222222222,
+   "t_stat": -1.0112003778692076,
+   "verdict": "NEUTRAL",
+   "why": "mean -1.86% over 9 years, t=-1.01 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ]
+  },
+  {
+   "month": 7,
+   "n_years": 9,
+   "mean_return": 0.019759259100657938,
+   "sd_return": 0.04127740788059642,
+   "win_rate": 0.6666666666666666,
+   "t_stat": 1.4360828439965816,
+   "verdict": "NEUTRAL",
+   "why": "mean +1.98% over 9 years, t=+1.44 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ]
+  },
+  {
+   "month": 8,
+   "n_years": 9,
+   "mean_return": 0.01679447544990737,
+   "sd_return": 0.04045655946204836,
+   "win_rate": 0.5555555555555556,
+   "t_stat": 1.2453710107748037,
+   "verdict": "NEUTRAL",
+   "why": "mean +1.68% over 9 years, t=+1.25 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+   ]
+  },
+  {
+   "month": 9,
+   "n_years": 8,
+   "mean_return": -0.0027291734412960705,
+   "sd_return": 0.05843969871708766,
+   "win_rate": 0.25,
+   "t_stat": -0.13208945903141028,
+   "verdict": "NEUTRAL",
+   "why": "mean -0.27% over 8 years, t=-0.13 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+   ]
+  },
+  {
+   "month": 10,
+   "n_years": 8,
+   "mean_return": 0.023796409530487325,
+   "sd_return": 0.02876029310385991,
+   "win_rate": 0.75,
+   "t_stat": 2.3402546679389,
+   "verdict": "BULLISH",
+   "why": "mean +2.38% over 8 years, t=+2.34, 6/8 positive. ONE TEST, uncorrected for having looked at twelve months \u2014 at t=2.0 roughly one month in twenty clears this by chance, and twelve were examined",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+   ]
+  },
+  {
+   "month": 11,
+   "n_years": 8,
+   "mean_return": 0.006332251888683332,
+   "sd_return": 0.04777740302120278,
+   "win_rate": 0.5,
+   "t_stat": 0.3748699567184291,
+   "verdict": "NEUTRAL",
+   "why": "mean +0.63% over 8 years, t=+0.37 \u2014 indistinguishable from zero. This is the honest answer for most months",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+   ]
+  },
+  {
+   "month": 12,
+   "n_years": 8,
+   "mean_return": 0.030015150658377718,
+   "sd_return": 0.02289367412890409,
+   "win_rate": 0.875,
+   "t_stat": 3.708258700525276,
+   "verdict": "BULLISH",
+   "why": "mean +3.00% over 8 years, t=+3.71, 7/8 positive. ONE TEST, uncorrected for having looked at twelve months \u2014 at t=2.0 roughly one month in twenty clears this by chance, and twelve were examined",
+   "years": [
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025
+   ]
+  }
+ ],
+ "note": "Measured from the desk's own bar series. Replaces a hardcoded MONTHLY_BIAS table whose win rates and causal stories were asserted, not computed."
+}
