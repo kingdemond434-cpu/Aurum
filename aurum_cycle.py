@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -219,6 +220,26 @@ def step_absorb(ctx: dict) -> str:
     # on any given night; the cycle is not.
     qroot = os.environ.get("AURUM_QUANT_ROOT", "").strip()
     if qroot:
+        # UPDATE THE CHECKOUT BEFORE SCANNING IT. Without this, "absorbs as
+        # quant grows" is a lie unless a human remembers to `git pull` the
+        # checkout by hand between cycles — the scan would silently keep
+        # reading whatever snapshot was on disk the day it was cloned. Same
+        # swallow-on-failure rule as the rest of this function: a detached
+        # HEAD, a dirty tree, or no network degrades to "scan what's already
+        # there", never to a broken cycle.
+        if (Path(qroot) / ".git").is_dir():
+            try:
+                pull = subprocess.run(
+                    ["git", "-C", qroot, "pull", "--ff-only"],
+                    capture_output=True, text=True, timeout=120)
+                if pull.returncode == 0:
+                    log(f"  quant checkout updated: {pull.stdout.strip() or '(already current)'}")
+                else:
+                    log(f"  quant pull failed ({pull.returncode}): "
+                        f"{pull.stderr.strip()[:200]}; scanning checkout as-is")
+            except Exception as e:                               # noqa: BLE001
+                log(f"  quant pull skipped ({type(e).__name__}: {e}); "
+                    f"scanning checkout as-is")
         try:
             from golddesk.absorb_auto import to_inbox
             res = to_inbox(Path(qroot), inbox)

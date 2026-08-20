@@ -48,24 +48,34 @@ letting the flag decide for you.
 
 ## Recent claims (most recent first — add yours, do not delete others' unless resolved)
 
-- **2026-08-20, this session** (branch `claude/aurum-check-kqwpy6`): touched
-  `run_desk.py`, `golddesk/providers.py`, `golddesk/service.py` to add the
-  `--effort` reasoning-effort flag (threaded through both `anthropic:` and
-  `claudecode:` providers, confirmed against a real `claude --help`), the
-  `provider/vision match` preflight check, and three merge-collision fixes.
-  Also added `golddesk/gold_trend.py` (ported trend detector, wired into
-  `MarketBrief`/`build_brief`) and `golddesk/quant_findings.py` (the
-  absorption channel's first real entries). Pushed as of this note.
+- **2026-08-20, this session** (branch `claude/aurum-check-kqwpy6`): merged
+  `claude/aurum-tier2-brain` in (4th collision, same shape as the first
+  three — both branches added `--provider` to `run_desk.py`'s argparse
+  independently; kept the one already in this branch's history, took only
+  tier2-brain's new `--expect-broker`; also hand-merged adjacent-line
+  conflicts in `golddesk/analyst.py`'s `MarketBrief` — kept both `trend` and
+  `blocks` fields). 771 tests pass post-merge. Also wired
+  `quant_findings.strength_bucket()` into `golddesk/live.py`'s two
+  context-construction sites (`entry_context` and `DecisionRecord.context`)
+  so the sealed `quant-trend-strength-high-v1` hypothesis can actually
+  accrue instead of sitting at post_n=0 forever. Mid-work on sealing the
+  second quant finding (XAUUSD asia/prior-NY-session) — blocked on getting
+  the exact NORMAL_DAY/TREND_DAY/RANGE_DAY/FAILED_BREAK thresholds from the
+  quant repo's trendday.py (not in this branch yet). **Do not touch
+  `golddesk/live.py`'s `_trend_ctx` / context-construction lines without
+  reading this note first.**
 
-- **Unknown session, branch `claude/aurum-tier2-brain`**: was building a
-  `--effort` flag and `provider_effort` plumbing independently (visible in the
-  operator's local `my-local-changes.patch`, discarded during a conflict
-  resolution before it was pushed). If this branch still exists and gets
-  merged, **its `--effort` work will collide with this session's** — same
-  flag name, likely same shape. Whoever merges second: check `git log` for
-  which one actually reached `origin/claude/aurum-check-kqwpy6` first (this
-  session's effort flag is live there as of this commit) and do not
-  re-add a duplicate.
+- **`kingdemond434-cpu/quant` repo (separate from this one), branch
+  `claude/aurum-check-kqwpy6`'s sibling investigation**: the live MT5 desk
+  there runs on `claude/llm-auto-upgrade-verify-gcjac3`, NOT `master`
+  (master is a day stale). As of the last snapshot on that branch,
+  `VantageMarkets-Live 14` (login 34049153, real money, equity €633.89) has
+  4 XAUUSD sleeves marked LIVE — not demo. The newest commits there (by
+  `opencode`) repointed `terminal_path.txt` to a different broker (Fusion
+  Markets) and toggled hold-files (`HOLD_allocation`/`HOLD_universal` added,
+  `GATEWAY_PAUSED` removed) while that Vantage-armed state was still on
+  disk. Nobody on the Aurum side has touched anything live or promoted
+  anything — flagging so neither session assumes the other checked it.
 
 ## If you are the operator, not a session
 

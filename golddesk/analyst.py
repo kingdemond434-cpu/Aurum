@@ -26,12 +26,15 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Literal, Optional, Sequence
+from typing import TYPE_CHECKING, Literal, Optional, Sequence
 
 import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
 from .chart import Chart, estimate_image_tokens
+
+if TYPE_CHECKING:                                                  # pragma: no cover
+    from .hierarchical_bias import TimeframeRead
 from .costs import CostModel, breakeven_win_rate, cost_in_r, round_trip_cost
 from .gold_trend import GoldTrendRead
 from .opportunity import CohortStat, ev_gate
@@ -120,6 +123,16 @@ class MarketBrief:
     # zero authority of its own, the model reasons over it. Optional and
     # defaulted so every existing caller of MarketBrief(...) is unaffected.
     trend: Optional[GoldTrendRead] = None
+    #: Pre-rendered deterministic blocks — seasonality, supply calendar, and the multi-timeframe
+    #: STATES. Verbatim, after the cache breakpoint, so adding one never invalidates the cached
+    #: system prefix.
+    #:
+    #: THE TIMEFRAME STATES GO IN; THE ALIGNMENT VERDICT DOES NOT, AND THAT ORDERING IS FORCED.
+    #: `hierarchical_bias.assess` rules on a PROPOSED DIRECTION, and no direction exists until the
+    #: model has answered. Rendering a verdict here would mean either computing it for a direction
+    #: nobody proposed, or computing it twice and letting the two disagree. The states are the
+    #: honest thing to show before the read; the ruling happens in `compile_signal` after it.
+    blocks: Sequence[str] = field(default_factory=tuple)
 
     @property
     def mid(self) -> float:
@@ -158,6 +171,8 @@ class MarketBrief:
                 f"  {l.id}  {l.kind.value:<18} {l.price:>10.2f}"
                 f"  {l.timeframe} {l.bars_ago} bars ago{flag}"
             )
+        for b in self.blocks:
+            lines += ["", b]
         if self.notes:
             lines += ["", "NOTES"] + [f"  - {n}" for n in self.notes]
         return "\n".join(lines)
@@ -494,6 +509,7 @@ def compile_signal(
     thresholds: Thresholds = Thresholds(),
     cost_model: CostModel = CostModel(),
     cohorts: Optional[dict] = None,
+    tf_reads: Sequence["TimeframeRead"] = (),
 ) -> CompiledSignal | Refusal:
     """Resolve the model's refs to prices and apply every gate.
 
@@ -508,6 +524,21 @@ def compile_signal(
 
     if brief.tick_age_s > thresholds.max_tick_age_s:
         return refuse(f"stale tick ({brief.tick_age_s:.0f}s) — quote not trusted")
+
+    # MULTI-TIMEFRAME VETO. Ruled here rather than in the prompt because a prompt is advice and
+    # this is a refusal: a model that reads "H4 is opposed" can still weigh it to zero, and an
+    # entry into a confirmed higher-timeframe impulse is not a slightly-worse trade but a
+    # different one. Only COUNTER_HARD refuses -- see hierarchical_bias for why COUNTER_SOFT must
+    # not, and why an EXHAUSTED opposing trend downgrades to soft.
+    #
+    # Empty `tf_reads` means the caller did not compute them, which is NOT the same as alignment.
+    # `assess` returns NEUTRAL there and nothing is vetoed, so an un-wired caller keeps today's
+    # behaviour instead of silently gaining a veto it never asked for.
+    if tf_reads:
+        from .hierarchical_bias import assess as _assess          # noqa: PLC0415
+        _bias = _assess("BUY" if read.direction == "LONG" else "SELL", tf_reads)
+        if _bias.vetoed:
+            return refuse(f"hierarchical bias: {_bias.why}")
 
     # Resolve refs. A ref that is not a real, confirmed level is fatal.
     stop_lvl = brief.level(read.stop_ref)

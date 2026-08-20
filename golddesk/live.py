@@ -60,6 +60,7 @@ from .policies import (ContextualChooser, HeuristicChooser, ManagementChooser,
                        PassiveChooser, ReentryPolicy)
 from .policy_state import PolicyState
 from .providers import AnalystError, AnalystProvider, ProviderRead
+from .quant_findings import strength_bucket
 from .reentry import PriorTrade
 from .runner import RiskLimits, RiskState, build_brief, risk_check
 from .watcher import Watcher
@@ -902,7 +903,7 @@ class LiveDesk:
                             target=sig.tp2, risk_price=sig.risk, opened=bars[i].ts)
         self.open_trades.append(OpenTrade(pos, sig, i, obs,
                               entry_context=dict(brief.context.__dict__)
-                              | {"session": brief.session},
+                              | {"session": brief.session} | self._trend_ctx(brief),
                               mechanism_name=mech,
                               risk_r=risk_r, sizing_basis=alloc.basis))
         self.risk.open_risks.append(risk_r)
@@ -1257,6 +1258,16 @@ class LiveDesk:
                 b.add(f"level.{lv.id}", float(price), as_of, source="structure")
         return b.build()
 
+    @staticmethod
+    def _trend_ctx(brief) -> dict:
+        # Attaches the bucket golddesk/quant_findings.py's sealed hypothesis
+        # (quant-trend-strength-high-v1) selects on. Without this the
+        # hypothesis's own selector never matches a ledger row and accrues
+        # post_n=0 forever — see quant_findings.py's module docstring.
+        if brief.trend is None:
+            return {}
+        return {"trend_strength_bucket": strength_bucket(brief.trend.strength)}
+
     def _record(self, bars, i, brief, kind, by, decision, reason, direction,
                 risk_price, suffix: str = ""):
         # `suffix` keeps decision ids unique when one bar produces several
@@ -1301,7 +1312,8 @@ class LiveDesk:
         self.ledger.append(DecisionRecord(
             decision_id=did, kind=kind,
             t0=bars[i].ts, symbol=brief.symbol,
-            context=dict(brief.context.__dict__) | {"session": brief.session}
+            context=dict(brief.context.__dict__)
+            | {"session": brief.session} | self._trend_ctx(brief)
             | snap_keys,
             brief_render=brief.render(), decided_by=by, decision=decision,
             reason=reason, path_ref=PathRef.of(brief.symbol, ENTRY_TF, lb),

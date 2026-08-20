@@ -143,7 +143,7 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
               feed: str = "mt5", min_stop: float = 0.0,
               declared_spread: float = 0.0,
               provider_spec: str = "anthropic:claude-opus-5",
-              numeric_only: bool = False) -> list[Check]:
+              numeric_only: bool = False, expect_broker: str = "") -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
@@ -244,6 +244,33 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
                                 f"{getattr(acct,'company','?')} / {getattr(acct,'server','?')} "
                                 f"(read-only use; nothing is ever sent)"
                                 if acct else "no account info", fatal=False))
+            # WHICH TERMINAL DID WE ACTUALLY GET? `mt5.initialize()` is called with path=None,
+            # so it attaches to whatever terminal is ALREADY RUNNING. With two brokers installed
+            # on one box — Vantage for this desk, Fusion for the quant desk — that is a coin
+            # flip decided by which window happened to be open.
+            #
+            # The check above prints the broker and PASSES either way, so a desk reading the
+            # wrong feed looks identical to one reading the right feed. Every price, spread and
+            # signal would be the other broker's while carrying this desk's name: the same
+            # silent-substitution shape the promotion protocol records as its defect #3.
+            #
+            # --expect-broker turns that from observable into enforced. Absent, this stays a
+            # non-fatal note rather than a new refusal nobody asked for.
+            if acct is not None and expect_broker:
+                got = f"{getattr(acct, 'company', '')} {getattr(acct, 'server', '')}".lower()
+                checks.append(Check(
+                    "expected broker", expect_broker.lower() in got,
+                    f"connected to {getattr(acct, 'company', '?')} / "
+                    f"{getattr(acct, 'server', '?')}, expected {expect_broker!r}. "
+                    "mt5.initialize(path=None) attaches to whatever terminal is open — with two "
+                    "brokers installed, close the wrong one or pass its path"))
+            elif acct is not None:
+                checks.append(Check(
+                    "expected broker", True,
+                    "NOT PINNED — mt5.initialize(path=None) attached to whatever terminal was "
+                    f"open, which happened to be {getattr(acct, 'company', '?')}. Pass "
+                    "--expect-broker to make that a requirement rather than a coincidence",
+                    fatal=False))
     except ImportError:
         checks.append(Check("MT5 terminal", False,
                             "MetaTrader5 not installed — pip install MetaTrader5 "
@@ -261,6 +288,11 @@ def main() -> int:
     ap.add_argument("--live", action="store_true", help="run; untagged advisory signals")
     ap.add_argument("--secrets", default="secrets")
     ap.add_argument("--no-telegram", action="store_true")
+    ap.add_argument("--expect-broker", default="",
+                    help="Refuse to start unless the connected MT5 account's company or server "
+                         "contains this string (e.g. Vantage). mt5.initialize() attaches to "
+                         "whatever terminal is open, so with two brokers installed this is the "
+                         "difference between reading the right feed and reading a coin flip.")
     ap.add_argument("--numeric-only", action="store_true",
                     help="skip charts (cheaper; changes which arm you are running)")
     ap.add_argument("--max-hours", type=float, default=None)
@@ -343,7 +375,8 @@ def main() -> int:
                        feed=args.feed, min_stop=args.min_stop,
                        declared_spread=args.declared_spread or 0.0,
                        provider_spec=args.provider,
-                       numeric_only=args.numeric_only)
+                       numeric_only=args.numeric_only,
+                       expect_broker=args.expect_broker)
     for c in checks:
         print(c.render())
     fatal = [c for c in checks if c.fatal and not c.ok]
