@@ -643,6 +643,7 @@ class DeskService:
 
 def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   provider_spec: str = "anthropic:claude-opus-5",
+                  provider_effort: Optional[str] = None,
                   vision: Vision = Vision.NUMERIC_PLUS_CHARTS,
                   cfg: Optional[ServiceConfig] = None,
                   secrets_dir: str = "secrets",
@@ -745,7 +746,9 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     except Exception as e:
         log.info("no regime history yet (%s) — novelty will read UNKNOWN", e)
 
-    desk = LiveDesk(build_provider(provider_spec), Ledger(cfg.ledger_path),
+    desk = LiveDesk(build_provider(provider_spec, effort=provider_effort)
+                    if provider_effort is not None else build_provider(provider_spec),
+                    Ledger(cfg.ledger_path),
                     sink, shadow=shadow, vision=vision, broker=broker,
                     cost_model=cost_model,
                     shadow_management=shadow_management,

@@ -34,6 +34,7 @@ from .analyst import (AnalystRead, CompiledSignal, Context, Level, LevelKind,
 from .costs import CostModel
 from .features import (Bar, StructureState, atr, classify, session_of, swings,
                        visible_swings)
+from .gold_trend import read as gold_trend_read
 from .ledger import (Bar as LBar, DecisionKind, DecisionRecord, Ledger, PathRef,
                      resolve_forward)
 from .notify import Sink, build_sink
@@ -161,12 +162,18 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
         pullback_depth=st.pullback_depth,
         distance_from_session_extreme=st.distance_from_session_extreme)
 
+    # CAUSAL: bars[:i+1], never bars[i+1:] -- gold_trend_read's own leak test
+    # asserts the read at a cutoff cannot move when later bars change, and
+    # that guarantee only holds if the caller upholds its half by never
+    # passing bars the desk has not reached yet.
+    trend = gold_trend_read(bars[:i + 1])
+
     return MarketBrief(
         symbol=symbol, as_of_utc=bars[i].ts, session=session_of(bars[i].ts),
         bid=round(bid, 2), ask=round(ask, 2), spread=round(ask - bid, 2),
         tick_age_s=tick_age_s, atr=round(st.atr, 2), context=ctx, levels=levels,
         trigger_price=None if st.trigger_price is None else round(st.trigger_price, 2),
-        trigger_utc=bars[i].ts, timeline=tuple(timeline))
+        trigger_utc=bars[i].ts, timeline=tuple(timeline), trend=trend)
 
 
 # --------------------------------------------------------------------------

@@ -362,11 +362,20 @@ class ClaudeCodeAnalyst(AnalystProvider):
         "Return ONLY a single JSON object conforming to this JSON Schema. No "
         "prose, no explanation, no markdown code fences.\n\nSCHEMA:\n{schema}\n")
 
+    #: Matches AnthropicAnalyst's own accepted values exactly -- confirmed
+    #: against `claude --help`, which documents this literal set for its own
+    #: --effort flag. A value neither side accepts is not a case worth coding
+    #: for defensively; it is caught by choices= on the argparse flag that
+    #: feeds this, the same way an invalid --management value already is.
+    EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
     def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
                  timeout_s: float = 240.0, cwd: Optional[str] = None,
-                 billed: Optional[bool] = None, runner: Any = None):
+                 billed: Optional[bool] = None, runner: Any = None,
+                 effort: Optional[str] = None):
         self.model, self.binary, self.timeout_s = model, binary, timeout_s
         self.cwd, self._billed, self._runner = cwd, billed, runner
+        self.effort = effort
 
     def billed(self) -> bool:
         """Whether these tokens are being charged in dollars.
@@ -398,12 +407,20 @@ class ClaudeCodeAnalyst(AnalystProvider):
         return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
 
     def _argv(self) -> list[str]:
-        return [self.binary, "-p",
+        argv = [self.binary, "-p",
                 "--output-format", "json",
                 "--model", self.model,
                 "--system-prompt", ANALYST_SYSTEM,
                 "--allowed-tools", "",
                 "--max-turns", "1"]
+        if self.effort is not None:
+            if self.effort not in self.EFFORTS:
+                raise AnalystError(
+                    f"effort {self.effort!r} not in {self.EFFORTS} -- the CLI "
+                    f"would reject it too, but failing here names the actual "
+                    f"problem instead of an opaque nonzero exit from claude")
+            argv += ["--effort", self.effort]
+        return argv
 
     def _env(self) -> dict:
         """The child's environment.
@@ -511,4 +528,14 @@ def build_provider(spec: str, **kw) -> AnalystProvider:
         raise ValueError(f"unknown provider {name!r}; have {sorted(PROVIDERS)}")
     if model:
         kw["model"] = model
-    return PROVIDERS[name](**kw)
+    try:
+        return PROVIDERS[name](**kw)
+    except TypeError as e:
+        # Most likely --effort against 'deterministic' or 'replay', neither of
+        # which reasons about anything and so has nothing to apply effort to.
+        # A raw TypeError from here reads as an internal bug; naming the
+        # actual mismatched argument is the same courtesy every other
+        # preflight refusal in this desk already gives.
+        raise ValueError(
+            f"provider {name!r} does not accept one of these arguments: "
+            f"{sorted(kw)}. Original error: {e}") from e

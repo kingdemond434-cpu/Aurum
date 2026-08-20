@@ -245,3 +245,41 @@ def test_it_does_not_pretend_to_manage_positions():
     """Inherited refusal: no contextual management brain, and it says so."""
     with pytest.raises(NotImplementedError, match="choose_option"):
         ClaudeCodeAnalyst().choose_option("s", "p", ["a", "b"])
+
+
+# --------------------------------------------------------------- --effort
+
+def test_effort_is_threaded_into_the_cli_argv():
+    """Confirmed against a real `claude --help`: the CLI documents --effort
+    with exactly the same five values AnthropicAnalyst already accepts."""
+    p = ClaudeCodeAnalyst(effort="high")
+    argv = p._argv()                                          # noqa: SLF001
+    assert argv[argv.index("--effort") + 1] == "high"
+
+
+def test_no_effort_means_no_flag_and_the_cli_default_applies():
+    p = ClaudeCodeAnalyst()
+    assert "--effort" not in p._argv()                        # noqa: SLF001
+
+
+def test_an_effort_value_the_cli_does_not_accept_is_refused_before_invoking():
+    p = ClaudeCodeAnalyst(effort="ultra")
+    with pytest.raises(AnalystError, match="not in"):
+        p._argv()                                             # noqa: SLF001
+
+
+def test_build_provider_threads_effort_into_claudecode():
+    p = build_provider("claudecode:claude-opus-5", effort="xhigh")
+    assert p.effort == "xhigh"
+
+
+def test_build_provider_threads_effort_into_anthropic():
+    a = build_provider("anthropic:claude-opus-5", effort="low")
+    assert a.effort == "low"
+
+
+def test_build_provider_refuses_effort_on_a_provider_that_cannot_use_it():
+    """deterministic reasons about nothing; a raw TypeError here would read
+    as an internal bug rather than a misapplied flag."""
+    with pytest.raises(ValueError, match="does not accept"):
+        build_provider("deterministic", effort="high")

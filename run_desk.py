@@ -319,6 +319,17 @@ def main() -> int:
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
                          "ARM — not a free improvement")
+    ap.add_argument("--effort", default=None,
+                    choices=("low", "medium", "high", "xhigh", "max"),
+                    help="analyst reasoning effort. Supported by 'anthropic:' "
+                         "(the Messages API's own effort control) and "
+                         "'claudecode:' (the CLI's own --effort flag, "
+                         "confirmed to accept the same five values). Not "
+                         "accepted by 'deterministic', which reasons about "
+                         "nothing. Unset uses the provider's own default "
+                         "(medium). Higher effort costs more tokens/quota and "
+                         "latency per read — it is a different ARM, not a "
+                         "free quality upgrade.")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -367,6 +378,7 @@ def main() -> int:
           + ("  (contextual included — this calls the API per step)"
              if args.shadow_contextual else "  (contextual excluded — costs money)"))
     print(f"  opportunity set  : {'universe (all propositions)' if args.universe else 'single read'}")
+    print(f"  reasoning effort : {args.effort or '(provider default)'}")
     if args.declared_spread:
         print(f"  COST basis       : your venue, ${args.declared_spread:.2f} declared")
     else:
@@ -385,6 +397,7 @@ def main() -> int:
                         cfg=ServiceConfig(symbol=args.symbol),
                         secrets_dir=args.secrets, feed_backend=args.feed,
                         provider_spec=args.provider,
+                        provider_effort=args.effort,
                         management=args.management,
                         declared_spread=args.declared_spread,
                         shadow_management=args.shadow_management,

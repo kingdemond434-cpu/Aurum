@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .chart import Chart, estimate_image_tokens
 from .costs import CostModel, breakeven_win_rate, cost_in_r, round_trip_cost
+from .gold_trend import GoldTrendRead
 from .opportunity import CohortStat, ev_gate
 from .router import route
 
@@ -113,6 +114,12 @@ class MarketBrief:
     trigger_utc: Optional[datetime] = None
     timeline: Sequence[str] = field(default_factory=tuple)   # rolling memory
     notes: Sequence[str] = field(default_factory=tuple)
+    # Ported from the quant desk (golddesk/gold_trend.py), measured on 22
+    # instruments including XAUUSD: forward move is monotone in strength.
+    # Additional MEASURED CONTEXT, same standing as every Context field --
+    # zero authority of its own, the model reasons over it. Optional and
+    # defaulted so every existing caller of MarketBrief(...) is unaffected.
+    trend: Optional[GoldTrendRead] = None
 
     @property
     def mid(self) -> float:
@@ -133,6 +140,11 @@ class MarketBrief:
             "MEASURED CONTEXT (deterministic — these are facts, not opinions)",
             self.context.render(),
         ]
+        if self.trend is not None:
+            lines += ["",
+                      "GOLD TREND (ported from the quant desk; sealed external "
+                      "finding, zero authority — see quant_findings.py)",
+                      self.trend.render()]
         if self.timeline:
             lines += ["", "HOW THIS DEVELOPED (most recent last)"]
             lines += [f"  {t}" for t in self.timeline]
