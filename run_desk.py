@@ -142,11 +142,30 @@ def check_analyst_backend(provider_spec: str) -> Check:
 def preflight(symbol: str, want_telegram: bool, secrets: Path,
               feed: str = "mt5", min_stop: float = 0.0,
               declared_spread: float = 0.0,
-              provider_spec: str = "anthropic:claude-opus-5") -> list[Check]:
+              provider_spec: str = "anthropic:claude-opus-5",
+              numeric_only: bool = False) -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
     checks.append(check_analyst_backend(provider_spec))
+
+    # THE FAILURE THIS CATCHES: a desk that starts clean, ticks, warms bars,
+    # and refuses every single analyst call forever, because 'claudecode' has
+    # no image input and --numeric-only was not passed. That looked exactly
+    # like a healthy process -- MT5 connected, Telegram delivering, ticks
+    # flowing -- while producing zero signals, and it was only caught by
+    # reading the live log line by line. check_analyst_backend proves the
+    # provider WORKS; this proves it works for the vision mode it is about to
+    # be asked to serve, which is the thing that actually matters at 3am.
+    if provider_spec.partition(":")[0] == "claudecode" and not numeric_only:
+        checks.append(Check(
+            "provider/vision match", False,
+            "provider 'claudecode' cannot send charts (the CLI takes no image "
+            "input), but --numeric-only was not passed, so the desk would "
+            "launch requesting charts on every read. It would start clean, "
+            "tick, warm bars, and look alive while every analyst call is "
+            "refused -- add --numeric-only, or switch to --provider "
+            "anthropic:claude-opus-5 if you want charts."))
 
     # --- feed ------------------------------------------------------------
     if feed == "yahoo":
@@ -242,12 +261,6 @@ def main() -> int:
     ap.add_argument("--live", action="store_true", help="run; untagged advisory signals")
     ap.add_argument("--secrets", default="secrets")
     ap.add_argument("--no-telegram", action="store_true")
-    ap.add_argument("--provider", default="anthropic:claude-opus-5",
-                    help="'anthropic:claude-opus-5' (needs ANTHROPIC_API_KEY) or "
-                         "'claudecode:claude-opus-5' (routes through the Claude "
-                         "Code CLI so your subscription pays instead -- run "
-                         "`claude` once first to log in; vision must be "
-                         "--numeric-only with this provider)")
     ap.add_argument("--numeric-only", action="store_true",
                     help="skip charts (cheaper; changes which arm you are running)")
     ap.add_argument("--max-hours", type=float, default=None)
@@ -290,13 +303,18 @@ def main() -> int:
                          "usually a smaller one, so marginal trades look better "
                          "than they are")
     ap.add_argument("--provider", default="anthropic:claude-opus-5",
-                    help="analyst backend. 'anthropic:<model>' bills per token. "
+                    help="analyst backend. 'anthropic:<model>' bills per token "
+                         "(needs ANTHROPIC_API_KEY) and can send charts. "
                          "'claudecode:<model>' runs the same model through the "
                          "Claude Code CLI, which authenticates against a Pro/Max "
                          "subscription — no metered bill, but it consumes "
-                         "subscription quota and a read takes ~78s rather than "
-                         "~8s, so pair it with a low wake rate. 'deterministic' "
-                         "is the rule-based baseline and costs nothing at all.")
+                         "subscription quota, a read takes ~78s rather than ~8s "
+                         "(pair it with a low wake rate), it needs `claude` run "
+                         "once first to log in, and it CANNOT send charts, so "
+                         "--numeric-only is required — preflight refuses to "
+                         "start without it, rather than ticking with every "
+                         "analyst call silently refused. 'deterministic' is the "
+                         "rule-based baseline and costs nothing at all.")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
@@ -313,7 +331,8 @@ def main() -> int:
     checks = preflight(args.symbol, not args.no_telegram, Path(args.secrets),
                        feed=args.feed, min_stop=args.min_stop,
                        declared_spread=args.declared_spread or 0.0,
-                       provider_spec=args.provider)
+                       provider_spec=args.provider,
+                       numeric_only=args.numeric_only)
     for c in checks:
         print(c.render())
     fatal = [c for c in checks if c.fatal and not c.ok]

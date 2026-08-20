@@ -194,3 +194,36 @@ def test_delivery_can_be_skipped_deliberately(tmp_path):
 def test_not_wanting_telegram_is_not_a_failure(tmp_path):
     import run_desk
     assert run_desk._telegram_check(False, tmp_path).ok
+
+
+def test_claudecode_provider_without_numeric_only_fails_preflight():
+    """The failure this catches: a desk that starts, ticks, warms bars, and
+    refuses every analyst call forever because 'claudecode' cannot send charts
+    and --numeric-only was never passed. It looked exactly like a healthy
+    process -- MT5 connected, Telegram delivering -- while producing zero
+    signals, on a real account, until someone read the log line by line."""
+    import run_desk
+    checks = run_desk.preflight(
+        "XAUUSD", False, Path("secrets"), feed="mt5",
+        provider_spec="claudecode:claude-opus-5", numeric_only=False)
+    bad = [c for c in checks if c.name == "provider/vision match"]
+    assert bad and not bad[0].ok and bad[0].fatal
+    assert "--numeric-only" in bad[0].detail
+
+
+def test_claudecode_provider_with_numeric_only_does_not_fail_this_check():
+    import run_desk
+    checks = run_desk.preflight(
+        "XAUUSD", False, Path("secrets"), feed="mt5",
+        provider_spec="claudecode:claude-opus-5", numeric_only=True)
+    assert not [c for c in checks if c.name == "provider/vision match"]
+
+
+def test_anthropic_provider_is_unaffected_by_the_numeric_only_check():
+    """The check is specific to the CLI's no-image-input limitation, not a
+    general opinion about charts vs numeric."""
+    import run_desk
+    checks = run_desk.preflight(
+        "XAUUSD", False, Path("secrets"), feed="mt5",
+        provider_spec="anthropic:claude-opus-5", numeric_only=False)
+    assert not [c for c in checks if c.name == "provider/vision match"]
