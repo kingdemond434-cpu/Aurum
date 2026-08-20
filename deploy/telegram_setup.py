@@ -43,6 +43,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -99,21 +100,56 @@ def call(token: str, method: str, timeout: float = 15.0) -> tuple[Optional[dict]
     return body.get("result"), ""
 
 
+#: `<bot_id>:<secret>`. The secret half is base64url-ish and ~35 chars, but the
+#: length is not guaranteed by Telegram, so only the SHAPE is enforced here.
+_TOKEN_RE = re.compile(r"^\d{5,}:[A-Za-z0-9_-]{20,}$")
+
+
+def normalise_token(raw: str) -> str:
+    """Strip every kind of whitespace, then check the shape before spending a call.
+
+    WHY INTERNAL WHITESPACE, NOT JUST THE ENDS. A token copied out of a chat
+    window arrives as `8911147517: AAEn...` often enough that it is the normal
+    case, not the edge case: phone keyboards and message renderers insert a
+    space after the colon, and terminals wrap long lines. `.strip()` removes
+    neither. The token then goes to Telegram verbatim, comes back 401
+    Unauthorized, and the operator concludes the token is revoked and goes to
+    BotFather for a new one -- which will also have a space in it.
+
+    So whitespace anywhere is removed, and the result is shape-checked. A
+    malformed token is caught here, in front of the user, instead of arriving
+    as a generic auth failure from a remote API.
+    """
+    cleaned = "".join(raw.split())
+    if not cleaned:
+        return ""
+    if not _TOKEN_RE.match(cleaned):
+        raise ValueError(
+            f"that does not look like a bot token: {mask(cleaned)}\n"
+            f"  expected <digits>:<letters/digits/_/-> as one unbroken string\n"
+            f"  got {len(cleaned)} characters after removing whitespace\n"
+            f"  BotFather gives it to you on one line; copy the whole line.")
+    if cleaned != raw.strip():
+        print("note: removed whitespace from inside the token (a paste "
+              "artefact, not a problem with the token itself)", file=sys.stderr)
+    return cleaned
+
+
 def read_token(args) -> str:
     if args.token_file:
-        return Path(args.token_file).read_text("utf-8").strip()
+        return normalise_token(Path(args.token_file).read_text("utf-8"))
     if args.stdin:
-        return sys.stdin.read().strip()
+        return normalise_token(sys.stdin.read())
     if args.token:
         print("!! --token puts the token in your shell history and in `ps`.\n"
               "   Prefer piping it:  echo '<token>' | %s --stdin\n" % sys.argv[0],
               file=sys.stderr)
-        return args.token.strip()
+        return normalise_token(args.token)
     if not sys.stdin.isatty():
-        return sys.stdin.read().strip()
+        return normalise_token(sys.stdin.read())
     # getpass rather than input(): the token does not belong on screen behind
     # someone, and this is normally run over a phone SSH session.
-    return getpass.getpass("BotFather token (not echoed): ").strip()
+    return normalise_token(getpass.getpass("BotFather token (not echoed): "))
 
 
 def discover_chat(token: str, want: Optional[str]) -> tuple[Optional[str], str]:
@@ -205,7 +241,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     a = ap.parse_args(argv)
 
     existing_tok, existing_cid, where = resolve_telegram(a.secrets)
-    token = read_token(a)
+    try:
+        token = read_token(a)
+    except ValueError as e:
+        # A shape error is the operator's typo, not a crash. Print it as advice.
+        print(f"\n{e}", file=sys.stderr)
+        return 2
     if not token and existing_tok:
         token = existing_tok
         print(f"no token given; re-verifying the one already in {where}")

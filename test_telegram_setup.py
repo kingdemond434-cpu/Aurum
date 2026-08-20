@@ -247,3 +247,55 @@ def test_mask_shows_no_secret_material_but_still_distinguishes():
     assert a != b
     assert "A" not in a and "B" not in b
     assert ts.mask("not-a-token") == "…(malformed)"
+
+
+# ------------------------------------------------- paste artefacts
+
+def test_a_space_after_the_colon_is_removed():
+    """The exact shape a token takes when copied out of a chat window.
+
+    `.strip()` does not touch it, so the token reached Telegram verbatim and
+    came back 401 -- and a 401 reads as "revoked", which sends the operator to
+    BotFather for a replacement that will have a space in it too.
+    """
+    assert ts.normalise_token("123456789: AAquitedefinitelyafaketokenforatest0") \
+        == "123456789:AAquitedefinitelyafaketokenforatest0"
+
+
+def test_a_wrapped_token_with_a_newline_is_repaired():
+    assert ts.normalise_token("123456789:AAquitedefin\nitelyafaketokenforatest0") \
+        == "123456789:AAquitedefinitelyafaketokenforatest0"
+
+
+def test_tabs_and_repeated_spaces_too():
+    assert ts.normalise_token("  123456789 :\tAAquitedefinitely afaketokenforatest0 ") \
+        == "123456789:AAquitedefinitelyafaketokenforatest0"
+
+
+@pytest.mark.parametrize("bad", ["not-a-token", "12345", "8911147517:short",
+                                 "abc:AAquitedefinitelyafaketokenforatest0"])
+def test_a_malformed_token_is_refused_before_any_network_call(bad):
+    with pytest.raises(ValueError, match="does not look like a bot token"):
+        ts.normalise_token(bad)
+
+
+def test_the_refusal_message_carries_no_secret_material():
+    try:
+        ts.normalise_token("8911147517:short")
+    except ValueError as e:
+        assert "short" not in str(e) and "8911147517:…" in str(e)
+
+
+def test_a_malformed_token_exits_2_rather_than_tracebacking(tmp_path, capsys):
+    rc = ts.main(["--secrets", str(tmp_path / "s"), "--token", "rubbish"])
+    assert rc == 2
+    assert "does not look like a bot token" in capsys.readouterr().err
+
+
+def test_the_normaliser_runs_on_every_input_route(telegram, tmp_path):
+    """stdin, --token and --token-file must all be repaired, not just one."""
+    spaced = "123456789: AAquitedefinitelyafaketokenforatest0000000"
+    f = tmp_path / "tok"; f.write_text(spaced + "\n")
+    telegram.updates = [_update(31)]
+    assert ts.main(["--secrets", str(tmp_path / "s"), "--token-file", str(f)]) == 0
+    assert (tmp_path / "s" / "telegram_token").read_text().strip() == GOOD
