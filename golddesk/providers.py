@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
 
 from .analyst import (ANALYST_SCHEMA, ANALYST_SYSTEM, AnalystRead, MarketBrief)
-from .claude_code_analyst import ClaudeCodeAnalyst
 from .chart import Chart
 
 log = logging.getLogger(__name__)
@@ -498,27 +497,6 @@ class ClaudeCodeAnalyst(AnalystProvider):
 PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
              "deterministic": DeterministicProvider,
              "claudecode": ClaudeCodeAnalyst}
-
-
-def _claudecode_analyst(**kw) -> AnthropicAnalyst:
-    """`AnthropicAnalyst` with `ClaudeCodeAnalyst` injected as its client.
-
-    NOT a new provider class -- `AnthropicAnalyst.read()`/`.survey()` already
-    accept an injected `client` and call `client.messages.create(...)`, which is
-    exactly what `ClaudeCodeAnalyst.messages.create(...)` implements. Same
-    compiler, same schema, same journalling; only WHERE the model call goes
-    changes -- your Claude Code subscription, via `claude -p`, instead of a
-    metered ANTHROPIC_API_KEY. See claude_code_analyst.py for the one-time
-    setup (install the CLI, log in once) and the vision restriction (charts=()
-    only -- pass --numeric-only, the desk's own default, when using this).
-    """
-    kw.setdefault("client", ClaudeCodeAnalyst())
-    return AnthropicAnalyst(**kw)
-
-
-PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
-             "deterministic": DeterministicProvider,
-             "claudecode": _claudecode_analyst}
 
 
 def build_provider(spec: str, **kw) -> AnalystProvider:

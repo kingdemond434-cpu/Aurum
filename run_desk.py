@@ -363,7 +363,6 @@ def main() -> int:
 
     from golddesk.management import BrokerLimits
     svc = build_service(symbol=args.symbol, shadow=shadow, vision=vision,
-                        provider_spec=args.provider,
                         cfg=ServiceConfig(symbol=args.symbol),
                         secrets_dir=args.secrets, feed_backend=args.feed,
                         provider_spec=args.provider,
