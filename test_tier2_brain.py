@@ -278,3 +278,94 @@ class TestTheCalendarNeedsNoFeed:
         p = supply_prompt(floor_context(3300.0, 20.0, None),
                           calendar_flags(now=datetime(2026, 2, 10, tzinfo=UTC)))
         assert "No dated supply/demand effect" in p
+
+
+# ------------------------------------------------------------------ wiring into the prompt
+
+from pathlib import Path                                          # noqa: E402
+
+from golddesk.analyst import AnalystRead, MarketBrief, Setup, compile_signal  # noqa: E402
+from golddesk.brief_blocks import build as build_blocks           # noqa: E402
+from golddesk.brief_blocks import seasonality_block, timeframe_block  # noqa: E402
+
+
+class TestBlocksReachThePrompt:
+    def test_blocks_render_verbatim_in_the_brief(self):
+        b = MarketBrief(symbol="XAUUSD", as_of_utc=datetime(2026, 8, 20, tzinfo=UTC),
+                        session="LONDON", bid=3300.0, ask=3300.3, spread=0.3,
+                        tick_age_s=1.0, atr=20.0, context=_ctx(), levels=(),
+                        blocks=("[SEASONALITY]\n  x\n[/SEASONALITY]",))
+        assert "[SEASONALITY]" in b.render()
+
+    def test_a_brief_with_no_blocks_still_renders(self):
+        b = MarketBrief(symbol="XAUUSD", as_of_utc=datetime(2026, 8, 20, tzinfo=UTC),
+                        session="LONDON", bid=3300.0, ask=3300.3, spread=0.3,
+                        tick_age_s=1.0, atr=20.0, context=_ctx(), levels=())
+        assert "SYMBOL XAUUSD" in b.render()
+
+    def test_build_returns_widest_context_first(self):
+        blocks = build_blocks(spot=3300.0, atr=20.0,
+                              now=datetime(2026, 12, 15, tzinfo=UTC))
+        assert "[SEASONALITY" in blocks[0] and "SUPPLY" in blocks[1] and "BIAS" in blocks[2]
+
+    def test_the_measured_december_table_reaches_the_prompt(self):
+        """End to end on the shipped artifact: December measured BULLISH at t=+3.71, and the
+        hardcoded table it replaced called that month neutral."""
+        blk = seasonality_block(now=datetime(2026, 12, 15, tzinfo=UTC))
+        assert "December" in blk and "BULLISH" in blk and "n=8" in blk
+
+    def test_a_missing_seasonality_table_says_so_rather_than_going_quiet(self):
+        blk = seasonality_block(now=datetime(2026, 12, 15, tzinfo=UTC),
+                                path=Path("/nonexistent/seasonality.json"))
+        assert "UNAVAILABLE" in blk and "not 'no seasonal effect'" in blk
+
+    def test_absent_timeframe_reads_are_NOT_COMPUTED_not_aligned(self):
+        assert "NOT COMPUTED" in timeframe_block(())
+        assert "nothing was checked" in timeframe_block(())
+
+
+def _ctx():
+    from golddesk.analyst import Context
+    import inspect
+    kw = {}
+    for name, p in inspect.signature(Context).parameters.items():
+        if p.default is inspect.Parameter.empty:
+            ann = str(p.annotation)
+            kw[name] = 0.0 if "float" in ann else ("NONE" if "Literal" in ann or "str" in ann
+                                                   else None)
+    return Context(**kw)
+
+
+class TestTheVetoIsEnforcedNotAdvised:
+    def _brief(self):
+        return MarketBrief(symbol="XAUUSD", as_of_utc=datetime(2026, 8, 20, tzinfo=UTC),
+                           session="LONDON", bid=3300.0, ask=3300.3, spread=0.3,
+                           tick_age_s=1.0, atr=20.0, context=_ctx(), levels=())
+
+    def _read(self, direction="LONG"):
+        return AnalystRead(setup=Setup.TREND_CONTINUATION, direction=direction,
+                           entry_ref="MARKET", stop_ref="L1", tp1_ref="L2", tp2_ref="L3", mechanism_name="test",
+                           confidence=4, read="r", why="w", why_not="wn", invalidation="inv")
+
+    def test_a_hard_counter_refuses_before_any_level_is_resolved(self):
+        out = compile_signal(self._brief(), self._read("LONG"),
+                             tf_reads=[tf("H4", "DOWN", disp="CONFIRMED")])
+        assert out.__class__.__name__ == "Refusal"
+        assert "hierarchical bias" in out.reason and out.vetoed_by_compiler
+
+    def test_a_soft_counter_does_not_refuse_on_bias_grounds(self):
+        out = compile_signal(self._brief(), self._read("LONG"), tf_reads=[tf("H4", "DOWN")])
+        assert "hierarchical bias" not in getattr(out, "reason", "")
+
+    def test_no_reads_supplied_means_no_veto_gained_silently(self):
+        """An un-wired caller must keep today's behaviour. Empty reads are 'nothing was checked',
+        never 'aligned' — so nothing is vetoed and nothing is waved through on false grounds."""
+        out = compile_signal(self._brief(), self._read("LONG"))
+        assert "hierarchical bias" not in getattr(out, "reason", "")
+
+    def test_the_veto_follows_the_direction_the_analyst_actually_proposed(self):
+        reads = [tf("H4", "DOWN", disp="CONFIRMED")]
+        assert "hierarchical bias" in compile_signal(
+            self._brief(), self._read("LONG"), tf_reads=reads).reason
+        assert "hierarchical bias" not in getattr(
+            compile_signal(self._brief(), self._read("SHORT"), tf_reads=reads), "reason", "")
