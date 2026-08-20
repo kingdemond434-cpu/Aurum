@@ -35,3 +35,80 @@
 2026-08-19T19:01:48+00:00 absorb: ok
 2026-08-19T19:01:48+00:00 dry run: nothing sent, day NOT stamped -- the real run is still available without --force
 2026-08-19T19:01:48+00:00 daily cycle 2026-08-19 done
+2026-08-20T16:11:41+00:00 daily cycle 2026-08-20 starting (cycle-2026-08-18-a)
+2026-08-20T16:11:41+00:00 evidence: ok
+2026-08-20T16:11:41+00:00 shadow: ok
+2026-08-20T16:11:41+00:00 intake: ok
+2026-08-20T16:11:41+00:00 channel: ok
+2026-08-20T16:11:41+00:00 growth: ok
+2026-08-20T16:11:46+00:00 attribution: ok
+2026-08-20T16:11:46+00:00 regime: ok
+2026-08-20T16:11:46+00:00 census: ok
+2026-08-20T16:11:46+00:00 decay: ok
+2026-08-20T16:11:46+00:00 levers: ok
+2026-08-20T16:11:46+00:00 mining: ok
+2026-08-20T16:11:46+00:00 entries: ok
+2026-08-20T16:11:46+00:00 absorb: FAILED -- NameError: name 'os' is not defined
+2026-08-20T16:11:46+00:00 Traceback (most recent call last):
+  File "/home/user/Aurum/aurum_cycle.py", line 499, in run_step
+    return True, fn(ctx)
+                 ^^^^^^^
+  File "/home/user/Aurum/aurum_cycle.py", line 219, in step_absorb
+    qroot = os.environ.get("AURUM_QUANT_ROOT", "").strip()
+            ^^
+NameError: name 'os' is not defined
+
+2026-08-20T16:11:46+00:00 absorb: FAILED
+2026-08-20T16:11:46+00:00 dry run: nothing sent, day NOT stamped -- the real run is still available without --force
+2026-08-20T16:11:46+00:00 daily cycle 2026-08-20 done -- FAILED: absorb
+2026-08-20T16:12:28+00:00 daily cycle 2026-08-20 starting (cycle-2026-08-18-a)
+2026-08-20T16:12:28+00:00 evidence: ok
+2026-08-20T16:12:28+00:00 shadow: ok
+2026-08-20T16:12:28+00:00 intake: ok
+2026-08-20T16:12:28+00:00 channel: ok
+2026-08-20T16:12:28+00:00 growth: ok
+2026-08-20T16:12:33+00:00 attribution: ok
+2026-08-20T16:12:33+00:00 regime: ok
+2026-08-20T16:12:33+00:00 census: ok
+2026-08-20T16:12:33+00:00 decay: ok
+2026-08-20T16:12:33+00:00 levers: ok
+2026-08-20T16:12:33+00:00 mining: ok
+2026-08-20T16:12:33+00:00 entries: ok
+2026-08-20T16:12:33+00:00   pulled 69 gold-relevant finding(s) from /workspace/quant, dropped 640 as not gold
+2026-08-20T16:12:33+00:00 absorb: ok
+2026-08-20T16:12:33+00:00 dry run: nothing sent, day NOT stamped -- the real run is still available without --force
+2026-08-20T16:12:33+00:00 daily cycle 2026-08-20 done
+2026-08-20T16:12:34+00:00 daily cycle 2026-08-20 starting (cycle-2026-08-18-a)
+2026-08-20T16:12:34+00:00 evidence: ok
+2026-08-20T16:12:34+00:00 shadow: ok
+2026-08-20T16:12:34+00:00 intake: ok
+2026-08-20T16:12:34+00:00 channel: ok
+2026-08-20T16:12:34+00:00 growth: ok
+2026-08-20T16:12:38+00:00 attribution: ok
+2026-08-20T16:12:38+00:00 regime: ok
+2026-08-20T16:12:38+00:00 census: ok
+2026-08-20T16:12:38+00:00 decay: ok
+2026-08-20T16:12:38+00:00 levers: ok
+2026-08-20T16:12:38+00:00 mining: ok
+2026-08-20T16:12:38+00:00 entries: ok
+2026-08-20T16:12:38+00:00   AURUM_QUANT_ROOT not set — inbox-only mode, nothing pulled
+2026-08-20T16:12:38+00:00 absorb: ok
+2026-08-20T16:12:38+00:00 dry run: nothing sent, day NOT stamped -- the real run is still available without --force
+2026-08-20T16:12:38+00:00 daily cycle 2026-08-20 done
+2026-08-20T16:12:38+00:00 daily cycle 2026-08-20 starting (cycle-2026-08-18-a)
+2026-08-20T16:12:38+00:00 evidence: ok
+2026-08-20T16:12:38+00:00 shadow: ok
+2026-08-20T16:12:38+00:00 intake: ok
+2026-08-20T16:12:38+00:00 channel: ok
+2026-08-20T16:12:38+00:00 growth: ok
+2026-08-20T16:12:46+00:00 attribution: ok
+2026-08-20T16:12:46+00:00 regime: ok
+2026-08-20T16:12:46+00:00 census: ok
+2026-08-20T16:12:46+00:00 decay: ok
+2026-08-20T16:12:46+00:00 levers: ok
+2026-08-20T16:12:46+00:00 mining: ok
+2026-08-20T16:12:46+00:00 entries: ok
+2026-08-20T16:12:46+00:00   quant pull skipped (FileNotFoundError: no quant reports at /nonexistent/path/desks/mt5/reports. Point --quant at the quant repository root (the directory containing desks/), not at the desk. Absorbing nothing silently would look identical to absorbing everything relevant.); processing whatever is already in the inbox
+2026-08-20T16:12:46+00:00 absorb: ok
+2026-08-20T16:12:46+00:00 dry run: nothing sent, day NOT stamped -- the real run is still available without --force
+2026-08-20T16:12:46+00:00 daily cycle 2026-08-20 done

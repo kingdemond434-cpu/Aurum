@@ -171,6 +171,38 @@ def scan(quant_root: Path) -> tuple[list[Finding], int]:
     return out, dropped
 
 
+def to_inbox(quant_root: Path, inbox: Path, dry_run: bool = False) -> dict:
+    """Write gold-relevant findings into Aurum's inbox. The preferred path.
+
+    WHY THIS AND NOT DIRECT SEALING. aurum_cycle.step_absorb already owns the
+    queue-and-seal half, reading `inbox/quant_findings.jsonl`, and its docstring
+    states the reason it does not reach into the other repository: "a cycle that
+    pulled from another repository would fail in a way neither desk owns."
+
+    That concern is right and this does not overrule it. The pull is a SEPARATE,
+    OPTIONAL step that either produces inbox rows or does nothing at all, and
+    the cycle's own absorption is unchanged and still reads only a local file.
+    A missing or moved quant checkout therefore degrades to "no new findings"
+    instead of breaking Aurum's nightly cycle -- which is the failure mode the
+    original comment was protecting against.
+
+    Deduplication still happens downstream, by content hash, so appending the
+    same finding to the inbox twice is harmless.
+    """
+    findings, dropped = scan(Path(quant_root))
+    if not dry_run:
+        Path(inbox).parent.mkdir(parents=True, exist_ok=True)
+        with Path(inbox).open("a") as fh:
+            for f in findings:
+                fh.write(json.dumps({
+                    "statement": f.statement, "source": f.source,
+                    "grade": f.grade, "measured_on": f.measured_on,
+                    "transfer_test": f.transfer_test,
+                    "observed_utc": f.observed_utc, "meta": f.meta}) + "\n")
+    return {"written": len(findings), "dropped_not_relevant": dropped,
+            "inbox": str(inbox)}
+
+
 def sync(quant_root: Path, state: Path, journal: Optional[Path] = None,
          dry_run: bool = False) -> dict:
     """Scan, queue, seal. Idempotent. Returns a summary."""
