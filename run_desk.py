@@ -242,6 +242,12 @@ def main() -> int:
     ap.add_argument("--live", action="store_true", help="run; untagged advisory signals")
     ap.add_argument("--secrets", default="secrets")
     ap.add_argument("--no-telegram", action="store_true")
+    ap.add_argument("--provider", default="anthropic:claude-opus-5",
+                    help="'anthropic:claude-opus-5' (needs ANTHROPIC_API_KEY) or "
+                         "'claudecode:claude-opus-5' (routes through the Claude "
+                         "Code CLI so your subscription pays instead -- run "
+                         "`claude` once first to log in; vision must be "
+                         "--numeric-only with this provider)")
     ap.add_argument("--numeric-only", action="store_true",
                     help="skip charts (cheaper; changes which arm you are running)")
     ap.add_argument("--max-hours", type=float, default=None)
@@ -357,6 +363,7 @@ def main() -> int:
 
     from golddesk.management import BrokerLimits
     svc = build_service(symbol=args.symbol, shadow=shadow, vision=vision,
+                        provider_spec=args.provider,
                         cfg=ServiceConfig(symbol=args.symbol),
                         secrets_dir=args.secrets, feed_backend=args.feed,
                         provider_spec=args.provider,
