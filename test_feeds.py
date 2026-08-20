@@ -87,10 +87,27 @@ class TestParsingRefusesImplausibleMatches:
     def test_it_finds_a_real_figure(self, text, want):
         assert parse_aisc(text) == want
 
+    def test_the_live_page_phrase_that_produced_a_FALSE_MEASURED(self):
+        """THE REGRESSION. This exact sentence is on gold.org, and the first live run parsed it
+        as $2,012 and reported MEASURED — the series START YEAR read as a cost. It sat inside the
+        plausible band, so no bound could catch it, and it was indistinguishable from a real
+        figure to everything downstream. The module built to prevent fabricated measurements
+        produced one on its first successful fetch."""
+        page = ("This page provides the quarterly average global AISC of gold production from "
+                "2012, with an AISC cost curve representing the most recent quarter available.")
+        assert parse_aisc(page) is None
+
     def test_a_year_is_not_a_cost(self):
-        """A page redesign still matches SOMETHING. An accepted 2026.0 would silently become the
-        desk's cost floor with no error anywhere, so bounds are part of parsing."""
         assert parse_aisc("Gold Demand Trends 2026 | all-in sustaining cost data") != 2026.0
+        assert parse_aisc("data series back to Q1 2010 and 2012 onwards") is None
+
+    def test_proximity_to_the_word_AISC_is_not_evidence(self):
+        """A marker is required on one side or the other. Nearness to a heading is not a unit."""
+        assert parse_aisc("AISC methodology introduced 1450 mines into scope") is None
+
+    def test_a_marked_figure_still_parses_every_common_way_it_is_written(self):
+        for text in ("AISC US$1,456/oz", "$1,456 per ounce", "1,456/oz", "AISC of $1,456"):
+            assert parse_aisc(text) == 1456.0, text
 
     def test_values_outside_the_plausible_band_are_rejected(self):
         assert parse_aisc(f"AISC of ${AISC_PLAUSIBLE[1] + 5000:,.0f}/oz") is None

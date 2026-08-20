@@ -178,23 +178,30 @@ def cache_read(path: Path, name: str, source: str,
 # AISC — the number `supply_side.floor_context` is waiting for
 # --------------------------------------------------------------------------
 
-#: Matches "$1,395/oz", "US$1395 per ounce", "AISC of 1,395". Deliberately several shapes, and
-#: deliberately bounded afterwards: a regex that matches too much is how a page's phone number
-#: becomes a cost floor.
+#: A NUMBER IS A COST ONLY IF IT CARRIES A CURRENCY OR PER-OUNCE MARKER. Proximity to the word
+#: "AISC" is not evidence, and assuming it was produced the first live mis-parse: the real page
+#: reads "the quarterly average global AISC of gold production FROM 2012", and a pattern allowing
+#: 40 characters between "AISC" and a number matched the series start year. It returned
+#: 2,012.00 MEASURED — inside the plausible band, so no bound could catch it, and indistinguishable
+#: from a real figure to every consumer downstream.
+#:
+#: That is the exact failure this module exists to prevent, produced by the module itself. The
+#: marker is now REQUIRED, on one side or the other:
+#:
+#:     $1,456        US$1,456      1,456/oz      1,456 per ounce
+#:
+#: A bare four-digit number near the word AISC no longer parses at all.
 _AISC_PATTERNS = (
-    re.compile(r"AISC[^0-9$]{0,40}\$?\s?([0-9][0-9,]{2,6})(?:\.\d+)?", re.I),
-    re.compile(r"all[- ]in sustaining cost[^0-9$]{0,60}\$?\s?([0-9][0-9,]{2,6})", re.I),
-    re.compile(r"\$\s?([0-9][0-9,]{2,6})(?:\.\d+)?\s*(?:/|per\s+)o(?:z|unce)", re.I),
+    # $ or US$ immediately before, optionally followed by a per-ounce unit.
+    re.compile(r"(?:US)?\$\s?([0-9][0-9,]{2,6})(?:\.\d+)?(?:\s*(?:/|per\s+)o(?:z|unce))?", re.I),
+    # A per-ounce unit immediately after, with no currency symbol.
+    re.compile(r"\b([0-9][0-9,]{2,6})(?:\.\d+)?\s*(?:/|per\s+)o(?:z|unce)\b", re.I),
 )
 
-#: TRIED IN ORDER. The first entry came from the recommendation pack's fetcher and is a 404 —
-#: found on the first real run, because that fetcher discards its response and could never have
-#: noticed. The live page is `aisc-gold`; `production-costs` on the beta host is the same series
-#: under an older path and is kept as a fallback for when the primary is restructured.
-#:
-#: A CHAIN, NOT A CONSTANT, because a data vendor's URL is not a stable interface. Each is tried
-#: and the first that yields a plausible figure wins; if none do, the result is ABSENT naming
-#: every URL attempted rather than a default.
+#: Years are rejected outright even when a marker is present, because "$2,012" and the string
+#: "2012" are one stray character apart on a page whose whole subject is a time series.
+_YEAR_RANGE = (1900, 2100)
+
 WGC_AISC_URLS = (
     "https://www.gold.org/goldhub/data/aisc-gold",
     "https://beta.gold.org/goldhub/data/production-costs",
@@ -206,18 +213,28 @@ WGC_AISC_URL = WGC_AISC_URLS[0]
 
 
 def parse_aisc(text: str) -> Optional[float]:
-    """First plausible AISC figure in a page, or None.
+    """First figure that is unambiguously a per-ounce cost, or None.
 
-    PLAUSIBILITY IS PART OF PARSING, NOT A LATER CHECK. A page redesign that breaks the pattern
-    will usually still match SOMETHING — a year, a tonnage, an index level — and a silently
-    accepted 2026.0 would become the desk's cost floor with no error anywhere. Bounds are applied
-    here so a mis-parse returns None and the caller reports ABSENT.
+    THREE FILTERS, AND THE FIRST ONE IS THE LESSON. A currency or per-ounce MARKER is required —
+    proximity to the word "AISC" is not evidence. Without that, the live page's phrase "global
+    AISC of gold production from 2012" parsed as $2,012 and was reported MEASURED.
+
+    Then years are rejected even when marked, because on a page about a time series a stray
+    character turns 2012 into $2,012. Then the plausibility band catches whatever is left.
+
+    Bounds are part of parsing rather than a later check: a silently accepted mis-parse becomes
+    the desk's cost floor with no error anywhere.
     """
     for pat in _AISC_PATTERNS:
         for m in pat.finditer(text):
+            raw = m.group(1)
             try:
-                v = float(m.group(1).replace(",", ""))
+                v = float(raw.replace(",", ""))
             except ValueError:
+                continue
+            # A bare four-digit integer in year range is a date, not a price — even with a $
+            # in front of it. Comma-grouped ("2,012") is exempt: dates are not written that way.
+            if "," not in raw and float(v).is_integer() and _YEAR_RANGE[0] <= v <= _YEAR_RANGE[1]:
                 continue
             if AISC_PLAUSIBLE[0] <= v <= AISC_PLAUSIBLE[1]:
                 return v
