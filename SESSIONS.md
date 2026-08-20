@@ -58,11 +58,15 @@ letting the flag decide for you.
   `quant_findings.strength_bucket()` into `golddesk/live.py`'s two
   context-construction sites (`entry_context` and `DecisionRecord.context`)
   so the sealed `quant-trend-strength-high-v1` hypothesis can actually
-  accrue instead of sitting at post_n=0 forever. Mid-work on sealing the
-  second quant finding (XAUUSD asia/prior-NY-session) — blocked on getting
-  the exact NORMAL_DAY/TREND_DAY/RANGE_DAY/FAILED_BREAK thresholds from the
-  quant repo's trendday.py (not in this branch yet). **Do not touch
-  `golddesk/live.py`'s `_trend_ctx` / context-construction lines without
+  accrue instead of sitting at post_n=0 forever. Also sealed the second
+  quant finding: added `golddesk/day_state.py` (ported from quant's
+  `run_hunt12.day_states()`, NOT trendday.py — that was a wrong guess in an
+  earlier commit's docstring, corrected), wired `day_state` into
+  `MarketBrief`/`build_brief` the same way `trend` is, and attached
+  `prior_ny_session_state` to ledger context via `live.py`'s `_trend_ctx`.
+  Both `quant_findings.py` hypotheses are SEALED now, not one QUEUED. **Do
+  not touch `golddesk/live.py`'s `_trend_ctx` / context-construction lines,
+  or `golddesk/quant_findings.py`'s two Finding/selector pairs, without
   reading this note first.**
 
 - **`kingdemond434-cpu/quant` repo (separate from this one), branch

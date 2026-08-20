@@ -2,9 +2,10 @@
 
 external/channels.txt and external/signals.jsonl sat at zero bytes while quant
 produced real, measured, XAUUSD-specific results. This proves the channel is no
-longer empty: both findings QUEUE through the real intake path, the trend
-mechanism SEALS into a real, matchable Hypothesis, and the schema-blocked one
-stays honestly QUEUED rather than sealed against a selector chosen to look done.
+longer empty: both findings QUEUE through the real intake path and both SEAL
+into real, matchable Hypotheses -- the second one used to stay honestly QUEUED
+because Aurum had no prior-NY-session-state field to select on; golddesk.day_state
+closed that gap, so both seal now.
 """
 from __future__ import annotations
 
@@ -12,11 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from golddesk.absorb import QUEUED, SEALED
+from golddesk.absorb import SEALED
 from golddesk.hypothesis import HypothesisBook
 from golddesk.quant_findings import (
-    TREND_STRENGTH_SELECTOR, XAUUSD_ASIA_NORMAL_DAY_FINDING, apply,
-    strength_bucket)
+    TREND_STRENGTH_SELECTOR, XAUUSD_ASIA_NORMAL_DAY_FINDING,
+    XAUUSD_ASIA_NORMAL_DAY_SELECTOR, apply, strength_bucket)
 
 
 @pytest.fixture
@@ -31,15 +32,14 @@ def test_both_findings_are_decided_not_ignored(isolated):
     ab = apply()
     assert len(ab.decisions) == 2
     statuses = {a.status for a in ab.decisions.values()}
-    assert statuses == {QUEUED, SEALED}
+    assert statuses == {SEALED}
 
 
 def test_the_trend_finding_seals_into_a_real_matchable_hypothesis(isolated):
     apply()
     book = HypothesisBook(isolated / "hyp.json")
-    assert len(book.items) == 1
-    h = next(iter(book.items.values()))
-    assert h.selector == TREND_STRENGTH_SELECTOR
+    assert len(book.items) == 2
+    h = next(h for h in book.items.values() if h.selector == TREND_STRENGTH_SELECTOR)
     assert h.predicted_sign == 1
     # A real ledger-row shape, not a synthetic one built to pass.
     assert h.matches({}, {"trend_strength_bucket": "high", "realised_r": 0.8})
@@ -47,15 +47,21 @@ def test_the_trend_finding_seals_into_a_real_matchable_hypothesis(isolated):
     assert not h.matches({}, {"realised_r": 0.8})   # key entirely absent
 
 
-def test_the_schema_blocked_finding_stays_queued_not_sealed(isolated):
-    """The finding requiring a Context field Aurum does not have must NOT be
-    sealed against a selector that would silently never match anything."""
+def test_the_asia_finding_now_seals_into_a_real_matchable_hypothesis(isolated):
+    """This one used to stay QUEUED -- Aurum had no field to select on. Now
+    golddesk.day_state provides it, so sealing it is safe rather than dead."""
     ab = apply()
     decided = ab.already_decided(XAUUSD_ASIA_NORMAL_DAY_FINDING)
-    assert decided.status == QUEUED
-    assert decided.hypothesis_id is None
-    assert "schema" in decided.finding.transfer_test.lower() or \
-        "BLOCKED" in decided.finding.transfer_test
+    assert decided.status == SEALED
+    assert decided.hypothesis_id is not None
+
+    book = HypothesisBook(isolated / "hyp.json")
+    h = next(h for h in book.items.values()
+             if h.selector == XAUUSD_ASIA_NORMAL_DAY_SELECTOR)
+    assert h.predicted_sign == 1
+    assert h.matches({}, {"prior_ny_session_state": "NORMAL_DAY", "realised_r": 0.3})
+    assert not h.matches({}, {"prior_ny_session_state": "RANGE_DAY", "realised_r": 0.3})
+    assert not h.matches({}, {"realised_r": 0.3})   # key entirely absent
 
 
 def test_reapplying_is_idempotent(isolated):

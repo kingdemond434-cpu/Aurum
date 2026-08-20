@@ -15,22 +15,31 @@ absorb.py's own rule an external finding enters at ZERO AUTHORITY regardless of
 how strong its evidence is elsewhere — a result from quant's backtest is
 evidence about quant's backtest, not a fact about gold as Aurum trades it.
 
-ONE OF THE TWO CANNOT BE SEALED YET, AND THIS SAYS SO RATHER THAN FAKING IT
+BOTH ARE NOW SEALED; THE SCHEMA GAP THAT BLOCKED THE SECOND IS CLOSED
 
 Sealing a QUEUED finding into a testable golddesk.hypothesis.Hypothesis requires
 a `selector` — a cohort match against Aurum's OWN ledger rows, checked by
 `Hypothesis.matches(ctx, decision)` against the row's `context` dict and the row
 itself. hunt14's XAUUSD survivor is conditioned on the PRIOR NIGHT's NY-session
 displacement quality (state in {NORMAL_DAY, TREND_DAY, RANGE_DAY,
-FAILED_BREAK}) -- a concept Aurum's Context does not currently carry at all.
-Writing a selector against a key that never appears in a ledger row would not
-test the finding; it would silently never match anything, forever, which is a
-worse failure than not sealing it, because it LOOKS wired and is dead. So that
-finding stays QUEUED here, with the exact schema gap named as the blocking
-task, rather than sealed against a selector chosen to look complete.
+FAILED_BREAK}). That state previously did not exist anywhere in Aurum; it is
+now `golddesk.day_state.read()`, a direct port of quant's own classifier
+(run_hunt12.day_states(), the version actually used by run_hunt14.py — see
+that module's docstring for the exact thresholds and a discrepancy this port
+deliberately resolved one way, named there rather than silently picked),
+wired into `MarketBrief.day_state` by `runner.build_brief` and attached to
+every ledger row's context as `prior_ny_session_state` by
+`golddesk.live.LiveDesk._trend_ctx`. Writing a selector against a key that
+never appears in a ledger row would not test the finding; it would silently
+never match anything, forever, which is worse than not sealing it, because it
+LOOKS wired and is dead. That trap no longer applies here: the key is real
+and populated on every live decision from this commit forward.
 
-The trend-detector's own predictive claim has no such gap -- SEALED below,
-against a selector Aurum's ledger can already match today.
+Both findings start at post_n=0 regardless — sealing only means the
+hypothesis can now accrue real evidence going forward, not that it already
+has any. `reports/hunt12.json` / `reports/hunt14.json` are gitignored in the
+quant repository and were not independently re-derivable at port time; only
+the classifier code that would produce them was.
 
 RUN THIS to (re-)apply the queue decisions and print the record:
 
@@ -39,9 +48,10 @@ RUN THIS to (re-)apply the queue decisions and print the record:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 
-from .absorb import Absorber, Finding
+from .absorb import Absorbed, Absorber, Finding
 from .hypothesis import Hypothesis, HypothesisBook
 
 log = logging.getLogger(__name__)
@@ -119,44 +129,57 @@ XAUUSD_ASIA_NORMAL_DAY_FINDING = Finding(
     grade="E2",
     measured_on="XAUUSD, H1, 2018-2026, prior-NY-session-conditioned asia window",
     transfer_test=(
-        "BLOCKED ON A SCHEMA GAP, named rather than worked around: Aurum's "
-        "Context has no field for 'prior NY session displacement quality'. "
-        "Before this can be sealed as a testable Hypothesis, something must "
-        "compute that state from Aurum's own prior-day bars and attach it to "
-        "the ledger row's context, the same way trend_strength_bucket does "
-        "for finding 1. Once that exists, the test is: Aurum's own ASIA-"
-        "session trades, on days whose prior NY session read NORMAL_DAY, "
-        "show positive mean R with post-seal n >= 25, ESS >= 20, 3/4 "
-        "quarters agreeing, matching this finding's positive sign."),
+        "Aurum's own ASIA-session trades, on days whose prior_ny_session_state "
+        "(golddesk.day_state.read(), attached to every ledger row's context by "
+        "golddesk.live.LiveDesk._trend_ctx) reads NORMAL_DAY, show positive "
+        "mean R with post-seal n >= 25, ESS >= 20, 3/4 quarters agreeing, "
+        "matching this finding's positive sign."),
     meta={"hunt": "hunt14", "window": "asia", "state": "NORMAL_DAY",
          "n": 760, "expectancy_r": 0.227, "t": 5.79, "deflated_t": 2.87,
-         "pf": 1.67, "blocked_on": "no prior-NY-session state in Context"},
+         "pf": 1.67},
 )
+
+# hunt14 conditions on the ASIA window specifically -- the selector matches
+# only the day-level state, so a caller sealing entries against this
+# hypothesis is still responsible for checking session=="ASIA" itself, same
+# as hunt14's own grid did.
+XAUUSD_ASIA_NORMAL_DAY_SELECTOR = {"prior_ny_session_state": "NORMAL_DAY"}
+
+
+def _seal_if_new(ab: Absorber, book: HypothesisBook, finding: Finding,
+                 hid: str, selector: dict, predicted_sign: int) -> Absorbed:
+    """Queue one finding and seal it into `book` if it isn't already sealed.
+
+    Idempotent on both the absorber's content hash and the hypothesis book's
+    selector, so re-running `apply()` (the module's own __main__ entry point)
+    never creates a duplicate hypothesis or re-seals one already accruing.
+    """
+    a = ab.queue(finding)
+    if a.status != "QUEUED":
+        return a
+    existing = next((h for h in book.items.values() if h.selector == selector), None)
+    if existing is not None:
+        return a
+    now = datetime.now(timezone.utc).isoformat()
+    h = Hypothesis(
+        hid=hid, statement=finding.statement, selector=selector,
+        predicted_sign=predicted_sign,
+        discovered_on=now[:10], seal_ts=now,
+        discovery_n=0, discovery_mean_r=0.0)
+    book.seal(h)
+    return ab.seal(finding, h.hid)
 
 
 def apply(secrets_dir: Path = Path(".")) -> Absorber:
-    """Queue both findings, seal the one that can be, leave the record on disk."""
+    """Queue both findings, seal both, leave the record on disk."""
     ab = Absorber.load(FINDINGS_LOG) if FINDINGS_LOG.exists() else Absorber()
+    book = HypothesisBook(HYPOTHESIS_BOOK_PATH)
 
-    a1 = ab.queue(TREND_STRENGTH_FINDING)
-    if a1.status == "QUEUED":
-        book = HypothesisBook(HYPOTHESIS_BOOK_PATH)
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).isoformat()
-        existing = next((h for h in book.items.values()
-                         if h.selector == TREND_STRENGTH_SELECTOR), None)
-        if existing is None:
-            h = Hypothesis(
-                hid="quant-trend-strength-high-v1",
-                statement=TREND_STRENGTH_FINDING.statement,
-                selector=TREND_STRENGTH_SELECTOR, predicted_sign=1,
-                discovered_on=now[:10], seal_ts=now,
-                discovery_n=0, discovery_mean_r=0.0)
-            book.seal(h)
-            a1 = ab.seal(TREND_STRENGTH_FINDING, h.hid)
-
-    a2 = ab.queue(XAUUSD_ASIA_NORMAL_DAY_FINDING)
-    # NOT sealed -- see the module docstring. Queued only, on purpose.
+    _seal_if_new(ab, book, TREND_STRENGTH_FINDING,
+                "quant-trend-strength-high-v1", TREND_STRENGTH_SELECTOR, 1)
+    _seal_if_new(ab, book, XAUUSD_ASIA_NORMAL_DAY_FINDING,
+                "quant-xauusd-asia-normal-day-v1",
+                XAUUSD_ASIA_NORMAL_DAY_SELECTOR, 1)
 
     ab.save(FINDINGS_LOG)
     log.info("quant findings applied: %s", ab.report())

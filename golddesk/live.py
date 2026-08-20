@@ -1260,13 +1260,17 @@ class LiveDesk:
 
     @staticmethod
     def _trend_ctx(brief) -> dict:
-        # Attaches the bucket golddesk/quant_findings.py's sealed hypothesis
-        # (quant-trend-strength-high-v1) selects on. Without this the
-        # hypothesis's own selector never matches a ledger row and accrues
-        # post_n=0 forever — see quant_findings.py's module docstring.
-        if brief.trend is None:
-            return {}
-        return {"trend_strength_bucket": strength_bucket(brief.trend.strength)}
+        # Attaches the keys golddesk/quant_findings.py's sealed hypotheses
+        # select on (quant-trend-strength-high-v1 and the prior-NY-session
+        # finding). Without this a hypothesis's own selector never matches a
+        # ledger row and accrues post_n=0 forever — see quant_findings.py's
+        # module docstring.
+        out = {}
+        if brief.trend is not None:
+            out["trend_strength_bucket"] = strength_bucket(brief.trend.strength)
+        if brief.day_state is not None:
+            out["prior_ny_session_state"] = brief.day_state.value
+        return out
 
     def _record(self, bars, i, brief, kind, by, decision, reason, direction,
                 risk_price, suffix: str = ""):

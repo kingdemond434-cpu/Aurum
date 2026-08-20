@@ -34,6 +34,7 @@ from .analyst import (AnalystRead, CompiledSignal, Context, Level, LevelKind,
 from .costs import CostModel
 from .features import (Bar, StructureState, atr, classify, session_of, swings,
                        visible_swings)
+from .day_state import read as day_state_read
 from .gold_trend import read as gold_trend_read
 from .ledger import (Bar as LBar, DecisionKind, DecisionRecord, Ledger, PathRef,
                      resolve_forward)
@@ -167,13 +168,18 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
     # that guarantee only holds if the caller upholds its half by never
     # passing bars the desk has not reached yet.
     trend = gold_trend_read(bars[:i + 1])
+    # Same causal contract as trend above -- only bars[:i+1], never a peek
+    # forward. See day_state.read()'s own docstring for why that is enough:
+    # it only ever reads calendar days strictly before the last bar's date.
+    dstate = day_state_read(bars[:i + 1])
 
     return MarketBrief(
         symbol=symbol, as_of_utc=bars[i].ts, session=session_of(bars[i].ts),
         bid=round(bid, 2), ask=round(ask, 2), spread=round(ask - bid, 2),
         tick_age_s=tick_age_s, atr=round(st.atr, 2), context=ctx, levels=levels,
         trigger_price=None if st.trigger_price is None else round(st.trigger_price, 2),
-        trigger_utc=bars[i].ts, timeline=tuple(timeline), trend=trend)
+        trigger_utc=bars[i].ts, timeline=tuple(timeline), trend=trend,
+        day_state=dstate)
 
 
 # --------------------------------------------------------------------------
