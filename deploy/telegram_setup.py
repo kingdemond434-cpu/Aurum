@@ -103,6 +103,19 @@ def call(token: str, method: str, timeout: float = 15.0) -> tuple[Optional[dict]
 #: `<bot_id>:<secret>`. The secret half is base64url-ish and ~35 chars, but the
 #: length is not guaranteed by Telegram, so only the SHAPE is enforced here.
 _TOKEN_RE = re.compile(r"^\d{5,}:[A-Za-z0-9_-]{20,}$")
+#: Telegram's secret half is 35 characters. That exact length is the anchor that
+#: lets a token be picked out of prose without swallowing the words after it.
+_SECRET_LEN = 35
+#: Tried against the ORIGINAL text: tolerates whitespace around the colon, and a
+#: newline or space still terminates the secret, so trailing prose is excluded.
+_TOKEN_SPACED = re.compile(
+    r"\d{5,}\s*:\s*[A-Za-z0-9_-]{%d}(?![A-Za-z0-9_-])" % _SECRET_LEN)
+#: Tried against the whitespace-STRIPPED text: repairs a secret split by a line
+#: wrap, which the pattern above cannot see across.
+_TOKEN_EXACT = re.compile(
+    r"\d{5,}:[A-Za-z0-9_-]{%d}(?![A-Za-z0-9_-])" % _SECRET_LEN)
+#: Last resort for a non-standard secret length. Greedy, hence tried last.
+_TOKEN_SEARCH = re.compile(r"\d{5,}:[A-Za-z0-9_-]{20,}")
 
 
 def normalise_token(raw: str) -> str:
@@ -124,6 +137,33 @@ def normalise_token(raw: str) -> str:
     if not cleaned:
         return ""
     if not _TOKEN_RE.match(cleaned):
+        # BotFather sends "Use this token to access the HTTP API:\n<token>\n
+        # Keep your token secure", and people copy the whole thing. Rather than
+        # refuse a paste that plainly CONTAINS the token, find it.
+        #
+        # ORDER MATTERS AND THE NAIVE ORDER IS WRONG. Removing whitespace first
+        # glues the trailing sentence onto the token, and a greedy
+        # [A-Za-z0-9_-]{20,} then swallows it -- yielding
+        # "…XP78Keepyourtokensecure", which reaches Telegram and 401s. So the
+        # secret's exact 35-character length is used as the anchor, tried first
+        # against the ORIGINAL text (where the newline still terminates it) and
+        # only then against the whitespace-stripped text (which is what repairs
+        # a token wrapped mid-secret by a narrow terminal).
+        for candidates in (_TOKEN_SPACED.findall(raw),
+                           _TOKEN_EXACT.findall(cleaned),
+                           _TOKEN_SEARCH.findall(cleaned)):
+            found = ["".join(c.split()) for c in candidates]
+            found = list(dict.fromkeys(found))       # de-dup, keep order
+            if len(found) == 1:
+                print("note: extracted the token from the surrounding text "
+                      "you pasted", file=sys.stderr)
+                return found[0]
+            if len(found) > 1:
+                raise ValueError(
+                    f"found {len(found)} different token-shaped strings in "
+                    f"that paste ({', '.join(mask(f) for f in found)}). "
+                    f"Refusing to guess which one you meant -- paste just the "
+                    f"token line.")
         raise ValueError(
             f"that does not look like a bot token: {mask(cleaned)}\n"
             f"  expected <digits>:<letters/digits/_/-> as one unbroken string\n"

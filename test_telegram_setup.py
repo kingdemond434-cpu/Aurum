@@ -30,7 +30,11 @@ requests = pytest.importorskip("requests")
 from deploy import telegram_setup as ts                             # noqa: E402
 from golddesk import notify                                        # noqa: E402
 
-GOOD = "123456789:AAquitedefinitelyafaketokenforatest0000000"
+# A real Telegram secret is exactly 35 characters -- confirmed against a live
+# token the user pasted into chat (fake/placeholder, but genuine BotFather
+# shape). normalise_token anchors extraction on that exact length, so the
+# fixture has to be real-shaped or it tests a format Telegram doesn't issue.
+GOOD = "123456789:AAquitedefinitelyafaketoken00000000"
 
 
 class _State:
@@ -293,9 +297,64 @@ def test_a_malformed_token_exits_2_rather_than_tracebacking(tmp_path, capsys):
 
 
 def test_the_normaliser_runs_on_every_input_route(telegram, tmp_path):
-    """stdin, --token and --token-file must all be repaired, not just one."""
-    spaced = "123456789: AAquitedefinitelyafaketokenforatest0000000"
+    """stdin, --token and --token-file must all be repaired, not just one.
+
+    Derived from GOOD rather than a second hardcoded string: an earlier
+    version duplicated the literal here, and when GOOD's secret length was
+    corrected to match real Telegram tokens this copy was not, and silently
+    tested a token shape that no longer existed anywhere else in the suite.
+    """
+    bot_id, _, secret = GOOD.partition(":")
+    spaced = f"{bot_id}: {secret}"
     f = tmp_path / "tok"; f.write_text(spaced + "\n")
     telegram.updates = [_update(31)]
     assert ts.main(["--secrets", str(tmp_path / "s"), "--token-file", str(f)]) == 0
     assert (tmp_path / "s" / "telegram_token").read_text().strip() == GOOD
+
+
+def test_the_fixture_itself_is_real_shaped():
+    """If GOOD's secret is not 35 chars, every extraction test below is
+    exercising a format Telegram does not issue, and would pass for the wrong
+    reason -- this caught exactly that the first time GOOD was chosen."""
+    assert len(GOOD.partition(":")[2]) == 35
+
+
+# --------------------------------------------------- botfather's own wording
+
+BOTFATHER_MSG = (
+    "Done! Congratulations on your new bot. You will find it at "
+    "t.me/aurum_signals_bot. You can now add a description, about "
+    "section and profile picture for your bot, see /help for a list of "
+    "commands.\n\nUse this token to access the HTTP API:\n"
+    f"{GOOD}\n"
+    "Keep your token secure and store it safely, it can be used by anyone "
+    "to control your bot.")
+
+
+def test_the_full_botfather_message_extracts_cleanly(telegram, tmp_path):
+    """The exact text BotFather sends, pasted whole, must still work.
+
+    This is the case that broke the naive fix: stripping whitespace first
+    glues the trailing sentence onto the token, and a greedy character class
+    then swallows it -- '...XP78Keepyourtokensecure' -- which reaches Telegram
+    and comes back 401. Confirmed against the running stub, not just the regex.
+    """
+    telegram.updates = [_update(9001)]
+    rc = ts.main(["--secrets", str(tmp_path / "s"), "--token", BOTFATHER_MSG])
+    assert rc == 0
+    assert (tmp_path / "s" / "telegram_token").read_text().strip() == GOOD
+
+
+def test_normalise_token_extracts_from_botfathers_wording():
+    assert ts.normalise_token(BOTFATHER_MSG) == GOOD
+
+
+def test_a_token_wrapped_mid_secret_by_a_narrow_terminal_is_repaired():
+    wrapped = GOOD[:40] + "\n" + GOOD[40:]
+    assert ts.normalise_token(wrapped) == GOOD
+
+
+def test_two_token_shaped_strings_in_one_paste_is_refused():
+    other = "222222222:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    with pytest.raises(ValueError, match="found 2 different token-shaped"):
+        ts.normalise_token(f"{GOOD}\n{other}")
