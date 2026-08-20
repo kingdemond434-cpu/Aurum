@@ -6,8 +6,15 @@ The thesis is real: gold has a structural floor near miners' all-in sustaining c
 below it supply is destroyed. It is also, right now, irrelevant to this desk, and the module says
 so rather than manufacturing a signal from it.
 
-Aggregate AISC runs near $1,400/oz. Gold trades near $3,300. The floor is roughly SIXTY PERCENT
-BELOW SPOT. Aurum trades M15/H1 structure with stops measured in ATR — a support level 60% away
+Aggregate AISC runs near $2,000-2,200/oz on Q2 2026 producer filings (Centerra $1,269, Aris
+$1,986, Allied $2,192, IAMGOLD $2,271, Galiano $2,473). Gold printed 4,523.03/4,523.44 on the
+desk's own live feed, 2026-08-20. The floor is therefore roughly FIFTY PERCENT BELOW SPOT.
+
+**THE NUMBERS IN THIS PARAGRAPH ARE DATED ON PURPOSE, AND THEY MOVED FAST.** An earlier version
+of this docstring said "AISC near $1,400, gold near $3,300" — both were stale within weeks, and
+the conclusion happened to survive only because the ratio barely changed. `floor_context` reads
+live spot and live ATR and never these figures; they are here to make the argument checkable, not
+to be used. If they and the live quote disagree wildly, trust the quote and update this. Aurum trades M15/H1 structure with stops measured in ATR — a support level 60% away
 is not in the same universe as the stop, and cannot inform a single entry. Rendering it as a
 bullish "🔥 near cost support" line would be a confident falsehood in the prompt every day for
 years.
