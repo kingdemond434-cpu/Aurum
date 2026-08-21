@@ -47,7 +47,7 @@ def test_an_empty_desk_produces_nulls_not_results(desk):
     """The honest state of a desk that has not yet run is not a finding about
     gold, and must not be reported as one."""
     assert C.run(dry=True) == 0
-    text = (desk / "reports").glob("cycle-*.md").__next__().read_text()
+    text = (desk / "reports").glob("cycle-*.md").__next__().read_text(encoding='utf-8')
     assert "LEDGER EMPTY" in text
     assert "not a result" in text
 
@@ -221,7 +221,7 @@ def test_a_failing_step_does_not_abort_the_rest(desk, monkeypatch):
                                      ("evidence", C.step_evidence),
                                      ("census", C.step_census)))
     assert C.run(dry=True) == 1
-    text = next((desk / "reports").glob("cycle-*.md")).read_text()
+    text = next((desk / "reports").glob("cycle-*.md")).read_text(encoding='utf-8')
     assert "FAILED STEPS: boom" in text
     assert "== CENSUS ==" in text, "a later step was skipped"
 
@@ -235,7 +235,7 @@ def test_the_stamp_records_the_attempt_not_the_success(desk, monkeypatch):
     # and a dry run now correctly declines to stamp at all, so running it dry
     # would test the wrong mechanism and pass for the wrong reason.
     C.run(dry=False)
-    state = json.loads((desk / "state" / "cycle_state.json").read_text())
+    state = json.loads((desk / "state" / "cycle_state.json").read_text(encoding='utf-8'))
     assert state["last_run"]
     assert state["last_failed_steps"] == ["boom"]
 
@@ -280,14 +280,14 @@ def test_the_report_is_written_to_a_file_not_only_sent(desk):
     """Telegram caps a message; the record must survive that."""
     C.run(dry=True)
     files = list((desk / "reports").glob("cycle-*.md"))
-    assert len(files) == 1 and files[0].read_text().startswith("AURUM DAILY CYCLE")
+    assert len(files) == 1 and files[0].read_text(encoding='utf-8').startswith("AURUM DAILY CYCLE")
 
 
 def test_nothing_in_the_cycle_can_promote_or_loosen_a_gate():
     """A loop that could widen its own limits would, because looser gates
     produce more signals and more signals feel like progress."""
     import ast
-    src = Path(C.__file__).read_text()
+    src = Path(C.__file__).read_text(encoding='utf-8')
     banned = {"promote", "enforce", "set_threshold", "arm", "seal"}
     hits = [f"{n.lineno}:{n.func.attr}" for n in ast.walk(ast.parse(src))
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
@@ -396,7 +396,7 @@ def test_a_dry_run_does_not_consume_the_day(tmp_path, monkeypatch):
         "the dry run stamped the day and blocked the real one")
 
     C.run(dry=False)
-    state = json.loads((tmp_path / "cycle_state.json").read_text())
+    state = json.loads((tmp_path / "cycle_state.json").read_text(encoding='utf-8'))
     assert state.get("last_run"), "the real run must stamp"
 
 
@@ -409,6 +409,6 @@ def test_the_real_run_still_refuses_to_repeat_itself(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "LEDGER", tmp_path / "ledger.jsonl")
 
     C.run(dry=False)
-    before = (tmp_path / "cycle_state.json").read_text()
+    before = (tmp_path / "cycle_state.json").read_text(encoding='utf-8')
     C.run(dry=False)
-    assert (tmp_path / "cycle_state.json").read_text() == before
+    assert (tmp_path / "cycle_state.json").read_text(encoding='utf-8') == before

@@ -399,7 +399,7 @@ def main() -> int:
     if not cp.exists():
         print(f"no channel list at {cp} — see --setup")
         return 1
-    channels = [l.strip() for l in cp.read_text().splitlines()
+    channels = [l.strip() for l in cp.read_text(encoding='utf-8').splitlines()
                 if l.strip() and not l.startswith("#")]
     if not channels:
         print("channel list is empty")

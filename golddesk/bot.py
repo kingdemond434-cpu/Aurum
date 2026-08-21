@@ -135,7 +135,7 @@ def send(token: str, chat_id: str, text: str, timeout: float = 10.0) -> bool:
 
 def _read_json(p: Path) -> Optional[dict]:
     try:
-        return json.loads(Path(p).read_text())
+        return json.loads(Path(p).read_text(encoding='utf-8'))
     except Exception:                                # noqa: BLE001
         return None
 
@@ -144,7 +144,7 @@ def _tail_ledger(p: Path, n: int = 400) -> list[dict]:
     """Last n rows. Bad lines are skipped, not fatal: the ledger is append-only
     and a torn final write costs one row, which must not cost the whole answer."""
     try:
-        lines = Path(p).read_text().splitlines()
+        lines = Path(p).read_text(encoding='utf-8').splitlines()
     except Exception:                                # noqa: BLE001
         return []
     out: list[dict] = []

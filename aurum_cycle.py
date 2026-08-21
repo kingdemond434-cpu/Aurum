@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -82,7 +83,7 @@ def _rows(path: Path | None = None, limit: int = 100_000) -> list:
     """
     path = path if path is not None else LEDGER
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding='utf-8').splitlines()
     except OSError:
         return []
     out = []
@@ -219,6 +220,26 @@ def step_absorb(ctx: dict) -> str:
     # on any given night; the cycle is not.
     qroot = os.environ.get("AURUM_QUANT_ROOT", "").strip()
     if qroot:
+        # UPDATE THE CHECKOUT BEFORE SCANNING IT. Without this, "absorbs as
+        # quant grows" is a lie unless a human remembers to `git pull` the
+        # checkout by hand between cycles — the scan would silently keep
+        # reading whatever snapshot was on disk the day it was cloned. Same
+        # swallow-on-failure rule as the rest of this function: a detached
+        # HEAD, a dirty tree, or no network degrades to "scan what's already
+        # there", never to a broken cycle.
+        if (Path(qroot) / ".git").is_dir():
+            try:
+                pull = subprocess.run(
+                    ["git", "-C", qroot, "pull", "--ff-only"],
+                    capture_output=True, text=True, timeout=120)
+                if pull.returncode == 0:
+                    log(f"  quant checkout updated: {pull.stdout.strip() or '(already current)'}")
+                else:
+                    log(f"  quant pull failed ({pull.returncode}): "
+                        f"{pull.stderr.strip()[:200]}; scanning checkout as-is")
+            except Exception as e:                               # noqa: BLE001
+                log(f"  quant pull skipped ({type(e).__name__}: {e}); "
+                    f"scanning checkout as-is")
         try:
             from golddesk.absorb_auto import to_inbox
             res = to_inbox(Path(qroot), inbox)
@@ -250,7 +271,7 @@ def step_absorb(ctx: dict) -> str:
 def step_channel(ctx: dict) -> str:
     """Is the desk's only product actually reaching anybody?"""
     try:
-        st = json.loads((STATE_DIR / "service_state.json").read_text())
+        st = json.loads((STATE_DIR / "service_state.json").read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return ("no service checkpoint — the desk has not run, so channel health "
                 "is UNKNOWN rather than healthy.")
@@ -289,7 +310,7 @@ def step_mining(ctx: dict) -> str:
                 f"while every timestamp still looks ordinary. Write the offset "
                 f"(e.g. 3) to that file.")
     try:
-        offset = float(off_file.read_text().strip())
+        offset = float(off_file.read_text(encoding='utf-8').strip())
     except ValueError:
         return f"{off_file} is not a number; refusing to guess an offset."
 
@@ -510,7 +531,7 @@ def run(force: bool = False, dry: bool = False) -> int:
     state = {}
     if CYCLE_STATE.exists():
         try:
-            state = json.loads(CYCLE_STATE.read_text())
+            state = json.loads(CYCLE_STATE.read_text(encoding='utf-8'))
         except json.JSONDecodeError:
             state = {}
     if state.get("last_run") == today and not force:

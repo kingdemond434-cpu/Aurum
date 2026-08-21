@@ -129,7 +129,7 @@ def test_no_command_can_place_an_order():
     """The charter property, asserted against the command table itself rather
     than against a claim in a docstring."""
     import ast
-    src = Path(B.__file__).read_text()
+    src = Path(B.__file__).read_text(encoding='utf-8')
     banned = {"order_send", "order_check", "positions_modify", "eval", "exec",
               "system", "popen", "check_output"}
     hits = [f"{n.lineno}:{n.attr}" for n in ast.walk(ast.parse(src))

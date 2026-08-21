@@ -24,7 +24,7 @@ def load(path: Path) -> list:
         print(f"no ledger at {path}\n"
               f"The desk writes it on the first decision. Nothing to report yet.")
         return []
-    return [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    return [json.loads(l) for l in path.read_text(encoding='utf-8').splitlines() if l.strip()]
 
 
 def section(title: str) -> None:

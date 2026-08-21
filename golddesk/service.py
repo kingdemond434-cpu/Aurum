@@ -174,7 +174,7 @@ class DeskService:
         if not p.exists():
             return self.state
         try:
-            raw = json.loads(p.read_text())
+            raw = json.loads(p.read_text(encoding='utf-8'))
             self.state = ServiceState(**{k: v for k, v in raw.items()
                                          if k in ServiceState.__dataclass_fields__})
             self.state.restarts += 1
@@ -309,8 +309,15 @@ class DeskService:
                 log.info("max_seconds reached — exiting cleanly")
                 break
             try:
-                if not self.feed.connect():
-                    raise FeedError("connect() returned falsy")
+                # connect() signals failure by RAISING FeedError (after its own
+                # internal retry loop) -- it has no meaningful truthy return on
+                # success, so this must never gate on its return value. It used
+                # to: `if not self.feed.connect(): raise FeedError(...)`, which
+                # fired on every successful connect (an implicit `None` return
+                # is falsy) and made the live loop unable to ever get past this
+                # line. Invisible to tests because the fake feed's connect()
+                # returned True, a contract the real one never had.
+                self.feed.connect()
                 backoff = self.cfg.backoff_initial_s
                 self._warm()
                 self.rehydrate()
@@ -643,6 +650,7 @@ class DeskService:
 
 def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   provider_spec: str = "anthropic:claude-opus-5",
+                  provider_effort: Optional[str] = None,
                   vision: Vision = Vision.NUMERIC_PLUS_CHARTS,
                   cfg: Optional[ServiceConfig] = None,
                   secrets_dir: str = "secrets",
@@ -745,7 +753,9 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     except Exception as e:
         log.info("no regime history yet (%s) — novelty will read UNKNOWN", e)
 
-    desk = LiveDesk(build_provider(provider_spec), Ledger(cfg.ledger_path),
+    desk = LiveDesk(build_provider(provider_spec, effort=provider_effort)
+                    if provider_effort is not None else build_provider(provider_spec),
+                    Ledger(cfg.ledger_path),
                     sink, shadow=shadow, vision=vision, broker=broker,
                     cost_model=cost_model,
                     shadow_management=shadow_management,

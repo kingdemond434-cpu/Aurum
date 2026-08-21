@@ -278,7 +278,7 @@ class LinkedRegistry:
         p = Path(path)
         if not p.exists():
             return LinkedRegistry()
-        d = json.loads(p.read_text())
+        d = json.loads(p.read_text(encoding='utf-8'))
         reg = LinkedRegistry(known_hids=set(d.get("known_hids", ())))
         for rd in d.get("runs", ()):
             # Loaded WITHOUT the orphan check, deliberately: a legacy file with

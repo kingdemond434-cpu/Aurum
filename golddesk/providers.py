@@ -23,8 +23,6 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
 
 from .analyst import (ANALYST_SCHEMA, ANALYST_SYSTEM, AnalystRead, MarketBrief)
-# (the CLI-client module is deliberately NOT imported here -- see the PROVIDERS note below;
-# importing it re-creates the name collision that broke the claudecode route)
 from .chart import Chart
 
 log = logging.getLogger(__name__)
@@ -364,11 +362,20 @@ class ClaudeCodeAnalyst(AnalystProvider):
         "Return ONLY a single JSON object conforming to this JSON Schema. No "
         "prose, no explanation, no markdown code fences.\n\nSCHEMA:\n{schema}\n")
 
+    #: Matches AnthropicAnalyst's own accepted values exactly -- confirmed
+    #: against `claude --help`, which documents this literal set for its own
+    #: --effort flag. A value neither side accepts is not a case worth coding
+    #: for defensively; it is caught by choices= on the argparse flag that
+    #: feeds this, the same way an invalid --management value already is.
+    EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
     def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
                  timeout_s: float = 240.0, cwd: Optional[str] = None,
-                 billed: Optional[bool] = None, runner: Any = None):
+                 billed: Optional[bool] = None, runner: Any = None,
+                 effort: Optional[str] = None):
         self.model, self.binary, self.timeout_s = model, binary, timeout_s
         self.cwd, self._billed, self._runner = cwd, billed, runner
+        self.effort = effort
 
     def billed(self) -> bool:
         """Whether these tokens are being charged in dollars.
@@ -400,12 +407,20 @@ class ClaudeCodeAnalyst(AnalystProvider):
         return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
 
     def _argv(self) -> list[str]:
-        return [self.binary, "-p",
+        argv = [self.binary, "-p",
                 "--output-format", "json",
                 "--model", self.model,
                 "--system-prompt", ANALYST_SYSTEM,
                 "--allowed-tools", "",
                 "--max-turns", "1"]
+        if self.effort is not None:
+            if self.effort not in self.EFFORTS:
+                raise AnalystError(
+                    f"effort {self.effort!r} not in {self.EFFORTS} -- the CLI "
+                    f"would reject it too, but failing here names the actual "
+                    f"problem instead of an opaque nonzero exit from claude")
+            argv += ["--effort", self.effort]
+        return argv
 
     def _env(self) -> dict:
         """The child's environment.
@@ -496,31 +511,6 @@ class ClaudeCodeAnalyst(AnalystProvider):
         })
 
 
-# TWO IMPLEMENTATIONS OF THE SUBSCRIPTION ROUTE LANDED UNDER THE SAME CLASS NAME, AND THE
-# BROKEN ONE WON.
-#
-# A second `PROVIDERS` dict used to sit below this one -- so this dict was built and immediately
-# discarded -- mapping "claudecode" to a factory that did:
-#
-#     kw.setdefault("client", ClaudeCodeAnalyst())      # then: AnthropicAnalyst(**kw)
-#
-# The intent was sound: inject the CLI transport into the existing analyst so the compiler,
-# schema and journalling stay shared and only the destination of the model call changes. But
-# `claude_code_analyst.ClaudeCodeAnalyst` -- a CLIENT, with `.messages.create` -- was imported at
-# the top of this module and then SHADOWED by the provider class of the same name defined above.
-# The factory therefore injected the provider as though it were a client, and
-# `AnthropicAnalyst.read()` calls `client.messages.create(...)`: an AttributeError on the first
-# read. `--provider claudecode:...` did not merely fail, it failed at the moment of use, on the
-# one path chosen specifically to avoid a metered bill.
-#
-# THE TESTED IMPLEMENTATION WINS. The provider class above carries ~20 tests covering fence
-# stripping, schema enforcement, the CLI error envelope, the `billed()` heuristic and the refusal
-# to accept charts. The injected-client route had no tests, and neither did its client module.
-# Between two designs for one capability, the one whose behaviour is pinned is the one that can
-# be changed safely later.
-#
-# The shadowing import was removed along with the factory. If the injected-client design is ever
-# revived, the client needs a DIFFERENT NAME -- the collision is what hid this for a whole merge.
 PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
              "deterministic": DeterministicProvider,
              "claudecode": ClaudeCodeAnalyst}
@@ -538,4 +528,14 @@ def build_provider(spec: str, **kw) -> AnalystProvider:
         raise ValueError(f"unknown provider {name!r}; have {sorted(PROVIDERS)}")
     if model:
         kw["model"] = model
-    return PROVIDERS[name](**kw)
+    try:
+        return PROVIDERS[name](**kw)
+    except TypeError as e:
+        # Most likely --effort against 'deterministic' or 'replay', neither of
+        # which reasons about anything and so has nothing to apply effort to.
+        # A raw TypeError from here reads as an internal bug; naming the
+        # actual mismatched argument is the same courtesy every other
+        # preflight refusal in this desk already gives.
+        raise ValueError(
+            f"provider {name!r} does not accept one of these arguments: "
+            f"{sorted(kw)}. Original error: {e}") from e

@@ -213,7 +213,7 @@ def resolve_telegram(secrets_dir: Optional[Path]) -> tuple[Optional[str], Option
         tok_p = Path(secrets_dir) / "telegram_token"
         cid_p = Path(secrets_dir) / "telegram_chat_id"
         if tok_p.exists() and cid_p.exists():
-            tok, cid = tok_p.read_text().strip(), cid_p.read_text().strip()
+            tok, cid = tok_p.read_text(encoding='utf-8').strip(), cid_p.read_text(encoding='utf-8').strip()
             if tok and cid:
                 return tok, cid, f"{secrets_dir}/"
     tok = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()

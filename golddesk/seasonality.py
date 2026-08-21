@@ -173,5 +173,5 @@ def build(bars: Sequence, out_path: Optional[Path] = None) -> dict:
 
 def load(path: Path) -> list[MonthStat]:
     """Rehydrate a persisted measurement. Raises if absent — a missing table is not a neutral one."""
-    d = json.loads(Path(path).read_text(encoding="utf-8"))
+    d = json.loads(Path(path).read_text(encoding='utf-8'))
     return [MonthStat(**{**m, "years": tuple(m.get("years", ()))}) for m in d["months"]]

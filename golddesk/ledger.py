@@ -239,7 +239,7 @@ class Ledger:
     def read_all(self) -> list[dict]:
         if not self.path.exists():
             return []
-        return [json.loads(l) for l in self.path.read_text().splitlines() if l.strip()]
+        return [json.loads(l) for l in self.path.read_text(encoding='utf-8').splitlines() if l.strip()]
 
     def unresolved(self) -> list[dict]:
         return [r for r in self.read_all() if r.get("outcome") is None]

@@ -54,7 +54,7 @@ def assert_no_orders(pkg: Path = Path("golddesk")) -> Check:
     hits: list[str] = []
     for f in sorted(pkg.glob("*.py")):
         try:
-            tree = ast.parse(f.read_text())
+            tree = ast.parse(f.read_text(encoding='utf-8'))
         except SyntaxError:
             continue
         for n in ast.walk(tree):
@@ -142,11 +142,30 @@ def check_analyst_backend(provider_spec: str) -> Check:
 def preflight(symbol: str, want_telegram: bool, secrets: Path,
               feed: str = "mt5", min_stop: float = 0.0,
               declared_spread: float = 0.0,
-              provider_spec: str = "anthropic:claude-opus-5", expect_broker: str = "") -> list[Check]:
+              provider_spec: str = "anthropic:claude-opus-5",
+              numeric_only: bool = False, expect_broker: str = "") -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
     checks.append(check_analyst_backend(provider_spec))
+
+    # THE FAILURE THIS CATCHES: a desk that starts clean, ticks, warms bars,
+    # and refuses every single analyst call forever, because 'claudecode' has
+    # no image input and --numeric-only was not passed. That looked exactly
+    # like a healthy process -- MT5 connected, Telegram delivering, ticks
+    # flowing -- while producing zero signals, and it was only caught by
+    # reading the live log line by line. check_analyst_backend proves the
+    # provider WORKS; this proves it works for the vision mode it is about to
+    # be asked to serve, which is the thing that actually matters at 3am.
+    if provider_spec.partition(":")[0] == "claudecode" and not numeric_only:
+        checks.append(Check(
+            "provider/vision match", False,
+            "provider 'claudecode' cannot send charts (the CLI takes no image "
+            "input), but --numeric-only was not passed, so the desk would "
+            "launch requesting charts on every read. It would start clean, "
+            "tick, warm bars, and look alive while every analyst call is "
+            "refused -- add --numeric-only, or switch to --provider "
+            "anthropic:claude-opus-5 if you want charts."))
 
     # --- feed ------------------------------------------------------------
     if feed == "yahoo":
@@ -316,17 +335,33 @@ def main() -> int:
                          "usually a smaller one, so marginal trades look better "
                          "than they are")
     ap.add_argument("--provider", default="anthropic:claude-opus-5",
-                    help="analyst backend. 'anthropic:<model>' bills per token. "
+                    help="analyst backend. 'anthropic:<model>' bills per token "
+                         "(needs ANTHROPIC_API_KEY) and can send charts. "
                          "'claudecode:<model>' runs the same model through the "
                          "Claude Code CLI, which authenticates against a Pro/Max "
                          "subscription — no metered bill, but it consumes "
-                         "subscription quota and a read takes ~78s rather than "
-                         "~8s, so pair it with a low wake rate. 'deterministic' "
-                         "is the rule-based baseline and costs nothing at all.")
+                         "subscription quota, a read takes ~78s rather than ~8s "
+                         "(pair it with a low wake rate), it needs `claude` run "
+                         "once first to log in, and it CANNOT send charts, so "
+                         "--numeric-only is required — preflight refuses to "
+                         "start without it, rather than ticking with every "
+                         "analyst call silently refused. 'deterministic' is the "
+                         "rule-based baseline and costs nothing at all.")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
                          "ARM — not a free improvement")
+    ap.add_argument("--effort", default=None,
+                    choices=("low", "medium", "high", "xhigh", "max"),
+                    help="analyst reasoning effort. Supported by 'anthropic:' "
+                         "(the Messages API's own effort control) and "
+                         "'claudecode:' (the CLI's own --effort flag, "
+                         "confirmed to accept the same five values). Not "
+                         "accepted by 'deterministic', which reasons about "
+                         "nothing. Unset uses the provider's own default "
+                         "(medium). Higher effort costs more tokens/quota and "
+                         "latency per read — it is a different ARM, not a "
+                         "free quality upgrade.")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -340,6 +375,7 @@ def main() -> int:
                        feed=args.feed, min_stop=args.min_stop,
                        declared_spread=args.declared_spread or 0.0,
                        provider_spec=args.provider,
+                       numeric_only=args.numeric_only,
                        expect_broker=args.expect_broker)
     for c in checks:
         print(c.render())
@@ -375,6 +411,7 @@ def main() -> int:
           + ("  (contextual included — this calls the API per step)"
              if args.shadow_contextual else "  (contextual excluded — costs money)"))
     print(f"  opportunity set  : {'universe (all propositions)' if args.universe else 'single read'}")
+    print(f"  reasoning effort : {args.effort or '(provider default)'}")
     if args.declared_spread:
         print(f"  COST basis       : your venue, ${args.declared_spread:.2f} declared")
     else:
@@ -393,6 +430,7 @@ def main() -> int:
                         cfg=ServiceConfig(symbol=args.symbol),
                         secrets_dir=args.secrets, feed_backend=args.feed,
                         provider_spec=args.provider,
+                        provider_effort=args.effort,
                         management=args.management,
                         declared_spread=args.declared_spread,
                         shadow_management=args.shadow_management,

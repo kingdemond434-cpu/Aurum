@@ -102,7 +102,7 @@ class VintageStore:
     def load(self) -> "VintageStore":
         self._rows.clear()
         self._by_series.clear()
-        for line in self.path.read_text().splitlines():
+        for line in self.path.read_text(encoding='utf-8').splitlines():
             if line.strip():
                 self.add(Vintage(**json.loads(line)))
         return self

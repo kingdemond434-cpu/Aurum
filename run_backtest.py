@@ -252,7 +252,7 @@ def main() -> int:
     # read back the STAMPED spec — the in-memory object is deliberately not
     # mutated by freeze(), so reporting it directly would show frozen_at=None
     import json as _json
-    prereg = Preregistration(**_json.loads(pp.read_text())["spec"])
+    prereg = Preregistration(**_json.loads(pp.read_text(encoding='utf-8'))["spec"])
     ok_spec, why_spec = Preregistration.verify(pp)
     print(f"preregistration frozen: {frozen_hash}  -> {pp}")
     print(f"  tamper check: {'PASS' if ok_spec else 'FAIL'} — {why_spec}\n")

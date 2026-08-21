@@ -140,8 +140,8 @@ def test_setup_discovers_the_chat_writes_secrets_and_delivers(telegram, tmp_path
     assert rc == 0
 
     sec = tmp_path / "secrets"
-    assert (sec / "telegram_token").read_text().strip() == GOOD
-    assert (sec / "telegram_chat_id").read_text().strip() == "555444333"
+    assert (sec / "telegram_token").read_text(encoding='utf-8').strip() == GOOD
+    assert (sec / "telegram_chat_id").read_text(encoding='utf-8').strip() == "555444333"
 
     # The message went out, to the discovered chat, through the real sink.
     assert len(telegram.sent) == 1
@@ -205,7 +205,7 @@ def test_an_explicit_chat_id_settles_the_ambiguity(telegram, tmp_path):
     sec = tmp_path / "secrets"
     assert ts.main(["--secrets", str(sec), "--token", GOOD,
                     "--chat-id", "222"]) == 0
-    assert (sec / "telegram_chat_id").read_text().strip() == "222"
+    assert (sec / "telegram_chat_id").read_text(encoding='utf-8').strip() == "222"
     assert telegram.sent[0]["chat_id"] == "222"
 
 
@@ -309,7 +309,7 @@ def test_the_normaliser_runs_on_every_input_route(telegram, tmp_path):
     f = tmp_path / "tok"; f.write_text(spaced + "\n")
     telegram.updates = [_update(31)]
     assert ts.main(["--secrets", str(tmp_path / "s"), "--token-file", str(f)]) == 0
-    assert (tmp_path / "s" / "telegram_token").read_text().strip() == GOOD
+    assert (tmp_path / "s" / "telegram_token").read_text(encoding='utf-8').strip() == GOOD
 
 
 def test_the_fixture_itself_is_real_shaped():
@@ -342,7 +342,7 @@ def test_the_full_botfather_message_extracts_cleanly(telegram, tmp_path):
     telegram.updates = [_update(9001)]
     rc = ts.main(["--secrets", str(tmp_path / "s"), "--token", BOTFATHER_MSG])
     assert rc == 0
-    assert (tmp_path / "s" / "telegram_token").read_text().strip() == GOOD
+    assert (tmp_path / "s" / "telegram_token").read_text(encoding='utf-8').strip() == GOOD
 
 
 def test_normalise_token_extracts_from_botfathers_wording():
@@ -358,3 +358,23 @@ def test_two_token_shaped_strings_in_one_paste_is_refused():
     other = "222222222:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     with pytest.raises(ValueError, match="found 2 different token-shaped"):
         ts.normalise_token(f"{GOOD}\n{other}")
+
+
+def test_quote_characters_from_a_shell_example_are_stripped():
+    """cmd.exe does not treat ' or " as quoting -- it passes them through
+    literally, so following a Unix-shell example (single quotes around the
+    token) embeds real quote characters in the input."""
+    assert ts.normalise_token("'8911147517:AAquitedefinitelyafaketokenforatest0'") \
+        == "8911147517:AAquitedefinitelyafaketokenforatest0"
+    assert ts.normalise_token('"8911147517:AAquitedefinitelyafaketokenforatest0"') \
+        == "8911147517:AAquitedefinitelyafaketokenforatest0"
+
+
+def test_the_full_botfather_message_is_extracted():
+    """The whole 'Use this token...Keep your token secure' paste, not just the line."""
+    msg = ("Use this token to access the HTTP API:\n"
+          "8911147517: AAEnCsu_fmpox-Nx_P09LdcD2JNOYz_XP78\n"
+          "Keep your token secure and store it safely, it can be used by "
+          "anyone to control your bot.")
+    assert ts.normalise_token(msg) == \
+        "8911147517:AAEnCsu_fmpox-Nx_P09LdcD2JNOYz_XP78"

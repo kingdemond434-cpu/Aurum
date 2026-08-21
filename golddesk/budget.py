@@ -287,5 +287,5 @@ def load(paths: Iterable) -> list[dict]:
     for p in paths:
         p = Path(p)
         if p.exists():
-            rows += [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+            rows += [json.loads(l) for l in p.read_text(encoding='utf-8').splitlines() if l.strip()]
     return rows
