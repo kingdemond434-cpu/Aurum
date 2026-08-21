@@ -73,19 +73,33 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# $PSScriptRoot IS EMPTY WHEN USED AS A PARAMETER DEFAULT VALUE on Windows PowerShell 5.1 --
-# defaults are bound before the script's own automatic variables are fully established, so
-# `$DeskRoot = (Split-Path ... $PSScriptRoot)` silently defaulted to an empty string and every
-# path built from it broke. Resolved here instead, in the script body, where $PSScriptRoot is
-# reliably populated, with a fallback chain for anything that still leaves it unset.
+# The ScheduledTasks cmdlets this script depends on (Get-/Register-/Unregister-ScheduledTask,
+# New-ScheduledTaskAction/-Trigger/-Principal/-Settings) ship with PowerShell 3.0+ on Windows
+# 8/Server 2012 and later. Failing here, once, beats failing on the first cmdlet call with
+# "the term 'Get-ScheduledTask' is not recognized", which reads like a missing module rather
+# than an old host.
+if ($PSVersionTable.PSVersion.Major -lt 3) {
+    Write-Host ("FATAL: PowerShell $($PSVersionTable.PSVersion) found; this script needs 3.0 " +
+               "or later (the ScheduledTasks cmdlets do not exist before it). Install Windows " +
+               "Management Framework 4.0+, or a newer PowerShell from " +
+               "https://aka.ms/PSWindows, then retry.")
+    exit 1
+}
+
+# $PSScriptRoot is empty when referenced INSIDE a param() default value on Windows PowerShell
+# 5.1 -- defaults bind before the script's own automatic variables are fully established, which
+# is exactly the "Cannot bind argument to parameter 'Path' because it is an empty string" hit
+# live on the VPS. A fallback inside the param default does not fix this: whatever it falls back
+# to is evaluated at that same early moment and is just as unreliable there. Resolved here
+# instead, in the script body, where $PSScriptRoot (and everything else) is reliably populated.
+$ScriptRoot = $PSScriptRoot
+if (-not $ScriptRoot) { $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $ScriptRoot) { $ScriptRoot = Split-Path -Parent $PSCommandPath }
+if (-not $ScriptRoot) {
+    throw "cannot determine this script's own location to derive -DeskRoot; pass it explicitly"
+}
 if (-not $DeskRoot) {
-    $scriptDir = $PSScriptRoot
-    if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
-    if (-not $scriptDir) { $scriptDir = Split-Path -Parent $PSCommandPath }
-    if (-not $scriptDir) {
-        throw "cannot determine this script's own location to derive -DeskRoot; pass it explicitly"
-    }
-    $DeskRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
+    $DeskRoot = Split-Path -Parent (Split-Path -Parent $ScriptRoot)
 }
 
 if ($Remove) {
@@ -98,7 +112,7 @@ if ($Remove) {
     exit 0
 }
 
-$supervisor = Join-Path $PSScriptRoot "Start-AurumDesk.ps1"
+$supervisor = Join-Path $ScriptRoot "Start-AurumDesk.ps1"
 if (-not (Test-Path $supervisor)) { throw "supervisor not found at $supervisor" }
 if (-not (Test-Path (Join-Path $DeskRoot "run_desk.py"))) {
     throw "run_desk.py not found under $DeskRoot -- pass -DeskRoot with the Aurum checkout path"

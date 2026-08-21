@@ -21,8 +21,22 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-# See Install-AurumStartup.ps1 for why this is resolved here rather than as a param default:
-# $PSScriptRoot is empty when used inside a param() default on Windows PowerShell 5.1.
+# -notin, Get-ScheduledTask, Get-CimInstance and ConvertFrom-Json all need PowerShell 3.0+.
+# Failing here, once, beats this script dying midway through its own checks with an error that
+# looks like a missing module rather than an old host.
+if ($PSVersionTable.PSVersion.Major -lt 3) {
+    Write-Host ("FATAL: PowerShell $($PSVersionTable.PSVersion) found; this script needs 3.0 " +
+               "or later. Install Windows Management Framework 4.0+, or a newer PowerShell " +
+               "from https://aka.ms/PSWindows, then retry.")
+    exit 1
+}
+
+# $PSScriptRoot is empty when referenced INSIDE a param() default value on Windows PowerShell
+# 5.1 -- defaults bind before the script's own automatic variables are fully established, which
+# is exactly the "Cannot bind argument to parameter 'Path' because it is an empty string" hit
+# live on the VPS. A fallback inside the param default does not fix this: whatever it falls back
+# to is evaluated at that same early moment and is just as unreliable there. Resolved here
+# instead, in the script body, where $PSScriptRoot (and everything else) is reliably populated.
 if (-not $DeskRoot) {
     $scriptDir = $PSScriptRoot
     if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }

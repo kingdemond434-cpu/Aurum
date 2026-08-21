@@ -52,6 +52,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# ConvertTo-Json (used below for the heartbeat file) needs PowerShell 3.0+. Failing here, once,
+# with a plain sentence beats failing on the first heartbeat write with a parser-level error that
+# does not name the actual cause.
+if ($PSVersionTable.PSVersion.Major -lt 3) {
+    Write-Host ("FATAL: PowerShell $($PSVersionTable.PSVersion) found; this script needs 3.0 " +
+               "or later (ConvertTo-Json, and the scheduled-task cmdlets the installer uses, " +
+               "do not exist before it). Install Windows Management Framework 4.0+, or a newer " +
+               "PowerShell from https://aka.ms/PSWindows, then retry.")
+    exit 1
+}
+
 # See Install-AurumStartup.ps1 for why this is resolved here rather than as a param default:
 # $PSScriptRoot is empty when used inside a param() default on Windows PowerShell 5.1.
 if (-not $DeskRoot) {
