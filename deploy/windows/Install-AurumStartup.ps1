@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Make the Aurum desk survive a VPS reboot. Registers a Scheduled Task; verifies it registered.
 
@@ -78,7 +78,7 @@ if ($Remove) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
         Write-Host "removed scheduled task '$TaskName'"
     } else {
-        Write-Host "no scheduled task named '$TaskName' — nothing to remove"
+        Write-Host "no scheduled task named '$TaskName' -- nothing to remove"
     }
     exit 0
 }
@@ -86,7 +86,7 @@ if ($Remove) {
 $supervisor = Join-Path $PSScriptRoot "Start-AurumDesk.ps1"
 if (-not (Test-Path $supervisor)) { throw "supervisor not found at $supervisor" }
 if (-not (Test-Path (Join-Path $DeskRoot "run_desk.py"))) {
-    throw "run_desk.py not found under $DeskRoot — pass -DeskRoot with the Aurum checkout path"
+    throw "run_desk.py not found under $DeskRoot -- pass -DeskRoot with the Aurum checkout path"
 }
 
 $argLiteral = ($DeskArgs | ForEach-Object { "'$_'" }) -join ","
@@ -134,7 +134,7 @@ Write-Host "  args      : $($DeskArgs -join ' ')"
 Write-Host "  trigger   : at logon of $env:USERDOMAIN\$env:USERNAME"
 Write-Host "  state     : $($task.State)"
 Write-Host ""
-Write-Host "STILL REQUIRED — the task cannot do this part:"
+Write-Host "STILL REQUIRED -- the task cannot do this part:"
 Write-Host "  Autologon, so a reboot reaches a desktop for MT5 to draw on."
 Write-Host "  Sysinternals Autologon64.exe. Read the security note in this script first."
 Write-Host ""

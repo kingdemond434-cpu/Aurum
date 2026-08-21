@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Supervisor for the Aurum signal desk on Windows. Keeps it running; says when it cannot.
 

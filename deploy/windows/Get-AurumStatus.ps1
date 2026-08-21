@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Is this box actually configured, and is the desk actually alive? One command, honest answers.
 
@@ -30,7 +30,7 @@ function Report($name, $state, $detail) {
 
 Write-Host ""
 Write-Host ("=" * 78)
-Write-Host "AURUM STATUS — $DeskRoot"
+Write-Host "AURUM STATUS -- $DeskRoot"
 Write-Host ("=" * 78)
 
 # --- the interpreter, because this is the one that bites first ---------------
@@ -40,11 +40,11 @@ Write-Host ("=" * 78)
 # more useful than reporting a boolean.
 $venv = Join-Path $DeskRoot ".venv\Scripts\python.exe"
 if (Test-Path $venv) {
-    Report "python" "OK" "$venv (repo venv — prefer this)"
+    Report "python" "OK" "$venv (repo venv -- prefer this)"
 } elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    Report "python" "OK" "py -3   (NOT 'python3' — that name is Linux-only)"
+    Report "python" "OK" "py -3   (NOT 'python3' -- that name is Linux-only)"
 } elseif (Get-Command python -ErrorAction SilentlyContinue) {
-    Report "python" "OK" "python  (NOT 'python3' — that name is Linux-only)"
+    Report "python" "OK" "python  (NOT 'python3' -- that name is Linux-only)"
 } else {
     Report "python" "MISSING" "no interpreter found: no .venv, no 'py', no 'python' on PATH"
 }
@@ -53,13 +53,13 @@ if (Test-Path $venv) {
 if (Test-Path (Join-Path $DeskRoot "run_desk.py")) {
     Report "checkout" "OK" "run_desk.py present"
 } else {
-    Report "checkout" "MISSING" "no run_desk.py under $DeskRoot — wrong -DeskRoot?"
+    Report "checkout" "MISSING" "no run_desk.py under $DeskRoot -- wrong -DeskRoot?"
 }
 
 # --- the scheduled task ------------------------------------------------------
 $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (-not $task) {
-    Report "startup task" "MISSING" "no task '$TaskName' — run Install-AurumStartup.ps1"
+    Report "startup task" "MISSING" "no task '$TaskName' -- run Install-AurumStartup.ps1"
 } else {
     $info = Get-ScheduledTaskInfo -TaskName $TaskName -ErrorAction SilentlyContinue
     $last = if ($info) { $info.LastTaskResult } else { $null }
@@ -74,24 +74,24 @@ if (-not $task) {
 $winlogon = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
 $auto = (Get-ItemProperty -Path $winlogon -Name AutoAdminLogon -ErrorAction SilentlyContinue).AutoAdminLogon
 if ($auto -eq "1") {
-    Report "autologon" "OK" "enabled — a reboot will reach a desktop for MT5"
+    Report "autologon" "OK" "enabled -- a reboot will reach a desktop for MT5"
 } else {
     Report "autologon" "UNKNOWN" ("not enabled. A REBOOT WILL NOT RESTART THE DESK: MT5 needs " +
                                   "an interactive desktop. Either set it (Autologon64.exe) or " +
-                                  "accept a manual login after reboot — but decide, do not assume")
+                                  "accept a manual login after reboot -- but decide, do not assume")
 }
 
 # --- the supervisor heartbeat -----------------------------------------------
 $hb = Join-Path $DeskRoot "logs\supervisor_heartbeat.json"
 if (-not (Test-Path $hb)) {
-    Report "desk heartbeat" "UNKNOWN" "no heartbeat file — the supervisor has never run"
+    Report "desk heartbeat" "UNKNOWN" "no heartbeat file -- the supervisor has never run"
 } else {
     try {
         $h = Get-Content $hb -Raw | ConvertFrom-Json
         $age = [int]((Get-Date).ToUniversalTime() - [datetime]::Parse($h.updated_utc).ToUniversalTime()).TotalMinutes
         switch ($h.state) {
             "RUNNING"    { Report "desk heartbeat" "OK" "RUNNING, written ${age}m ago (pid $($h.pid))" }
-            "RESTARTING" { Report "desk heartbeat" "RESTARTING" "$($h.detail) — failures=$($h.consecutive_failures)" }
+            "RESTARTING" { Report "desk heartbeat" "RESTARTING" "$($h.detail) -- failures=$($h.consecutive_failures)" }
             "GAVE_UP"    { Report "desk heartbeat" "GAVE_UP" "$($h.detail)" }
             default      { Report "desk heartbeat" "UNKNOWN" "state=$($h.state) written ${age}m ago" }
         }
@@ -122,7 +122,7 @@ if (-not (Test-Path $ledger)) {
     if ($mins -le 120) {
         Report "ledger" "OK" "$rows rows, last written ${mins}m ago"
     } else {
-        Report "ledger" "STALE" ("$rows rows but last written ${mins}m ago — the desk is not " +
+        Report "ledger" "STALE" ("$rows rows but last written ${mins}m ago -- the desk is not " +
                                  "journalling. A live process with a stale ledger is the failure " +
                                  "that looks most like a quiet market")
     }
@@ -130,7 +130,7 @@ if (-not (Test-Path $ledger)) {
 
 Write-Host ""
 if ($fails -eq 0) {
-    Write-Host "no failures. Note any UNKNOWN above — those are unmeasured, not fine."
+    Write-Host "no failures. Note any UNKNOWN above -- those are unmeasured, not fine."
 } else {
     Write-Host "$fails check(s) FAILED. The desk is not in the state you think it is."
 }
