@@ -309,8 +309,15 @@ class DeskService:
                 log.info("max_seconds reached — exiting cleanly")
                 break
             try:
-                if not self.feed.connect():
-                    raise FeedError("connect() returned falsy")
+                # connect() signals failure by RAISING FeedError (after its own
+                # internal retry loop) -- it has no meaningful truthy return on
+                # success, so this must never gate on its return value. It used
+                # to: `if not self.feed.connect(): raise FeedError(...)`, which
+                # fired on every successful connect (an implicit `None` return
+                # is falsy) and made the live loop unable to ever get past this
+                # line. Invisible to tests because the fake feed's connect()
+                # returned True, a contract the real one never had.
+                self.feed.connect()
                 backoff = self.cfg.backoff_initial_s
                 self._warm()
                 self.rehydrate()
