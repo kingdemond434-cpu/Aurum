@@ -118,8 +118,9 @@ if (-not (Test-Path $hb)) {
         $age = [int]((Get-Date).ToUniversalTime() - [datetime]::Parse($h.updated_utc).ToUniversalTime()).TotalMinutes
         switch ($h.state) {
             "RUNNING"    { Report "desk heartbeat" "OK" "RUNNING, written ${age}m ago (pid $($h.pid))" }
-            "RESTARTING" { Report "desk heartbeat" "RESTARTING" "$($h.detail) -- failures=$($h.consecutive_failures)" }
-            "GAVE_UP"    { Report "desk heartbeat" "GAVE_UP" "$($h.detail)" }
+            "RESTARTING" { Report "desk heartbeat" "RESTARTING" ("$($h.detail) -- failures=$($h.consecutive_failures). " +
+                                                                  "See logs\desk_output.log for what run_desk.py printed") }
+            "GAVE_UP"    { Report "desk heartbeat" "GAVE_UP" "$($h.detail). See logs\desk_output.log for why" }
             default      { Report "desk heartbeat" "UNKNOWN" "state=$($h.state) written ${age}m ago" }
         }
     } catch {
