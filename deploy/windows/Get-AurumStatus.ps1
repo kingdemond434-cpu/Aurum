@@ -122,6 +122,12 @@ if (-not (Test-Path $hb)) {
                                                           "tail logs\_desk_stdout.tmp to see it live") }
             "RESTARTING" { Report "desk heartbeat" "RESTARTING" ("$($h.detail) -- failures=$($h.consecutive_failures). " +
                                                                   "See logs\desk_output.log for what run_desk.py printed") }
+            "DEGRADED"   { Report "desk heartbeat" "DEGRADED" ("$($h.detail) -- still retrying every few minutes, " +
+                                                                "not stopped. See logs\desk_output.log for why it "  +
+                                                                "keeps failing") }
+            # GAVE_UP is now reserved for conditions retrying cannot fix: no Python interpreter
+            # found, run_desk.py missing, or the desk exiting 0 on purpose. A crash LOOP no
+            # longer lands here -- see DEGRADED.
             "GAVE_UP"    { Report "desk heartbeat" "GAVE_UP" "$($h.detail). See logs\desk_output.log for why" }
             default      { Report "desk heartbeat" "UNKNOWN" "state=$($h.state) written ${age}m ago" }
         }

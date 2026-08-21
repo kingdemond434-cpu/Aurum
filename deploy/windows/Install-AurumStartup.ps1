@@ -102,12 +102,16 @@ if (-not $DeskRoot) {
     $DeskRoot = Split-Path -Parent (Split-Path -Parent $ScriptRoot)
 }
 
+$WatchdogTaskName = "$TaskName-Watchdog"
+
 if ($Remove) {
-    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "removed scheduled task '$TaskName'"
-    } else {
-        Write-Host "no scheduled task named '$TaskName' -- nothing to remove"
+    foreach ($t in @($TaskName, $WatchdogTaskName)) {
+        if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
+            Unregister-ScheduledTask -TaskName $t -Confirm:$false
+            Write-Host "removed scheduled task '$t'"
+        } else {
+            Write-Host "no scheduled task named '$t' -- nothing to remove"
+        }
     }
     exit 0
 }
@@ -182,6 +186,35 @@ Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
 $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if (-not $task) { throw "task '$TaskName' did not register" }
 
+# THE WATCHDOG. AtLogOn covers "the box rebooted or you logged back in". It does NOT cover "the
+# whole process tree got killed with no logon in between" -- Task Manager, an update, an OOM
+# reaper -- because AtLogOn has nothing to fire on until the next logon. This is the standard
+# fix: a SEPARATE, time-triggered task that checks whether the desk (or its supervisor) is
+# actually alive, and relaunches AurumSignalDesk only on true absence. See Watch-AurumDesk.ps1's
+# own header for why it cannot double-launch a healthy or merely-degraded desk.
+#
+# New-ScheduledTaskTrigger has no direct "every N minutes forever" trigger type -- a One-time
+# trigger with a repetition interval and a duration far longer than this desk will run
+# unattended is the standard construction for a recurring task via this cmdlet family.
+$watchdogScript = Join-Path $ScriptRoot "Watch-AurumDesk.ps1"
+if (-not (Test-Path $watchdogScript)) { throw "watchdog not found at $watchdogScript" }
+$wdArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden " +
+          "-File `"$watchdogScript`" -DeskRoot `"$DeskRoot`""
+$wdAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $wdArgs `
+                                    -WorkingDirectory $DeskRoot
+$wdTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+                                      -RepetitionInterval (New-TimeSpan -Minutes 5) `
+                                      -RepetitionDuration ([TimeSpan]::MaxValue)
+$wdPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+                                          -LogonType Interactive -RunLevel Limited
+$wdSettings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 4) -MultipleInstances IgnoreNew
+Register-ScheduledTask -TaskName $WatchdogTaskName -Action $wdAction -Trigger $wdTrigger `
+                       -Principal $wdPrincipal -Settings $wdSettings -Force | Out-Null
+$wdTask = Get-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+if (-not $wdTask) { throw "task '$WatchdogTaskName' did not register" }
+
 Write-Host ""
 Write-Host "REGISTERED: $TaskName"
 Write-Host "  runs      : $supervisor"
@@ -189,6 +222,13 @@ Write-Host "  desk root : $DeskRoot"
 Write-Host "  args      : $($DeskArgs -join ' ')"
 Write-Host "  trigger   : at logon of $env:USERDOMAIN\$env:USERNAME"
 Write-Host "  state     : $($task.State)"
+Write-Host ""
+Write-Host "REGISTERED: $WatchdogTaskName"
+Write-Host "  runs      : $watchdogScript"
+Write-Host "  trigger   : every 5 minutes, indefinitely"
+Write-Host "  purpose   : relaunches $TaskName if BOTH it and the desk process have died with"
+Write-Host "              no logon in between -- the one gap AtLogOn alone cannot cover"
+Write-Host "  state     : $($wdTask.State)"
 Write-Host ""
 Write-Host "STILL REQUIRED -- the task cannot do this part:"
 Write-Host "  Autologon, so a reboot reaches a desktop for MT5 to draw on."

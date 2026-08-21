@@ -15,14 +15,18 @@
     distinguishable from outside the process, which is the distinction that matters at 3am and
     the one a bare shortcut cannot express.
 
-    WHY BACKOFF AND WHY A CEILING
+    WHY BACKOFF, AND WHY IT PLATEAUS INSTEAD OF STOPPING
 
     A desk that crashes instantly on a config error would, without backoff, respawn thousands of
-    times a minute, fill the disk with logs and hammer the broker's endpoint. With unlimited
-    backoff it would instead retry every few hours forever, which is indistinguishable from
-    working. Neither is honest. It restarts with growing delay up to a cap, and after
-    MaxConsecutiveFailures fast failures it STOPS and records why -- a supervisor that cannot
-    keep the thing alive should say so rather than hide it in a retry loop.
+    times a minute, fill the disk with logs and hammer the broker's endpoint. It restarts with
+    growing delay up to MaxBackoffSeconds, and after MaxConsecutiveFailures fast failures it
+    PLATEAUS at that slowest rate rather than exiting -- this used to stop the process entirely,
+    which meant a transient problem (a broker outage, a CLI quota reset, a dropped network) left
+    the desk dead until a human noticed and relaunched it, exactly the opposite of "24/7, never
+    dying". The process itself never permanently exits from a crash loop now.
+    What does NOT change is the honesty: the heartbeat reports DEGRADED, not RUNNING, the whole
+    time it is plateaued, and Get-AurumStatus surfaces that as a named failure. A supervisor
+    that cannot keep the thing working still has to say so; it just no longer stops trying.
 
     A "fast failure" is one where the desk died sooner than HealthySeconds. A desk that ran for
     six hours and then died is a different event from one that dies in four seconds, and only the
@@ -238,12 +242,31 @@ while ($true) {
     }
 
     if ($failures -ge $MaxConsecutiveFailures) {
-        $msg = "$failures consecutive fast failures; last exit code $code. STOPPING. " +
-               "See $deskLog for what run_desk.py actually printed, or run it by hand: " +
-               "$($interp.Exe) run_desk.py --preflight"
-        Write-Log "FATAL: $msg"
-        Write-Heartbeat "GAVE_UP" $msg $failures
-        exit 1
+        # THIS USED TO exit 1 HERE, AND "24/7, never dying" MEANS THAT WAS WRONG.
+        #
+        # A permanent stop after 8 fast failures was the right call while this desk had a
+        # config bug that made every launch fail identically forever -- retrying infinitely at
+        # a FAST cadence would have hammered the broker and the CLI for no gain, and the
+        # original design note said so: "a supervisor that cannot keep the thing alive should
+        # say so rather than hide it in a retry loop." That principle still holds. What changes
+        # is the CONSEQUENCE: instead of exiting (which requires a human to notice and either
+        # log back in or manually restart the task), it now PLATEAUS -- keeps retrying forever
+        # at $MaxBackoffSeconds, the slowest rate the backoff ever reaches, so a transient
+        # problem that eventually clears (a broker outage, a CLI quota reset, a network blip)
+        # is picked back up on its own with no one watching, while a permanent one costs at
+        # most one attempt every $MaxBackoffSeconds rather than a fast spin.
+        #
+        # THE HONESTY IS KEPT, NOT TRADED AWAY. The heartbeat state is DEGRADED, not RUNNING --
+        # Get-AurumStatus reports it as a named failure, never as healthy. "Never dying" means
+        # the PROCESS never permanently exits; it does not mean the desk is allowed to claim it
+        # is fine when it plainly is not.
+        $msg = "$failures consecutive fast failures; last exit code $code. Not stopping -- " +
+               "plateaued at ${MaxBackoffSeconds}s retries. See $deskLog for what run_desk.py " +
+               "actually printed, or run it by hand: $($interp.Exe) run_desk.py --preflight"
+        Write-Log "DEGRADED: $msg"
+        Write-Heartbeat "DEGRADED" $msg $failures
+        Start-Sleep -Seconds $MaxBackoffSeconds
+        continue
     }
 
     Write-Heartbeat "RESTARTING" "exit $code after ${ranFor}s; retrying in ${delay}s" $failures
