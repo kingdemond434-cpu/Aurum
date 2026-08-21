@@ -1,4 +1,4 @@
-﻿<#
+﻿﻿<#
 .SYNOPSIS
     Is this box actually configured, and is the desk actually alive? One command, honest answers.
 
@@ -15,12 +15,28 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $DeskRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    # $PSScriptRoot does not exist before PowerShell 3.0 -- referencing it on PS2 silently
+    # returns $null rather than erroring, which is what turned into "Cannot bind argument to
+    # parameter 'Path' because it is an empty string" one level up, in Split-Path. Falling back
+    # to $MyInvocation.MyCommand.Path (available since PS2) so this resolves on either.
+    [string] $DeskRoot = (Split-Path -Parent (Split-Path -Parent $(
+                 if ($PSScriptRoot) { $PSScriptRoot }
+                 else { Split-Path -Parent $MyInvocation.MyCommand.Path }))),
     [string] $TaskName = "AurumSignalDesk"
 )
 
 $ErrorActionPreference = "Continue"
 $fails = 0
+
+# -notin, Get-ScheduledTask, Get-CimInstance and ConvertFrom-Json all need PowerShell 3.0+.
+# Failing here, once, beats this script dying midway through its own checks with an error that
+# looks like a missing module rather than an old host.
+if ($PSVersionTable.PSVersion.Major -lt 3) {
+    Write-Host ("FATAL: PowerShell $($PSVersionTable.PSVersion) found; this script needs 3.0 " +
+               "or later. Install Windows Management Framework 4.0+, or a newer PowerShell " +
+               "from https://aka.ms/PSWindows, then retry.")
+    exit 1
+}
 
 function Report($name, $state, $detail) {
     $mark = switch ($state) { "OK" { "PASS" } "UNKNOWN" { "????" } default { "FAIL" } }

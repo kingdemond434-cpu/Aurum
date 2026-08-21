@@ -1,4 +1,4 @@
-﻿<#
+﻿﻿<#
 .SYNOPSIS
     Make the Aurum desk survive a VPS reboot. Registers a Scheduled Task; verifies it registered.
 
@@ -64,7 +64,13 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $DeskRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    # $PSScriptRoot does not exist before PowerShell 3.0 -- referencing it on PS2 silently
+    # returns $null rather than erroring, which is what turned into "Cannot bind argument to
+    # parameter 'Path' because it is an empty string" one level up, in Split-Path. Falling back
+    # to $MyInvocation.MyCommand.Path (available since PS2) so this resolves on either.
+    [string] $DeskRoot = (Split-Path -Parent (Split-Path -Parent $(
+                 if ($PSScriptRoot) { $PSScriptRoot }
+                 else { Split-Path -Parent $MyInvocation.MyCommand.Path }))),
     [string] $TaskName = "AurumSignalDesk",
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
                              "--numeric-only", "--expect-broker", "Fusion"),
@@ -72,6 +78,23 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Same fallback for the rest of the script, where $PSScriptRoot is used again below.
+$ScriptRoot = if ($PSScriptRoot) { $PSScriptRoot }
+             else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+
+# The ScheduledTasks cmdlets this script depends on (Get-/Register-/Unregister-ScheduledTask,
+# New-ScheduledTaskAction/-Trigger/-Principal/-Settings) ship with PowerShell 3.0+ on Windows
+# 8/Server 2012 and later. Failing here, once, beats failing on the first cmdlet call with
+# "the term 'Get-ScheduledTask' is not recognized", which reads like a missing module rather
+# than an old host.
+if ($PSVersionTable.PSVersion.Major -lt 3) {
+    Write-Host ("FATAL: PowerShell $($PSVersionTable.PSVersion) found; this script needs 3.0 " +
+               "or later (the ScheduledTasks cmdlets do not exist before it). Install Windows " +
+               "Management Framework 4.0+, or a newer PowerShell from " +
+               "https://aka.ms/PSWindows, then retry.")
+    exit 1
+}
 
 if ($Remove) {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -83,7 +106,7 @@ if ($Remove) {
     exit 0
 }
 
-$supervisor = Join-Path $PSScriptRoot "Start-AurumDesk.ps1"
+$supervisor = Join-Path $ScriptRoot "Start-AurumDesk.ps1"
 if (-not (Test-Path $supervisor)) { throw "supervisor not found at $supervisor" }
 if (-not (Test-Path (Join-Path $DeskRoot "run_desk.py"))) {
     throw "run_desk.py not found under $DeskRoot -- pass -DeskRoot with the Aurum checkout path"

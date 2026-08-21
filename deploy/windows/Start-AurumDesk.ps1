@@ -1,4 +1,4 @@
-﻿<#
+﻿﻿<#
 .SYNOPSIS
     Supervisor for the Aurum signal desk on Windows. Keeps it running; says when it cannot.
 
@@ -42,7 +42,13 @@
 #>
 [CmdletBinding()]
 param(
-    [string]   $DeskRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    # $PSScriptRoot does not exist before PowerShell 3.0 -- referencing it on PS2 silently
+    # returns $null rather than erroring, which is what turned into "Cannot bind argument to
+    # parameter 'Path' because it is an empty string" one level up, in Split-Path. Falling back
+    # to $MyInvocation.MyCommand.Path (available since PS2) so this resolves on either.
+    [string]   $DeskRoot = (Split-Path -Parent (Split-Path -Parent $(
+                   if ($PSScriptRoot) { $PSScriptRoot }
+                   else { Split-Path -Parent $MyInvocation.MyCommand.Path }))),
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
                              "--numeric-only", "--expect-broker", "Fusion"),
     [int]      $HealthySeconds = 300,
@@ -51,6 +57,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# ConvertTo-Json (used below for the heartbeat file) needs PowerShell 3.0+. Failing here, once,
+# with a plain sentence beats failing on the first heartbeat write with a parser-level error that
+# does not name the actual cause.
+if ($PSVersionTable.PSVersion.Major -lt 3) {
+    Write-Host ("FATAL: PowerShell $($PSVersionTable.PSVersion) found; this script needs 3.0 " +
+               "or later (ConvertTo-Json, and the scheduled-task cmdlets the installer uses, " +
+               "do not exist before it). Install Windows Management Framework 4.0+, or a newer " +
+               "PowerShell from https://aka.ms/PSWindows, then retry.")
+    exit 1
+}
 
 $logDir    = Join-Path $DeskRoot "logs"
 $log       = Join-Path $logDir "supervisor.log"
