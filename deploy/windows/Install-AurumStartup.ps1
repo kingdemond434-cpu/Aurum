@@ -64,7 +64,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $DeskRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    [string] $DeskRoot,
     [string] $TaskName = "AurumSignalDesk",
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
                              "--numeric-only", "--expect-broker", "Fusion"),
@@ -72,6 +72,21 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# $PSScriptRoot IS EMPTY WHEN USED AS A PARAMETER DEFAULT VALUE on Windows PowerShell 5.1 --
+# defaults are bound before the script's own automatic variables are fully established, so
+# `$DeskRoot = (Split-Path ... $PSScriptRoot)` silently defaulted to an empty string and every
+# path built from it broke. Resolved here instead, in the script body, where $PSScriptRoot is
+# reliably populated, with a fallback chain for anything that still leaves it unset.
+if (-not $DeskRoot) {
+    $scriptDir = $PSScriptRoot
+    if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if (-not $scriptDir) { $scriptDir = Split-Path -Parent $PSCommandPath }
+    if (-not $scriptDir) {
+        throw "cannot determine this script's own location to derive -DeskRoot; pass it explicitly"
+    }
+    $DeskRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
+}
 
 if ($Remove) {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {

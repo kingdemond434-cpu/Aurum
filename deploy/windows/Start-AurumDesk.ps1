@@ -42,7 +42,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]   $DeskRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    [string]   $DeskRoot,
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
                              "--numeric-only", "--expect-broker", "Fusion"),
     [int]      $HealthySeconds = 300,
@@ -51,6 +51,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# See Install-AurumStartup.ps1 for why this is resolved here rather than as a param default:
+# $PSScriptRoot is empty when used inside a param() default on Windows PowerShell 5.1.
+if (-not $DeskRoot) {
+    $scriptDir = $PSScriptRoot
+    if (-not $scriptDir) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
+    if (-not $scriptDir) { $scriptDir = Split-Path -Parent $PSCommandPath }
+    if (-not $scriptDir) {
+        throw "cannot determine this script's own location to derive -DeskRoot; pass it explicitly"
+    }
+    $DeskRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
+}
 
 $logDir    = Join-Path $DeskRoot "logs"
 $log       = Join-Path $logDir "supervisor.log"
