@@ -48,6 +48,29 @@ letting the flag decide for you.
 
 ## Recent claims (most recent first — add yours, do not delete others' unless resolved)
 
+- **2026-08-21, this session** (branch `claude/aurum-check-kqwpy6`): fixed
+  the live `service.py` bug where a successful `feed.connect()` was treated
+  as a failure (`if not self.feed.connect(): raise FeedError(...)` --
+  `connect()` returns `None` on success and only ever signals failure by
+  raising, so this fired on every successful connect, forever), plus the
+  `ServerClock` bootstrap bug (`_warm()`'s first `bars()` call needed
+  `clock.known` but nothing had called `raw_tick()`/`observe()` yet --
+  `connect()` now measures the clock itself before returning). Both were
+  invisible to the test suite because `test_service.py`'s `FakeFeed` never
+  matched the real class's contract; fixed the fake too and added
+  `test_feed_connect.py` (verified it fails against the pre-fix code).
+  **Collided with the VPS-local session on `deploy/windows/*.ps1`**: both
+  diagnosed the same `$PSScriptRoot`-empty-in-param-defaults bug
+  independently and pushed fixes minutes apart (their `9f27a1b` vs. this
+  session's fix) — merged in `298f2a5`, keeping their PS-version guard but
+  replacing their param-default fallback with a body-side one (a fallback
+  *inside* a param default is evaluated at the same early-binding point
+  that broke `$PSScriptRoot` there in the first place, so it doesn't
+  actually fix it). Also found and fixed a doubled UTF-8 BOM one of the
+  two prior fix commits introduced. **If you are the VPS session: pull
+  before touching `deploy/windows/` again — the param-default fallback
+  approach looks reasonable but doesn't work, don't reintroduce it.**
+
 - **2026-08-20, this session** (branch `claude/aurum-check-kqwpy6`): merged
   `claude/aurum-tier2-brain` in (4th collision, same shape as the first
   three — both branches added `--provider` to `run_desk.py`'s argparse
