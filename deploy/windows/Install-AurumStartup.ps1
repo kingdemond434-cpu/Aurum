@@ -118,9 +118,36 @@ if (-not (Test-Path (Join-Path $DeskRoot "run_desk.py"))) {
     throw "run_desk.py not found under $DeskRoot -- pass -DeskRoot with the Aurum checkout path"
 }
 
-$argLiteral = ($DeskArgs | ForEach-Object { "'$_'" }) -join ","
+# THIS USED TO BE ($DeskArgs | ForEach-Object { "'$_'" }) -join "," -- e.g.
+# '--shadow','--provider','claudecode:claude-opus-5','--numeric-only','--expect-broker','Fusion'
+# -- and it silently produced a desk that could not start under the scheduled task while working
+# perfectly when run by hand, for four consecutive fast failures before the cause was visible.
+#
+# THE MECHANISM: that comma-joined text was embedded into $psArgs, the raw command line for a
+# BRAND NEW powershell.exe process launched by the scheduled task action. Comma is the array
+# CONSTRUCTION OPERATOR only when PowerShell's own LANGUAGE PARSER reads script or console text
+# -- it means nothing to the OS-level command-line tokenizer that splits a NEW process's argv on
+# WHITESPACE (honouring quotes). Because `-join ","` inserts no spaces, the entire blob --
+# quotes, commas and all -- contained zero whitespace and arrived as ONE token. -DeskArgs (typed
+# [string[]]) bound that single literal string as a one-element array, and run_desk.py's argparse
+# then reported it verbatim as one unrecognised argument -- which is exactly the comma-and-quote
+# text seen in the failure, not six separate flags.
+#
+# A naive fix (space-join instead of comma-join) trades this bug for a different one: several of
+# these values themselves start with `--` (--provider, --numeric-only, --expect-broker), and
+# PowerShell's own -File parameter binder can mistake a dash-prefixed TOKEN for an attempt to
+# specify a new named parameter rather than a continuation of -DeskArgs's array. Whitespace-
+# splitting the values is what creates that ambiguity in the first place.
+#
+# So this now travels as ONE opaque, properly double-quoted string -- immune to both problems,
+# since there is only one token for -File's parser to bind to -DeskArgsJoined, and its content
+# (including every embedded dash) is never re-examined as separate command-line tokens.
+# Start-AurumDesk.ps1 splits it back into an array in its own script body. "|" is the delimiter
+# because none of the values this desk currently passes can contain one; if a future argument
+# value legitimately needs a literal "|", change the delimiter on both sides together.
+$argJoined = $DeskArgs -join "|"
 $psArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden " +
-          "-File `"$supervisor`" -DeskRoot `"$DeskRoot`" -DeskArgs $argLiteral"
+          "-File `"$supervisor`" -DeskRoot `"$DeskRoot`" -DeskArgsJoined `"$argJoined`""
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $psArgs `
                                   -WorkingDirectory $DeskRoot
