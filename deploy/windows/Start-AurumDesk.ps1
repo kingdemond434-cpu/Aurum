@@ -147,22 +147,47 @@ while ($true) {
 
     # THIS USED TO SAY "inherit stdout/stderr" AND THAT WAS WRONG UNDER A HIDDEN WINDOW.
     # "Inheriting" a console that nobody can see does not put the output anywhere a person can
-    # read it -- it produced silence, discovered live when the desk failed under the scheduled
-    # task with no visible cause while the same command had just printed a full preflight report
-    # when run by hand. run_desk.py's OWN journal (state/ledger.jsonl) only ever gets a row once
-    # a decision is made; a preflight failure or an unhandled exception dies before that, so the
-    # ledger cannot be the diagnostic trail for exactly the failures that matter most here.
+    # read it -- discovered live when the desk failed under the scheduled task with no visible
+    # cause while the same command had just printed a full preflight report by hand.
+    # run_desk.py's OWN journal (state/ledger.jsonl) only ever gets a row once a decision is
+    # made; a preflight failure or an unhandled exception dies before that point, which is
+    # exactly the class of failure that matters most here.
     #
-    # *>> captures every stream (stdout, stderr, and the rest) and appends -- this works whether
-    # or not the window is visible, because redirection captures the process's output handles
-    # directly rather than rendering to a console.
+    # THE FIRST FIX FOR THAT (*>> $deskLog) turned out not to be reliable either: it is a
+    # PowerShell stream-merge abstraction, not guaranteed OS-level file redirection, and after
+    # deploying it a run produced a started-header with no process output for well past the
+    # time the same command takes to fail by hand -- indistinguishable from output genuinely
+    # being swallowed again versus the run legitimately still being in progress.
+    #
+    # Start-Process -RedirectStandardOutput/-RedirectStandardError maps DIRECTLY to real OS file
+    # handles for the child process. This is the documented, reliable mechanism; *>> is not.
+    # Per-run temp files (Start-Process does not support append mode) are then folded into the
+    # one persistent $deskLog so restart history stays in a single readable file.
+    $stdoutTmp = Join-Path $logDir "_desk_stdout.tmp"
+    $stderrTmp = Join-Path $logDir "_desk_stderr.tmp"
+    Remove-Item $stdoutTmp, $stderrTmp -Force -ErrorAction SilentlyContinue
+
     Add-Content -Path $deskLog -Encoding utf8 -Value (
         "`n" + ("=" * 78) + "`n" +
         "run started $((Get-Date).ToString('o'))  ::  $($interp.Exe) $deskScript $($DeskArgs -join ' ')`n" +
         ("=" * 78))
-    & $interp.Exe @argv *>> $deskLog
-    $code = $LASTEXITCODE
+
+    $proc = Start-Process -FilePath $interp.Exe -ArgumentList $argv -WorkingDirectory $DeskRoot `
+                          -NoNewWindow -Wait -PassThru `
+                          -RedirectStandardOutput $stdoutTmp -RedirectStandardError $stderrTmp
+    $code = $proc.ExitCode
     $ranFor = [int]((Get-Date) - $startedAt).TotalSeconds
+
+    # Fold both streams into the persistent log, in the order a person would want to read them
+    # (stdout -- the normal preflight/decision trail -- then stderr, which is usually a traceback
+    # explaining why the stdout trail stopped where it did).
+    foreach ($tmp in @($stdoutTmp, $stderrTmp)) {
+        if (Test-Path $tmp) {
+            $content = Get-Content $tmp -Raw -ErrorAction SilentlyContinue
+            if ($content) { Add-Content -Path $deskLog -Value $content -Encoding utf8 }
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     if ($code -eq 0) {
         Write-Log "desk exited cleanly (0) after ${ranFor}s -- not restarting"
