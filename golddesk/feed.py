@@ -191,6 +191,18 @@ class LiveFeed:
                     self.connected = True
                     self._halted_reason = None
                     self.resolved_symbol = self._resolve_symbol()
+                    # A feed is not usable yet even though it reports connected:
+                    # bars() converts every timestamp through self.clock, and the
+                    # clock is only ever set by observing a live tick (raw_tick()
+                    # -> clock.observe()). Nothing else calls raw_tick() before a
+                    # caller's first bars() request, so without this the very
+                    # first _warm() after connect() always raised "server clock
+                    # not yet measured" -- not intermittently, on every fresh
+                    # start with no cached offset, because there was no path that
+                    # ever measured the clock before it was needed.
+                    if not self.clock.known and self.raw_tick() is None:
+                        raise FeedError("connected but no tick available to "
+                                        "measure the server clock from")
                     log.info("feed connected, symbol=%s", self.resolved_symbol)
                     return
                 last = self.client.last_error()
