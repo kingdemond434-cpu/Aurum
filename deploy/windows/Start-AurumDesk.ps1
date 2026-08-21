@@ -117,12 +117,21 @@ function Write-Heartbeat($state, $detail, $failures) {
 # bare `python`. Guessing wrong here produces "not recognized as the name of a cmdlet", which
 # reads like the SCRIPT is missing rather than the interpreter.
 function Resolve-Python {
+    # -u: UNBUFFERED stdout/stderr. Without it, Python block-buffers its own output whenever it
+    # is not writing to a real console -- which is always true here, since Start-Process below
+    # redirects into a file. desk_output.log only gets ASSEMBLED once a run exits (folding a
+    # long healthy run's output in incrementally is a bigger, harder-to-verify rewrite this
+    # desk does not need), but the RAW temp files it reads from
+    # (logs\_desk_stdout.tmp / _desk_stderr.tmp) are real OS-level redirected handles and DO
+    # update live -- ONLY IF Python itself flushes promptly instead of holding pages in its own
+    # buffer. `-u` is what makes tailing those temp files during a still-running attempt
+    # actually show anything.
     $venv = Join-Path $DeskRoot ".venv\Scripts\python.exe"
-    if (Test-Path $venv) { return @{ Exe = $venv; Args = @() } }
+    if (Test-Path $venv) { return @{ Exe = $venv; Args = @("-u") } }
     $py = Get-Command py -ErrorAction SilentlyContinue
-    if ($py) { return @{ Exe = $py.Source; Args = @("-3") } }
+    if ($py) { return @{ Exe = $py.Source; Args = @("-3", "-u") } }
     $python = Get-Command python -ErrorAction SilentlyContinue
-    if ($python) { return @{ Exe = $python.Source; Args = @() } }
+    if ($python) { return @{ Exe = $python.Source; Args = @("-u") } }
     return $null
 }
 
@@ -174,6 +183,15 @@ while ($true) {
     # handles for the child process. This is the documented, reliable mechanism; *>> is not.
     # Per-run temp files (Start-Process does not support append mode) are then folded into the
     # one persistent $deskLog so restart history stays in a single readable file.
+    #
+    # TWO DIFFERENT QUESTIONS, TWO DIFFERENT FILES. "Did a past run fail, and why" is answered by
+    # $deskLog -- assembled once a run exits, so it is only ever a HISTORICAL record. "Is the
+    # CURRENTLY RUNNING attempt doing anything" cannot be answered there while the desk is
+    # healthy, possibly for hours -- a healthy --shadow run may not exit for days. For that,
+    # tail the temp files directly while this run is still in progress:
+    #   Get-Content logs\_desk_stdout.tmp -Tail 40
+    # These update live because -u (see Resolve-Python) forces Python to flush promptly instead
+    # of holding output in its own buffer. They disappear once folded into $deskLog after exit.
     $stdoutTmp = Join-Path $logDir "_desk_stdout.tmp"
     $stderrTmp = Join-Path $logDir "_desk_stderr.tmp"
     Remove-Item $stdoutTmp, $stderrTmp -Force -ErrorAction SilentlyContinue
@@ -181,6 +199,7 @@ while ($true) {
     Add-Content -Path $deskLog -Encoding utf8 -Value (
         "`n" + ("=" * 78) + "`n" +
         "run started $((Get-Date).ToString('o'))  ::  $($interp.Exe) $deskScript $($DeskArgs -join ' ')`n" +
+        "(tail logs\_desk_stdout.tmp for LIVE output while this run is in progress)`n" +
         ("=" * 78))
 
     $proc = Start-Process -FilePath $interp.Exe -ArgumentList $argv -WorkingDirectory $DeskRoot `

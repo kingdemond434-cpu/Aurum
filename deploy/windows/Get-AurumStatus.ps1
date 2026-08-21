@@ -117,7 +117,9 @@ if (-not (Test-Path $hb)) {
         $h = Get-Content $hb -Raw | ConvertFrom-Json
         $age = [int]((Get-Date).ToUniversalTime() - [datetime]::Parse($h.updated_utc).ToUniversalTime()).TotalMinutes
         switch ($h.state) {
-            "RUNNING"    { Report "desk heartbeat" "OK" "RUNNING, written ${age}m ago (pid $($h.pid))" }
+            "RUNNING"    { Report "desk heartbeat" "OK" ("RUNNING, written ${age}m ago (pid $($h.pid)). " +
+                                                          "logs\desk_output.log stays empty until this run exits -- " +
+                                                          "tail logs\_desk_stdout.tmp to see it live") }
             "RESTARTING" { Report "desk heartbeat" "RESTARTING" ("$($h.detail) -- failures=$($h.consecutive_failures). " +
                                                                   "See logs\desk_output.log for what run_desk.py printed") }
             "GAVE_UP"    { Report "desk heartbeat" "GAVE_UP" "$($h.detail). See logs\desk_output.log for why" }
