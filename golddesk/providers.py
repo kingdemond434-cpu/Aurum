@@ -23,7 +23,8 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
 
 from .analyst import (ANALYST_SCHEMA, ANALYST_SYSTEM, AnalystRead, MarketBrief)
-from .claude_code_analyst import ClaudeCodeAnalyst
+# (the CLI-client module is deliberately NOT imported here -- see the PROVIDERS note below;
+# importing it re-creates the name collision that broke the claudecode route)
 from .chart import Chart
 
 log = logging.getLogger(__name__)
@@ -495,30 +496,34 @@ class ClaudeCodeAnalyst(AnalystProvider):
         })
 
 
+# TWO IMPLEMENTATIONS OF THE SUBSCRIPTION ROUTE LANDED UNDER THE SAME CLASS NAME, AND THE
+# BROKEN ONE WON.
+#
+# A second `PROVIDERS` dict used to sit below this one -- so this dict was built and immediately
+# discarded -- mapping "claudecode" to a factory that did:
+#
+#     kw.setdefault("client", ClaudeCodeAnalyst())      # then: AnthropicAnalyst(**kw)
+#
+# The intent was sound: inject the CLI transport into the existing analyst so the compiler,
+# schema and journalling stay shared and only the destination of the model call changes. But
+# `claude_code_analyst.ClaudeCodeAnalyst` -- a CLIENT, with `.messages.create` -- was imported at
+# the top of this module and then SHADOWED by the provider class of the same name defined above.
+# The factory therefore injected the provider as though it were a client, and
+# `AnthropicAnalyst.read()` calls `client.messages.create(...)`: an AttributeError on the first
+# read. `--provider claudecode:...` did not merely fail, it failed at the moment of use, on the
+# one path chosen specifically to avoid a metered bill.
+#
+# THE TESTED IMPLEMENTATION WINS. The provider class above carries ~20 tests covering fence
+# stripping, schema enforcement, the CLI error envelope, the `billed()` heuristic and the refusal
+# to accept charts. The injected-client route had no tests, and neither did its client module.
+# Between two designs for one capability, the one whose behaviour is pinned is the one that can
+# be changed safely later.
+#
+# The shadowing import was removed along with the factory. If the injected-client design is ever
+# revived, the client needs a DIFFERENT NAME -- the collision is what hid this for a whole merge.
 PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
              "deterministic": DeterministicProvider,
              "claudecode": ClaudeCodeAnalyst}
-
-
-def _claudecode_analyst(**kw) -> AnthropicAnalyst:
-    """`AnthropicAnalyst` with `ClaudeCodeAnalyst` injected as its client.
-
-    NOT a new provider class -- `AnthropicAnalyst.read()`/`.survey()` already
-    accept an injected `client` and call `client.messages.create(...)`, which is
-    exactly what `ClaudeCodeAnalyst.messages.create(...)` implements. Same
-    compiler, same schema, same journalling; only WHERE the model call goes
-    changes -- your Claude Code subscription, via `claude -p`, instead of a
-    metered ANTHROPIC_API_KEY. See claude_code_analyst.py for the one-time
-    setup (install the CLI, log in once) and the vision restriction (charts=()
-    only -- pass --numeric-only, the desk's own default, when using this).
-    """
-    kw.setdefault("client", ClaudeCodeAnalyst())
-    return AnthropicAnalyst(**kw)
-
-
-PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
-             "deterministic": DeterministicProvider,
-             "claudecode": _claudecode_analyst}
 
 
 def build_provider(spec: str, **kw) -> AnalystProvider:
