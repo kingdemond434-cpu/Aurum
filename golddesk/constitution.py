@@ -299,14 +299,14 @@ def verify_no_silent_restrictions(pkg_dir: Path) -> tuple[bool, list[str]]:
         if path.name in ("__init__.py", "constitution.py", "drift_audit.py"):
             continue
         try:
-            tree = ast.parse(path.read_text())
+            tree = ast.parse(path.read_text(encoding='utf-8'))
         except SyntaxError as e:
             problems.append(f"{path.name}: unparseable ({e})")
             continue
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            src = ast.get_source_segment(path.read_text(), node) or ""
+            src = ast.get_source_segment(path.read_text(encoding='utf-8'), node) or ""
             refuses = ("refuse(" in src or "Refusal(" in src
                        or "ReentryVerdict(False" in src or "return False," in src)
             if refuses and node.name not in DECLARED_SITES:

@@ -382,7 +382,7 @@ class IngestLog:
         p = Path(path)
         if not p.exists():
             return IngestLog()
-        d = json.loads(p.read_text())
+        d = json.loads(p.read_text(encoding='utf-8'))
         log = IngestLog()
         for row in d.get("deals", ()):
             row = dict(row)

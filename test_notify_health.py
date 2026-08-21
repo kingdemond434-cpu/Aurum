@@ -122,7 +122,7 @@ def test_an_unconfigured_desk_still_falls_back_to_a_file(tmp_path):
     s = build_sink(tmp_path / "absent", shadow_log=tmp_path / "shadow.jsonl")
     assert isinstance(s.inner, FileSink)
     s.send("would have sent")
-    assert "would have sent" in (tmp_path / "shadow.jsonl").read_text()
+    assert "would have sent" in (tmp_path / "shadow.jsonl").read_text(encoding='utf-8')
 
 
 def test_tracking_can_be_turned_off_deliberately(tmp_path):

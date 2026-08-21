@@ -270,7 +270,7 @@ class Adapter:
     def history(self) -> list[dict]:
         if not self.trail.exists():
             return []
-        return [json.loads(l) for l in self.trail.read_text().splitlines() if l.strip()]
+        return [json.loads(l) for l in self.trail.read_text(encoding='utf-8').splitlines() if l.strip()]
 
     def revert_last(self) -> list[Change]:
         """Every automatic change is undoable. Adaptation without a reverse gear

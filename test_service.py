@@ -195,8 +195,8 @@ def test_p0_2_rehydrate():
     s1 = DeskService(d1, FakeFeed(bars()), cfg)
     s1.checkpoint()
     check("checkpoint stores the compiled signal, not just tp2",
-          "signal" in (json.loads(cfg.state_path.read_text())["open_trade"] or {}),
-          f"keys={sorted((json.loads(cfg.state_path.read_text())['open_trade'] or {}))}")
+          "signal" in (json.loads(cfg.state_path.read_text(encoding='utf-8'))["open_trade"] or {}),
+          f"keys={sorted((json.loads(cfg.state_path.read_text(encoding='utf-8'))['open_trade'] or {}))}")
 
     d2 = make_desk(out)
     s2 = DeskService(d2, FakeFeed(bars()), cfg)
@@ -250,7 +250,7 @@ def test_p0_4_execution_side_and_cost():
     check("SHORT stop triggers on the ASK", r2 == "EXIT_STOP",
           f"mid 2009.9 < stop, ask 2010.1 >= stop -> {r2}")
 
-    rows = [json.loads(l) for l in (out / "l.jsonl").read_text().splitlines() if l.strip()]
+    rows = [json.loads(l) for l in (out / "l.jsonl").read_text(encoding='utf-8').splitlines() if l.strip()]
     closed = [x for x in rows if x.get("kind") == "TRADE_CLOSED"]
     check("close row records gross AND net separately", bool(closed)
           and "gross_r" in closed[0] and "cost_r" in closed[0],

@@ -115,7 +115,7 @@ class SpreadProfile:
         if not p.exists():
             return cls()
         try:
-            return cls(**json.loads(p.read_text()))
+            return cls(**json.loads(p.read_text(encoding='utf-8')))
         except Exception as e:
             log.warning("could not load spread profile from %s (%s) — "
                         "treating as UNCALIBRATED rather than guessing", p, e)

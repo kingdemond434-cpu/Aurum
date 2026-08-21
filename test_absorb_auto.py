@@ -84,7 +84,7 @@ def test_running_twice_adds_nothing_the_second_time(tmp_path):
     assert first["new"] > 0
     assert second["new"] == 0
     assert second["already_known"] == first["new"]
-    assert len(journal.read_text().strip().splitlines()) == first["new"]
+    assert len(journal.read_text(encoding='utf-8').strip().splitlines()) == first["new"]
 
 
 def test_a_new_finding_still_gets_through_after_a_quiet_run(tmp_path):

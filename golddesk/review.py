@@ -237,7 +237,7 @@ class LessonStore:
         self.path = Path(path)
         self._lessons: list[Lesson] = []
         if self.path.exists():
-            raw = json.loads(self.path.read_text() or "{}")
+            raw = json.loads(self.path.read_text(encoding='utf-8') or "{}")
             self._lessons = [Lesson(**l) for l in raw.get("lessons", [])]
 
     def standing_claims(self) -> list[str]:

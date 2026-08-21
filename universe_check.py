@@ -350,7 +350,7 @@ def live_universe_run() -> bool:
             desk.on_bar(bars, i, sw, atrs, None,
                         (bars[i].close - 0.05, bars[i].close + 0.05, 1.0), tl)
             peak = max(peak, len(desk.open_trades))
-        rows = [json.loads(l) for l in (out / "l.jsonl").read_text().splitlines()
+        rows = [json.loads(l) for l in (out / "l.jsonl").read_text(encoding='utf-8').splitlines()
                 if l.strip()]
         return rows, desk, peak
 

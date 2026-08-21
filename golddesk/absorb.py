@@ -279,7 +279,7 @@ class Absorber:
         p = Path(path)
         if not p.exists():
             return Absorber()
-        d = json.loads(p.read_text())
+        d = json.loads(p.read_text(encoding='utf-8'))
         ab = Absorber()
         for row in d.get("decisions", ()):
             f = Finding(**row["finding"])

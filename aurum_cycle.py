@@ -83,7 +83,7 @@ def _rows(path: Path | None = None, limit: int = 100_000) -> list:
     """
     path = path if path is not None else LEDGER
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding='utf-8').splitlines()
     except OSError:
         return []
     out = []
@@ -271,7 +271,7 @@ def step_absorb(ctx: dict) -> str:
 def step_channel(ctx: dict) -> str:
     """Is the desk's only product actually reaching anybody?"""
     try:
-        st = json.loads((STATE_DIR / "service_state.json").read_text())
+        st = json.loads((STATE_DIR / "service_state.json").read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return ("no service checkpoint — the desk has not run, so channel health "
                 "is UNKNOWN rather than healthy.")
@@ -310,7 +310,7 @@ def step_mining(ctx: dict) -> str:
                 f"while every timestamp still looks ordinary. Write the offset "
                 f"(e.g. 3) to that file.")
     try:
-        offset = float(off_file.read_text().strip())
+        offset = float(off_file.read_text(encoding='utf-8').strip())
     except ValueError:
         return f"{off_file} is not a number; refusing to guess an offset."
 
@@ -531,7 +531,7 @@ def run(force: bool = False, dry: bool = False) -> int:
     state = {}
     if CYCLE_STATE.exists():
         try:
-            state = json.loads(CYCLE_STATE.read_text())
+            state = json.loads(CYCLE_STATE.read_text(encoding='utf-8'))
         except json.JSONDecodeError:
             state = {}
     if state.get("last_run") == today and not force:

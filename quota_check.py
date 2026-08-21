@@ -131,7 +131,7 @@ def forward_window() -> None:
     check("and so does the research path", fb >= 300,
           f"{fb} bars (was 40 = ten hours)")
 
-    src = (ROOT / "golddesk" / "live.py").read_text()
+    src = (ROOT / "golddesk" / "live.py").read_text(encoding='utf-8')
     check("the hardcoded 61-bar window is gone",
           "bars[i:i + 61]" not in src and "bars[i:i+61]" not in src)
     check("a truncated window is recorded as a LOWER BOUND, not a zero",
@@ -212,7 +212,7 @@ def source_sweep() -> None:
 
     hits = []
     for p in sorted((ROOT / "golddesk").glob("*.py")):
-        tree = ast.parse(p.read_text())
+        tree = ast.parse(p.read_text(encoding='utf-8'))
         for name, ln in names(tree):
             if SUSPECT.match(name) and name not in ALLOWED:
                 hits.append(f"{p.name}:{ln} {name}")
@@ -234,7 +234,7 @@ def source_sweep() -> None:
           "it enforces R, not events")
 
     # day_signals must be reporting only
-    live = (ROOT / "golddesk" / "live.py").read_text()
+    live = (ROOT / "golddesk" / "live.py").read_text(encoding='utf-8')
     m = [l for l in live.splitlines() if "day_signals" in l]
     check("day_signals is reporting only, never enforced",
           all("+=" in l or "never enforced" in l for l in m),

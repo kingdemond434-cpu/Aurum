@@ -268,7 +268,7 @@ def test_the_live_desk_builds_a_snapshot_at_every_decision():
     """A snapshot harness nothing calls is a plan. This is the seam that makes
     the model league real rather than theoretical."""
     from pathlib import Path
-    src = Path("golddesk/live.py").read_text()
+    src = Path("golddesk/live.py").read_text(encoding='utf-8')
     assert "self._pending_snapshot = self._snapshot(bars, i, brief)" in src
     assert "def _snapshot(" in src
 
@@ -278,14 +278,14 @@ def test_the_snapshot_identifiers_reach_the_ledger():
     content_hash says WHAT WAS SHOWN. Without the second, two arms can join
     cleanly having been given different facts."""
     from pathlib import Path
-    src = Path("golddesk/live.py").read_text()
+    src = Path("golddesk/live.py").read_text(encoding='utf-8')
     assert '"state_id": s.state_id' in src
     assert '"content_hash": s.content_hash' in src
 
 
 def test_a_snapshot_failure_never_costs_a_trade():
     from pathlib import Path
-    src = Path("golddesk/live.py").read_text()
+    src = Path("golddesk/live.py").read_text(encoding='utf-8')
     i = src.index("self._pending_snapshot = self._snapshot")
     window = src[i - 200:i + 400]
     assert "except Exception" in window and "log.warning" in window
@@ -295,5 +295,5 @@ def test_the_live_snapshot_excludes_the_forming_bar():
     """bars[i] closes AT bars[i].ts; the one after has not happened. Passing the
     whole series would hand the model the candle it is predicting."""
     from pathlib import Path
-    src = Path("golddesk/live.py").read_text()
+    src = Path("golddesk/live.py").read_text(encoding='utf-8')
     assert 'b.add_bars("entry", bars[:i + 1]' in src

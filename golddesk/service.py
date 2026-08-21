@@ -174,7 +174,7 @@ class DeskService:
         if not p.exists():
             return self.state
         try:
-            raw = json.loads(p.read_text())
+            raw = json.loads(p.read_text(encoding='utf-8'))
             self.state = ServiceState(**{k: v for k, v in raw.items()
                                          if k in ServiceState.__dataclass_fields__})
             self.state.restarts += 1

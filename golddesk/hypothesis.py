@@ -178,7 +178,7 @@ class HypothesisBook:
     def load(self) -> "HypothesisBook":
         if self.path.exists():
             try:
-                raw = json.loads(self.path.read_text())
+                raw = json.loads(self.path.read_text(encoding='utf-8'))
                 self.items = {k: Hypothesis(**v) for k, v in raw.get("items", {}).items()}
             except (json.JSONDecodeError, OSError, TypeError) as e:
                 log.error("hypothesis book unreadable (%s) — starting empty", e)

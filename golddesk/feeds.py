@@ -158,7 +158,7 @@ def cache_read(path: Path, name: str, source: str,
     if not path.exists():
         return Measurement.absent(name, source, f"no cached value at {path.name}")
     try:
-        d = json.loads(path.read_text(encoding="utf-8"))
+        d = json.loads(path.read_text(encoding='utf-8'))
         val = float(d["value"])
         at = d.get("fetched_at")
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:

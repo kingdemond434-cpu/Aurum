@@ -54,7 +54,7 @@ def assert_no_orders(pkg: Path = Path("golddesk")) -> Check:
     hits: list[str] = []
     for f in sorted(pkg.glob("*.py")):
         try:
-            tree = ast.parse(f.read_text())
+            tree = ast.parse(f.read_text(encoding='utf-8'))
         except SyntaxError:
             continue
         for n in ast.walk(tree):

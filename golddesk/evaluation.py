@@ -87,7 +87,7 @@ class Preregistration:
 
     @staticmethod
     def verify(path: Path) -> tuple[bool, str]:
-        raw = json.loads(Path(path).read_text())
+        raw = json.loads(Path(path).read_text(encoding='utf-8'))
         spec = Preregistration(**raw["spec"])
         ok = spec.content_hash() == raw["hash"]
         return ok, ("intact" if ok else "SPEC EDITED AFTER FREEZING — results void")

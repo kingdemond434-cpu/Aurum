@@ -116,7 +116,7 @@ class ServerClock:
 
     def load(self) -> None:
         if self.cache_path and Path(self.cache_path).exists():
-            secs = float(Path(self.cache_path).read_text().strip())
+            secs = float(Path(self.cache_path).read_text(encoding='utf-8').strip())
             self.offset = timedelta(seconds=secs)
             log.info("server clock offset loaded: %+.0fs", secs)
 

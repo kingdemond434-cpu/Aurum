@@ -89,7 +89,7 @@ class PolicyState:
     def load(self) -> "PolicyState":
         if self.path.exists():
             try:
-                self._doc = json.loads(self.path.read_text())
+                self._doc = json.loads(self.path.read_text(encoding='utf-8'))
             except (json.JSONDecodeError, OSError) as e:
                 # Never start on a half-written state file — an unreadable
                 # policy state means "unknown", and unknown means defaults.
