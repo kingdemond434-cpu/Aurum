@@ -225,13 +225,25 @@ class DeterministicAnalyst:
 
 
 class ClaudeAnalyst:
-    """ARM B. Wired. Requires ANTHROPIC_API_KEY — absent in this container."""
+    """ARM B. Wired. Requires ANTHROPIC_API_KEY — absent in this container.
+
+    `use_headless=True` tries the Claude Code subscription (`claude -p`) first
+    and falls back to the metered API key on any failure -- see
+    analyst.call_analyst_with_fallback and, before ever setting this True,
+    test_headless_claude.sh. Defaults to False: the API-key path is the only
+    one that has actually been run end to end, and staying on it until the
+    headless probe is read is the whole point of not guessing here.
+    """
     name = "B-claude"
 
-    def __init__(self, effort: str = "medium"):
+    def __init__(self, effort: str = "medium", use_headless: bool = True):
         self.effort = effort
+        self.use_headless = use_headless
 
     def read(self, b: MarketBrief) -> AnalystRead:
+        if self.use_headless:
+            from .analyst import call_analyst_with_fallback
+            return call_analyst_with_fallback(b, effort=self.effort)
         from .analyst import call_analyst
         return call_analyst(b, effort=self.effort)
 

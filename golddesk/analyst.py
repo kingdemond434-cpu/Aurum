@@ -391,6 +391,138 @@ def call_analyst(
 
 
 # --------------------------------------------------------------------------
+# Headless backend — subscription (claude -p), not the metered API key
+# --------------------------------------------------------------------------
+#
+# UNVERIFIED UNTIL test_headless_claude.sh HAS BEEN RUN AND READ. Three things
+# this cannot know without that run, and gets wrong silently if assumed:
+#   1. Whether `claude -p --output-format json --json-schema` actually returns
+#      AnalystRead's shape, or something close enough to look right and be
+#      wrong (a schema violation here is caught; a SILENTLY DIFFERENT valid
+#      shape is not, and is worse).
+#   2. Whether an image reaches the model at all in headless mode, or gets
+#      hallucinated from the filename. Charts are refused (see
+#      CHARTS_CONFIRMED below) until this is confirmed, on purpose — a chart
+#      read that silently degrades to "read the filename" is a worse failure
+#      than refusing to read the chart.
+#   3. What a usage-ceiling response looks like. HeadlessRateLimited below is
+#      a guess at the shape (non-zero exit, stderr mentioning limit/quota) and
+#      MUST be corrected against 03_failure_call_*.txt once that exists.
+CHARTS_CONFIRMED = False  # flip only after probe #2 in test_headless_claude.sh passes
+
+HEADLESS_TIMEOUT_S = 90
+
+
+class HeadlessRateLimited(AnalystError):
+    """The subscription's usage ceiling, not a real refusal or malformed read.
+
+    Distinguished from other AnalystError causes so a caller can retry or
+    fail over to the API-key path instead of treating this as a dead read.
+    """
+
+
+def call_analyst_headless(
+    brief: MarketBrief,
+    charts: Sequence[Chart] = (),
+    *,
+    model: str = MODEL,
+    binary: str = "claude",
+) -> AnalystRead:
+    """One read via `claude -p`, billed against the Claude Code subscription
+    plan's own usage limits rather than a metered ANTHROPIC_API_KEY.
+
+    Raises AnalystError (or HeadlessRateLimited) on anything that is not a
+    clean, schema-valid read — same contract as call_analyst(), so callers
+    that already catch AnalystError need no changes to use this instead.
+    """
+    import json
+    import shutil
+    import subprocess
+    import tempfile
+
+    if charts and not CHARTS_CONFIRMED:
+        raise AnalystError(
+            "headless backend refuses to send charts: image support in `claude -p` "
+            "is unconfirmed (see test_headless_claude.sh probe #2). Sending them "
+            "anyway risks a silently degraded read, not a loud failure. Set "
+            "CHARTS_CONFIRMED=True only after that probe passes.")
+
+    if shutil.which(binary) is None:
+        raise AnalystError(f"'{binary}' not found on PATH -- Claude Code not installed here")
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as sf:
+        json.dump(ANALYST_SCHEMA, sf)
+        schema_path = sf.name
+
+    try:
+        cmd = [
+            binary, "-p", brief.render(),
+            "--output-format", "json",
+            "--json-schema", schema_path,
+            "--model", model,
+            "--append-system-prompt", ANALYST_SYSTEM,
+        ]
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=HEADLESS_TIMEOUT_S)
+        except subprocess.TimeoutExpired as e:
+            raise AnalystError(f"headless call timed out after {HEADLESS_TIMEOUT_S}s") from e
+
+        combined = f"{proc.stdout}\n{proc.stderr}".lower()
+        if proc.returncode != 0:
+            if "limit" in combined or "quota" in combined or "usage" in combined:
+                raise HeadlessRateLimited(
+                    f"subscription usage ceiling hit (exit={proc.returncode}): "
+                    f"{proc.stderr.strip()[:300]}")
+            raise AnalystError(
+                f"headless call failed (exit={proc.returncode}): {proc.stderr.strip()[:300]}")
+
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError as e:
+            raise AnalystError(f"headless output was not JSON: {e}") from e
+
+        structured = payload.get("structured_output")
+        if structured is None:
+            raise AnalystError(
+                f"no 'structured_output' field in headless response -- got keys "
+                f"{sorted(payload.keys())}. The CLI's JSON envelope shape may have "
+                f"changed; re-run test_headless_claude.sh probe #1 and fix the key here.")
+
+        try:
+            return AnalystRead.model_validate(structured)
+        except ValidationError as e:
+            raise AnalystError(f"schema violation: {e}") from e
+    finally:
+        import os
+        os.unlink(schema_path)
+
+
+def call_analyst_with_fallback(
+    brief: MarketBrief,
+    charts: Sequence[Chart] = (),
+    *,
+    model: str = MODEL,
+    effort: str = EFFORT,
+    prefer_headless: bool = True,
+) -> AnalystRead:
+    """Try the subscription path first, fail over to the metered API key.
+
+    This is the "no process dying" contract: a rate-limited or misbehaving
+    headless CLI must not stop the desk from reading the market, and the
+    fallback is the one path (call_analyst) already proven end to end.
+    Every fallback is logged loudly -- a desk that fails over silently every
+    time hides the fact that the cheap path never actually works.
+    """
+    if prefer_headless:
+        try:
+            return call_analyst_headless(brief, charts, model=model)
+        except AnalystError as e:
+            log.warning("headless analyst failed (%s) -- falling back to API key path", e)
+    return call_analyst(brief, charts, model=model, effort=effort)
+
+
+# --------------------------------------------------------------------------
 # The compiler — owns every number, holds the veto
 # --------------------------------------------------------------------------
 
