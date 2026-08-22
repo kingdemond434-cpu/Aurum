@@ -42,9 +42,23 @@ EnvironmentFile=/opt/aurum/.env
 # Switch to `--feed oanda` for a real two-sided quote; it is one word and
 # nothing else changes, because both implement the same Protocol.
 # --declared-spread is YOUR broker's, and on the yahoo feed it is REQUIRED.
+#
+# --provider headless routes the analyst through the Claude Code CLI, billing
+# the SUBSCRIPTION rather than a metered API key. Named explicitly rather than
+# left to `auto`: auto picks the API key whenever ANTHROPIC_API_KEY happens to
+# be present, so a key left in .env would silently move this desk onto metered
+# billing with nothing in the journal saying the plan changed.
+#
+# --numeric-only is REQUIRED with the headless provider and is not a
+# preference. That provider refuses charts, because image support through
+# `claude -p` is unverified and a chart read that degrades to reading a
+# filename produces a confident structural claim about a picture the model
+# never saw. run_desk refuses to start the combination, so omitting this flag
+# is a boot failure, not a silent downgrade.
 ExecStart=/opt/aurum/.venv/bin/python /opt/aurum/run_desk.py \
     --shadow --feed yahoo --declared-spread 0.45 --min-stop 0.50 \
-    --management heuristic --shadow-management
+    --management heuristic --shadow-management \
+    --provider headless:claude-opus-5 --numeric-only
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -52,11 +66,27 @@ StandardError=journal
 
 # Hardening. The desk reads market data and writes its own ledger; it has no
 # business anywhere else on the filesystem, and it never places orders.
+#
+# ProtectHome IS THE ONE THAT BREAKS THE SUBSCRIPTION ROUTE IF LEFT ALONE.
+# ProtectHome=true mounts an empty tmpfs over /home, and the Claude Code CLI
+# keeps its logged-in credentials under the service account's home. With the
+# plain setting the CLI starts, finds no login, and every analyst read fails --
+# at whatever hour the market next moves, with an error that reads like a model
+# problem rather than a mount problem.
+#
+# So /home stays protected and the ONE directory the CLI needs is bound back in
+# through ReadWritePaths. Read-write, not read-only: the CLI writes session and
+# state files of its own, and a read-only config dir fails later and less
+# obviously than a missing one.
+#
+# If the desk runs as a different user, change this path to match. If the CLI
+# was installed for root and the desk runs as aurum, it will NOT find the login
+# no matter what is bound here -- install and log in as the service account.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/aurum/state /opt/aurum/logs
+ReadWritePaths=/opt/aurum/state /opt/aurum/logs /opt/aurum/inbox /home/aurum/.claude
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
