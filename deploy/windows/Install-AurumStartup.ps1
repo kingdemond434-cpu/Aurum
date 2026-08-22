@@ -202,9 +202,22 @@ $wdArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden " +
           "-File `"$watchdogScript`" -DeskRoot `"$DeskRoot`""
 $wdAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $wdArgs `
                                     -WorkingDirectory $DeskRoot
+# REPETITION DURATION IS 10 YEARS, NOT [TimeSpan]::MaxValue. MaxValue
+# serialises to the ISO-8601 duration P99999999DT23H59M59S, which the Task
+# Scheduler service rejects outright, and the failure is the worst shape
+# available -- it happens at REGISTRATION:
+#
+#   Register-ScheduledTask : The task XML contains a value which is incorrectly
+#   formatted or out of range. (8,42):Duration:P99999999DT23H59M59S
+#
+# So AurumSignalDesk installed fine, the installer looked like it worked, and
+# ONLY the watchdog silently did not exist -- leaving the desk with exactly the
+# blind spot the watchdog was written to cover. Observed on the live Windows
+# VPS, 2026-08-22. 3650 days is indefinite for any practical purpose and
+# serialises to a duration the service accepts.
 $wdTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
                                       -RepetitionInterval (New-TimeSpan -Minutes 5) `
-                                      -RepetitionDuration ([TimeSpan]::MaxValue)
+                                      -RepetitionDuration (New-TimeSpan -Days 3650)
 $wdPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
                                           -LogonType Interactive -RunLevel Limited
 $wdSettings = New-ScheduledTaskSettingsSet `
