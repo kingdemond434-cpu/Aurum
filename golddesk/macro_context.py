@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -60,6 +60,11 @@ class MacroContext:
     age_hours: float = float("inf")
     detail: str = "not loaded"
     states: dict[str, Any] = field(default_factory=dict)
+    #: key -> "EXACT"/"PROXY — ..."/"ABSENT — ...". A proxy read as the series
+    #: itself is the error drivers_free.py is most explicit about, so the
+    #: label travels all the way into the prompt rather than being dropped
+    #: at the first conversion.
+    labels: dict[str, str] = field(default_factory=dict)
     max_age_hours: float = DEFAULT_MAX_AGE_H
 
     @property
@@ -112,17 +117,85 @@ class MacroContext:
             f"{self.age_hours:.0f}h old — evidence only, no vote on direction)"
         ]
         for k, v in sorted(self.states.items()):
+            tag = self.labels.get(k, "")
+            suffix = f"   [{tag}]" if tag else ""
             if isinstance(v, bool):
-                lines.append(f"  {k:<22} {v}")
+                lines.append(f"  {k:<22} {v}{suffix}")
             elif isinstance(v, (int, float)):
-                lines.append(f"  {k:<22} {v:+.3f}")
+                lines.append(f"  {k:<22} {v:+.3f}{suffix}")
             elif v is None:
-                lines.append(f"  {k:<22} UNMEASURED")
+                lines.append(f"  {k:<22} UNMEASURED{suffix}")
         rr = self.real_rate_index
         if rr is not None:
             lines.append(f"  {'REAL_RATE_INDEX':<22} {rr:+.3f}  "
                          f"(POLICY_RATE − INFLATION_STATE; ordinal, not a yield)")
         return "\n".join(lines)
+
+
+def from_drivers(points: dict, *, max_age_hours: float = DEFAULT_MAX_AGE_H,
+                 now: Optional[datetime] = None) -> MacroContext:
+    """Build the brief's macro block from `drivers_free.build_drivers()`.
+
+    This is the wire that was missing. `build_drivers` already runs daily from
+    aurum_cycle.py and returns {key: DriverPoint} covering dxy, spx, vix,
+    real_yield_10y (FRED DFII10 -- the TIPS yield itself, not a derivation)
+    and breakeven_10y. Nothing carried it to the analyst, so the reader added
+    to MarketBrief had no writer and would have rendered UNMEASURED forever.
+
+    TWO THINGS ARE PRESERVED THAT A NAIVE dict() WOULD DESTROY, and both are
+    material to how much weight the read should carry:
+
+    EXACT vs PROXY. `drivers_free` is explicit that two drivers have no free
+    direct source and are stand-ins. A proxy rendered as if it were the series
+    invites the model to reason about "the real yield" when it is looking at a
+    TIP/IEF price ratio. Each line is labelled, so the model can discount it.
+
+    PER-DRIVER AGE. Drivers come from different feeds and go stale
+    independently. The context's age is the age of the OLDEST OBSERVED driver,
+    not the newest -- the weakest link sets the freshness, because a block
+    stamped "1h old" that silently contains a five-day-old real yield is the
+    stale-read failure wearing a fresh timestamp.
+    """
+    now = now or datetime.now(tz=timezone.utc)
+    states: dict[str, Any] = {}
+    labels: dict[str, str] = {}
+    oldest: Optional[datetime] = None
+    n_obs = 0
+
+    for key, p in (points or {}).items():
+        observed = bool(getattr(p, "observed", False))
+        if not observed:
+            states[key] = None
+            labels[key] = f"ABSENT — {getattr(p, 'why', '') or 'not observed'}"
+            continue
+        n_obs += 1
+        chg = getattr(p, "change_pct", None)
+        states[key] = float(chg) if isinstance(chg, (int, float)) else None
+        exact = bool(getattr(p, "exact", True))
+        src = getattr(p, "source", "?")
+        labels[key] = ("EXACT" if exact else "PROXY — not the series itself") + f"  {src}"
+        as_of = getattr(p, "as_of", None)
+        if isinstance(as_of, datetime):
+            if as_of.tzinfo is None:
+                as_of = as_of.replace(tzinfo=timezone.utc)
+            oldest = as_of if oldest is None else min(oldest, as_of)
+
+    if n_obs == 0:
+        return MacroContext(
+            detail="no driver was observed — the free feeds returned nothing",
+            states=states, labels=labels, max_age_hours=max_age_hours)
+    if oldest is None:
+        return MacroContext(
+            detail="drivers observed but none carried a timestamp — age UNKNOWN, "
+                   "which is not the same as fresh",
+            states=states, labels=labels, max_age_hours=max_age_hours)
+
+    age_h = (now - oldest).total_seconds() / 3600.0
+    detail = (f"oldest driver {age_h:.1f}h old (limit {max_age_hours:.0f}h) — the "
+              f"driver fetch may have stopped" if age_h > max_age_hours
+              else f"oldest driver {age_h:.1f}h old, {n_obs} observed")
+    return MacroContext(updated=oldest, age_hours=age_h, detail=detail,
+                        states=states, labels=labels, max_age_hours=max_age_hours)
 
 
 def load(path: Path, *, max_age_hours: float = DEFAULT_MAX_AGE_H,
