@@ -43,7 +43,8 @@ class Watcher:
     """Holds the previous state and diffs against it. Pure local computation."""
 
     def __init__(self, heartbeat: timedelta = timedelta(minutes=30),
-                 min_gap: timedelta = timedelta(0)):
+                 min_gap: timedelta = timedelta(0),
+                 wake_on_bar_close: bool = False):
         """min_gap defaults to ZERO — no throttle.
 
         A minimum gap between reads is a quota on thinking: it can silently
@@ -57,6 +58,26 @@ class Watcher:
         self.prev_session: Optional[str] = None
         self.heartbeat = heartbeat
         self.min_gap = min_gap
+        # MAXIMUM FREQUENCY: wake on EVERY closed bar, not only on a structural
+        # change or the heartbeat. Off by default and it should stay off unless
+        # the operator has a reason, because BAR_CLOSE alone carries no
+        # information -- a bar closing is not evidence that anything changed,
+        # and the desk's own comment on WAKING says exactly that.
+        #
+        # THE REASON THAT MAKES IT DEFENSIBLE NOW, stated so it can be argued
+        # with: WakePolicy.reconsider_cost_r prices "model call cost / account
+        # risk per trade", and that input was a METERED API bill. Under a
+        # subscription the marginal dollar cost of one more read is zero, so
+        # the threshold is pricing a cost that no longer exists. That is an
+        # INPUT CHANGING, not a dial being tuned up for tidiness -- which is
+        # the distinction observer.py's law actually turns on.
+        #
+        # WHAT IT STILL COSTS, because it is not free: the plan's usage ceiling
+        # (Pro is ~45 prompts per rolling 5h window; every M15 bar is 20 per
+        # window on a 24/5 instrument, so it FITS but leaves less headroom for
+        # anything else on the same plan), ~60s of latency per read, and the
+        # fact that more decisions are not automatically better decisions.
+        self.wake_on_bar_close = wake_on_bar_close
         self.last_wake: Optional[datetime] = None
 
     def observe(self, st: StructureState, session: str, ts: datetime) -> WatchResult:
@@ -88,6 +109,12 @@ class Watcher:
         self.prev, self.prev_session = st, session
 
         waking = [e for e in ev if e in WAKING]
+        # Every closed bar counts as decision-relevant when the operator has
+        # asked for maximum frequency. Appended rather than folded into WAKING
+        # so the module-level set stays the honest statement of what carries
+        # information, and the override remains visibly an override.
+        if self.wake_on_bar_close and Event.BAR_CLOSE in ev and not waking:
+            waking = [Event.BAR_CLOSE]
         if not waking:
             return WatchResult(ev, False, "no decision-relevant change")
         if self.last_wake is not None and (ts - self.last_wake) < self.min_gap:

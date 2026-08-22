@@ -351,6 +351,13 @@ def main() -> int:
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
                          "ARM — not a free improvement")
+    ap.add_argument("--wake-every-bar", action="store_true",
+                    help="wake the analyst on EVERY closed entry bar, not only "
+                         "on a structural change or the 30-minute heartbeat. "
+                         "Roughly doubles reads (20 per 5h window on M15 vs ~10). "
+                         "Defensible on a subscription because WakePolicy's cost "
+                         "term prices a metered API bill that no longer applies; "
+                         "it still spends plan quota and ~60s of latency per read")
     ap.add_argument("--no-macro", action="store_true",
                     help="do not feed macro context to the analyst. Briefs then "
                          "render MACRO CONTEXT: UNMEASURED — the read still "
@@ -443,6 +450,7 @@ def main() -> int:
                         shadow_contextual=args.shadow_contextual,
                         universe_mode=args.universe,
                         enable_macro=not args.no_macro,
+                        wake_on_bar_close=args.wake_every_bar,
                         broker_limits=(BrokerLimits(min_stop_distance=args.min_stop)
                                        if args.min_stop else None))
     try:

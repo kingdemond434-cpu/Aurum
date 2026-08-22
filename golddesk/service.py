@@ -663,7 +663,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   spread_profile_path: str = "config/spread_profile.json",
                   declared_spread: Optional[float] = None,
                   broker_limits: Optional[BrokerLimits] = None,
-                  enable_macro: bool = True) -> DeskService:
+                  enable_macro: bool = True,
+                  wake_on_bar_close: bool = False) -> DeskService:
     """Wire the real client, feed, desk and sink. One call, one deployed desk.
 
     `feed_backend` selects where PERCEPTION comes from. It does not select where
@@ -784,7 +785,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                     shadow_contextual=shadow_contextual,
                     universe_mode=universe_mode,
                     calendar=calendar, regime_history=history,
-                    macro_provider=macro_fn)
+                    macro_provider=macro_fn,
+                    wake_on_bar_close=wake_on_bar_close)
 
     # WHO HAS AUTHORITY over the open position. An explicit production decision:
     # the desk ships with Claude forming the entry judgement and a deterministic

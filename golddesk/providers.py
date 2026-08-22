@@ -406,11 +406,11 @@ class ClaudeCodeAnalyst(AnalystProvider):
         s = s.split("\n", 1)[1] if "\n" in s else ""
         return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
 
-    def _argv(self) -> list[str]:
+    def _argv(self, system: Optional[str] = None) -> list[str]:
         argv = [self.binary, "-p",
                 "--output-format", "json",
                 "--model", self.model,
-                "--system-prompt", ANALYST_SYSTEM,
+                "--system-prompt", system or ANALYST_SYSTEM,
                 "--allowed-tools", "",
                 "--max-turns", "1"]
         if self.effort is not None:
@@ -436,12 +436,12 @@ class ClaudeCodeAnalyst(AnalystProvider):
             env.pop("ANTHROPIC_AUTH_TOKEN", None)
         return env
 
-    def _invoke(self, prompt: str) -> dict:
+    def _invoke(self, prompt: str, system: Optional[str] = None) -> dict:
         if self._runner is not None:                  # injected for tests
-            return self._runner(self._argv(), prompt)
+            return self._runner(self._argv(system), prompt)
         import subprocess
         try:
-            p = subprocess.run(self._argv(), input=prompt, env=self._env(),
+            p = subprocess.run(self._argv(system), input=prompt, env=self._env(),
                                cwd=self.cwd, capture_output=True, text=True,
                                timeout=self.timeout_s)
         except FileNotFoundError as e:
@@ -509,6 +509,82 @@ class ClaudeCodeAnalyst(AnalystProvider):
             "cost_usd_api_equivalent": env.get("total_cost_usd"),
             "cost_usd": env.get("total_cost_usd") if billed else 0.0,
         })
+
+
+    def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
+        """A REAL enumeration through the CLI, not a wrapped single read.
+
+        WHY THIS OVERRIDE HAD TO EXIST. Without it this provider inherited
+        AnalystProvider.survey, which calls read() once and wraps the answer in
+        a one-candidate universe. That default is honest -- it says a
+        single-read provider returns one candidate because that is what its
+        interface can express -- but the consequence was that `--universe` on
+        this provider changed the LABEL and nothing else. An operator enabling
+        universe mode to widen capture would have got the same single read,
+        reported as a universe, with no error anywhere.
+
+        WHY IT IS THE HIGHEST-VALUE CHANGE PER UNIT OF QUOTA. A subscription
+        meters TOKENS, and the expensive part of a read is the brief -- levels,
+        macro, context, timeline -- which is sent whether the model returns one
+        proposition or twelve. Asking for the full set costs one extra request's
+        worth of OUTPUT and reuses the whole input, so it raises capture without
+        raising call frequency. On a plan with a weekly ceiling that is strictly
+        better than more calls.
+
+        Same system prefix as read(), with the universe addendum appended, so
+        the two modes stay comparable rather than becoming different prompts
+        that happen to share a name.
+        """
+        from .universe import (MAX_CANDIDATES, AnalystUniverse,  # noqa: PLC0415
+                               UNIVERSE_SCHEMA, universe_system)
+        if charts:
+            raise AnalystError(
+                f"{self.name!r} cannot send charts: the CLI takes no image input. "
+                f"Run the chart arm on provider 'anthropic:'.")
+
+        prompt = (self._SCHEMA_INSTRUCTION.format(
+            schema=json.dumps(UNIVERSE_SCHEMA)) + "\n" + brief.render())
+
+        t0 = time.monotonic()
+        env = self._invoke(prompt, system=universe_system(ANALYST_SYSTEM,
+                                                          MAX_CANDIDATES))
+        dt = (time.monotonic() - t0) * 1000
+
+        if env.get("is_error") or env.get("subtype") not in (None, "success"):
+            raise AnalystError(f"claude reported failure: "
+                               f"{env.get('subtype')} {str(env.get('result'))[:200]}")
+        text = self._unfence(str(env.get("result") or ""))
+        if not text:
+            raise AnalystError("claude returned an empty result")
+        try:
+            uni = AnalystUniverse.model_validate_json(text)
+        except Exception as e:                                   # noqa: BLE001
+            # NOT silently downgraded to a single read. A universe run that
+            # quietly becomes a one-candidate answer is the same defect this
+            # override exists to remove, one layer deeper.
+            raise AnalystError(f"claude returned text that is not a valid "
+                               f"AnalystUniverse: {e}; got {text[:300]!r}") from e
+
+        u = env.get("usage") or {}
+        fresh = int(u.get("input_tokens") or 0)
+        created = int(u.get("cache_creation_input_tokens") or 0)
+        cached = int(u.get("cache_read_input_tokens") or 0)
+        billed = self.billed()
+        # The stamp carries the FIRST candidate purely so provenance has a read
+        # to attach to; selection does not privilege it in any way. Matches
+        # AnthropicAnalyst.survey exactly, so the two providers' universe runs
+        # stay comparable rather than differing in how they report.
+        head = uni.candidates[0] if uni.candidates else None
+        pr = ProviderRead(head, self.name, self.model, dt, {
+            "in": fresh + created + cached,
+            "cache_read": cached,
+            "out": int(u.get("output_tokens") or 0),
+            "billed": billed,
+            "cost_usd_api_equivalent": env.get("total_cost_usd"),
+            "cost_usd": env.get("total_cost_usd") if billed else 0.0,
+            "candidates": len(uni.candidates),
+        })
+        return pr, uni
 
 
 PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,

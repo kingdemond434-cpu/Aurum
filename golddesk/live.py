@@ -245,13 +245,17 @@ class LiveDesk:
                  forward_bars: int = 480,
                  macro_provider=None,
                  macro_refresh: timedelta = timedelta(hours=6),
-                 macro_timeout_s: float = 25.0):
+                 macro_timeout_s: float = 25.0,
+                 wake_on_bar_close: bool = False):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
         self.thresholds, self.cost_model = thresholds, cost_model
         self.limits, self.policy = limits, policy
-        self.watcher = Watcher(heartbeat=heartbeat, min_gap=min_gap)
+        # MAXIMUM FREQUENCY. See Watcher.__init__ for why this is defensible
+        # under a subscription and what it still costs.
+        self.watcher = Watcher(heartbeat=heartbeat, min_gap=min_gap,
+                               wake_on_bar_close=wake_on_bar_close)
         self.vision, self.cohorts = vision, cohorts
         self.book = book
         self.obs_heartbeat = observer_heartbeat
