@@ -106,11 +106,36 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
+    # TWO ROUTES TO THE MODEL, AND EITHER IS SUFFICIENT. This check used to
+    # demand ANTHROPIC_API_KEY and was FATAL, so a box configured to run on
+    # the Claude Code subscription (provider spec 'headless') could not boot
+    # at all however well the rest of it was wired. A preflight that fails a
+    # correctly-configured desk is worse than no check: it sends the operator
+    # hunting for a key they deliberately did not set.
+    #
+    # PRECEDENCE IS REPORTED, because getting it wrong costs real money. If
+    # both are present the 'anthropic' provider bills the API KEY; a key left
+    # in the environment while the operator believes they are on the
+    # subscription is silent metered spend.
+    import shutil
     key = os.environ.get("ANTHROPIC_API_KEY")
-    checks.append(Check("ANTHROPIC_API_KEY", bool(key),
-                        f"set ({len(key)} chars)" if key else
-                        "NOT SET — export ANTHROPIC_API_KEY=sk-ant-... "
-                        "The desk cannot analyse anything without it"))
+    cli = shutil.which("claude")
+    if key and cli:
+        detail = (f"BOTH present: API key ({len(key)} chars) and Claude Code CLI at "
+                  f"{cli}. The 'anthropic' provider bills the KEY; only the "
+                  f"'headless' provider uses the subscription. If you meant the "
+                  f"subscription, set the provider spec to headless.")
+    elif key:
+        detail = f"API key set ({len(key)} chars) — metered billing"
+    elif cli:
+        detail = (f"Claude Code CLI at {cli} — subscription billing via the "
+                  f"'headless' provider. Charts are REFUSED on that path until "
+                  f"test_headless_claude.sh probe #2 passes; run --numeric-only.")
+    else:
+        detail = ("NEITHER an ANTHROPIC_API_KEY nor a `claude` CLI on PATH. The desk "
+                  "cannot analyse anything: export a key, or install Claude Code and "
+                  "log in for subscription billing.")
+    checks.append(Check("model access", bool(key or cli), detail))
 
     # --- feed ------------------------------------------------------------
     if feed == "yahoo":

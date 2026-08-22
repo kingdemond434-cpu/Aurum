@@ -324,8 +324,116 @@ class DeterministicProvider(AnalystProvider):
                             (time.monotonic() - t0) * 1000, {"in": 0, "out": 0})
 
 
+class HeadlessClaudeAnalyst(AnalystProvider):
+    """Claude through the Claude Code CLI, billed to the subscription plan.
+
+    WHY THIS IS A PROVIDER AND NOT A FLAG ON THE ONE ABOVE
+
+    The live desk reaches the model through exactly one path:
+    run_desk.py -> build_service() -> LiveDesk(build_provider(spec)) -> here.
+    `analyst.call_analyst()` is a DIFFERENT path, used by the runner and the
+    backtests. Adding a headless option there changes nothing about what the
+    live desk does, which is the mistake this class corrects: a subscription
+    route the signal desk never takes is not a subscription route.
+
+    WHAT IS ASSUMED, AND MUST BE CONFIRMED BY test_headless_claude.sh
+
+    That `claude -p --output-format json --json-schema` returns the
+    AnalystRead shape under a `structured_output` key. If the envelope
+    differs, read() raises naming the keys it actually saw rather than
+    guessing -- a provider that quietly coerced a different shape into
+    AnalystRead is the worst outcome available here, because it would look
+    like a working desk.
+
+    CHARTS ARE REFUSED, not silently dropped. Image support through headless
+    mode is unverified, and a chart read that degrades to reading a filename
+    produces a confident structural claim about a picture the model never
+    saw. Run with --numeric-only against this provider until probe #2 in
+    test_headless_claude.sh passes.
+    """
+
+    name = "headless"
+
+    def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
+                 timeout_s: float = 90.0):
+        self.model, self.binary, self.timeout_s = model, binary, timeout_s
+
+    def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        import json
+        import shutil
+        import subprocess
+
+        if charts:
+            raise AnalystError(
+                "headless provider refuses charts: image support in `claude -p` is "
+                "unverified (test_headless_claude.sh probe #2). Run with "
+                "--numeric-only, or use the anthropic provider for chart reads.")
+        if shutil.which(self.binary) is None:
+            raise AnalystError(
+                f"{self.binary!r} not on PATH -- Claude Code is not installed for the "
+                f"account running the desk. Install it and log in, or set the provider "
+                f"spec back to 'anthropic:<model>'.")
+
+        # `--json-schema` takes the schema INLINE as a JSON string, not a path
+        # to a file containing one. Passing a path fails with "--json-schema is
+        # not valid JSON", which reads like a malformed schema rather than a
+        # wrong argument type -- confirmed against `claude --help`, whose own
+        # example is a literal JSON object.
+        schema_arg = json.dumps(ANALYST_SCHEMA)
+
+        t0 = time.monotonic()
+        try:
+            proc = subprocess.run(
+                [self.binary, "-p", brief.render(),
+                 "--output-format", "json",
+                 "--json-schema", schema_arg,
+                 "--model", self.model,
+                 "--append-system-prompt", ANALYST_SYSTEM],
+                capture_output=True, text=True, timeout=self.timeout_s)
+        except subprocess.TimeoutExpired as e:
+            raise AnalystError(
+                f"headless call timed out after {self.timeout_s}s") from e
+
+        if True:
+
+            blob = f"{proc.stdout}\n{proc.stderr}".lower()
+        if proc.returncode != 0:
+            # A usage ceiling is a DIFFERENT condition from a broken call:
+            # expected, recoverable, and it says the desk is alive but rate
+            # limited. Named so an operator reading the log can tell "out of
+            # quota" from "the CLI is broken" without guessing.
+            if any(w in blob for w in ("limit", "quota", "usage")):
+                raise AnalystError(
+                    f"SUBSCRIPTION USAGE CEILING (exit={proc.returncode}): "
+                    f"{proc.stderr.strip()[:300]}")
+            raise AnalystError(
+                f"headless call failed (exit={proc.returncode}): "
+                f"{proc.stderr.strip()[:300]}")
+
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError as e:
+            raise AnalystError(f"headless output was not JSON: {e}") from e
+
+        structured = payload.get("structured_output")
+        if structured is None:
+            raise AnalystError(
+                f"no 'structured_output' in the CLI response; keys were "
+                f"{sorted(payload.keys())}. The envelope shape may have changed "
+                f"-- re-run test_headless_claude.sh probe #1 before trusting it.")
+
+        dt = (time.monotonic() - t0) * 1000
+        usage = payload.get("usage") or {}
+        return ProviderRead(AnalystRead.model_validate(structured), self.name,
+                            self.model, dt,
+                            {"in": usage.get("input_tokens", 0),
+                             "out": usage.get("output_tokens", 0),
+                             "billing": "subscription"})
+
+
 PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
-             "deterministic": DeterministicProvider}
+             "deterministic": DeterministicProvider,
+             "headless": HeadlessClaudeAnalyst}
 
 
 def build_provider(spec: str, **kw) -> AnalystProvider:
