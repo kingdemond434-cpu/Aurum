@@ -244,7 +244,8 @@ class LiveDesk:
                  entry_urgency: float = 0.5,
                  forward_bars: int = 480,
                  macro_provider=None,
-                 macro_refresh: timedelta = timedelta(hours=6)):
+                 macro_refresh: timedelta = timedelta(hours=6),
+                 macro_timeout_s: float = 25.0):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
@@ -316,6 +317,10 @@ class LiveDesk:
         # and throw away the fact that the fetch ever worked.
         self.macro_provider = macro_provider
         self.macro_refresh = macro_refresh
+        # Deadline for ONE refresh attempt. 25s comfortably covers the FRED
+        # leg's own 15s timeout plus a slow Yahoo response, and is far below any
+        # bar interval, so a stuck fetch can never delay a decision past its bar.
+        self.macro_timeout_s = macro_timeout_s
         self._macro = None
         self._macro_at = None
         # A hard ceiling on simultaneous theses, independent of heat. Not a
@@ -707,13 +712,39 @@ class LiveDesk:
         if (self._macro_at is not None
                 and now - self._macro_at < self.macro_refresh):
             return
-        try:
-            m = self.macro_provider()
-        except Exception as e:                        # noqa: BLE001
-            log.warning("macro refresh failed (%s) -- keeping the previous read, "
-                        "which reports its own age", e)
+        # RUN IT WITH A HARD DEADLINE. The FRED leg carries timeout=15, but the
+        # Yahoo leg goes through yfinance, which has no timeout this code sets --
+        # and this call sits immediately before a decision. A FAILURE is handled
+        # below; a HANG is not a failure, it is an unbounded wait inside the
+        # path that produces signals, and it would look like a quiet market
+        # rather than a stuck fetch. A worker thread with a join deadline bounds
+        # it: on timeout the thread is abandoned (it is a read-only HTTP fetch,
+        # so leaking one is harmless) and the desk carries on with the previous
+        # read, which reports its own age.
+        import threading                                        # noqa: PLC0415
+        box = {}
+
+        def _fetch():
+            try:
+                box["m"] = self.macro_provider()
+            except Exception as e:                    # noqa: BLE001
+                box["err"] = e
+
+        th = threading.Thread(target=_fetch, daemon=True, name="macro-refresh")
+        th.start()
+        th.join(timeout=self.macro_timeout_s)
+        if th.is_alive():
+            log.warning("macro refresh exceeded %.0fs -- abandoning this attempt and "
+                        "keeping the previous read; the next one is due in %s",
+                        self.macro_timeout_s, self.macro_refresh)
             self._macro_at = now
             return
+        if "err" in box:
+            log.warning("macro refresh failed (%s) -- keeping the previous read, "
+                        "which reports its own age", box["err"])
+            self._macro_at = now
+            return
+        m = box.get("m")
         if m is not None:
             self._macro = m
         self._macro_at = now
