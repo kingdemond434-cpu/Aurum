@@ -283,3 +283,113 @@ def test_build_provider_refuses_effort_on_a_provider_that_cannot_use_it():
     as an internal bug rather than a misapplied flag."""
     with pytest.raises(ValueError, match="does not accept"):
         build_provider("deterministic", effort="high")
+
+
+# -------------------------------------------------------------- the universe
+#
+# `--universe` was enabled in the Windows launch args before this override had
+# ever been exercised. It fails safe at the caller (AnalystError -> skip the
+# bar), so the dangerous outcome is not a crash but a SILENT one: every bar
+# skipped, zero signals, a log that looks healthy. These tests are the thing
+# standing between that and the box.
+
+def universe(n: int = 3, **over) -> dict:
+    u = {
+        "candidates": [dict(VALID_READ) for _ in range(n)],
+        "survey": "checked M15 continuation, H1 mean reversion, and the "
+                  "session sweep; dropped the sweep, no reclaim yet",
+        "dominant_context": "H4 uptrend intact above L1",
+        "had_more": False,
+    }
+    u.update(over)
+    return u
+
+
+def test_a_universe_of_several_candidates_parses():
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(3))))
+    stamp, uni = p.survey(brief())
+    assert len(uni.candidates) == 3
+    assert stamp.usage["candidates"] == 3
+    assert stamp.provider == "claudecode"
+
+
+def test_the_stamp_carries_the_head_only_as_provenance():
+    """Matches AnthropicAnalyst.survey. Selection does not privilege it; the
+    stamp exists so a universe run has a read to attach provenance to."""
+    stamp, uni = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(2)))).survey(brief())
+    assert stamp.read == uni.candidates[0]
+
+
+def test_a_fenced_universe_parses_because_the_cli_fences_this_too():
+    fenced = "```json\n" + json.dumps(universe(2)) + "\n```"
+    _, uni = ClaudeCodeAnalyst(runner=fake(fenced)).survey(brief())
+    assert len(uni.candidates) == 2
+
+
+def test_a_single_read_is_refused_rather_than_becoming_a_one_candidate_universe():
+    """THE REGRESSION THIS OVERRIDE EXISTS FOR.
+
+    The inherited default turned `--universe` into a label over an unchanged
+    single read. If a model ignores the universe schema and answers with one
+    AnalystRead, accepting it would reintroduce exactly that -- one layer
+    deeper and harder to see, because the meta would now say candidates=1 as
+    though the analyst had found one opportunity."""
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(VALID_READ)))
+    with pytest.raises(AnalystError, match="not a valid AnalystUniverse"):
+        p.survey(brief())
+
+
+def test_an_empty_universe_is_an_answer_not_an_error():
+    """Nothing tradeable is the same real answer NO_SETUP gives on the single
+    path. It must not raise, and the stamp must not invent a read."""
+    stamp, uni = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(0)))).survey(brief())
+    assert uni.candidates == []
+    assert stamp.read is None
+    assert stamp.usage["candidates"] == 0
+
+
+def test_a_truncated_universe_keeps_its_had_more_flag():
+    """The only trace a dropped proposition ever leaves."""
+    _, uni = ClaudeCodeAnalyst(
+        runner=fake(json.dumps(universe(2, had_more=True)))).survey(brief())
+    assert uni.had_more is True
+
+
+def test_the_universe_system_prompt_reaches_the_cli_and_carries_the_cap():
+    """A universe run that sent read()'s system prompt would be asking for one
+    proposition and validating against a twelve-slot schema."""
+    from golddesk.universe import MAX_CANDIDATES
+    seen: list = []
+    ClaudeCodeAnalyst(runner=fake(json.dumps(universe(1)), seen)).survey(brief())
+    argv, prompt = seen[0]
+    system = argv[argv.index("--system-prompt") + 1]
+    assert "candidates" in system
+    assert str(MAX_CANDIDATES) in system
+    assert "had_more" in prompt          # the universe schema, not the read one
+
+
+def test_charts_are_refused_before_the_quota_is_spent():
+    """The CLI takes no image input; discovering that after the call would
+    burn a request and lose the charts silently."""
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(1))))
+    with pytest.raises(AnalystError, match="cannot send charts"):
+        p.survey(brief(), charts=[Chart("M15", b"\x89PNG", 800, 600)])
+
+
+def test_an_error_envelope_is_surfaced_on_the_universe_path_too():
+    env = envelope("rate limited", is_error=True, subtype="error_during_execution")
+    with pytest.raises(AnalystError, match="claude reported failure"):
+        ClaudeCodeAnalyst(runner=fake(env)).survey(brief())
+
+
+def test_an_empty_universe_result_is_an_error_not_an_empty_universe():
+    """Distinct from candidates=[]. Nothing came back at all -- reporting that
+    as 'no opportunities' would launder a transport failure into a verdict."""
+    with pytest.raises(AnalystError, match="empty result"):
+        ClaudeCodeAnalyst(runner=fake(envelope(""))).survey(brief())
+
+
+def test_universe_usage_folds_cache_creation_into_input_so_budget_sees_it():
+    stamp, _ = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(2)))).survey(brief())
+    assert stamp.usage["in"] == 910 + 26488 + 0
+    assert stamp.usage["out"] == 61
