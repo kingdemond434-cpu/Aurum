@@ -36,6 +36,7 @@ from .features import (Bar, StructureState, atr, classify, session_of, swings,
                        visible_swings)
 from .ledger import (Bar as LBar, DecisionKind, DecisionRecord, Ledger, PathRef,
                      resolve_forward)
+from .macro_context import MacroContext
 from .notify import Sink, build_sink
 from .watcher import Watcher
 
@@ -127,8 +128,16 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                 sw: Sequence, bid: float, ask: float, tick_age_s: float,
                 htf: Optional[StructureState] = None,
                 timeline: Sequence[str] = (), symbol: str = "XAUUSD",
-                timeframe: str = "D1") -> MarketBrief:
-    """Assemble the analyst brief from deterministic state. Levels get stable ids."""
+                timeframe: str = "D1",
+                macro: Optional[MacroContext] = None) -> MarketBrief:
+    """Assemble the analyst brief from deterministic state. Levels get stable ids.
+
+    `macro` is optional and defaults to None, which renders as UNMEASURED
+    rather than as a neutral backdrop. That default is deliberate: a caller
+    that has no macro feed must produce a brief which SAYS so, because the
+    alternative -- omitting the section -- leaves the model unable to tell a
+    missing macro read from one that was never going to be there.
+    """
     vis = visible_swings(sw, i)
     levels: list[Level] = []
     n = 1
@@ -166,7 +175,7 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
         bid=round(bid, 2), ask=round(ask, 2), spread=round(ask - bid, 2),
         tick_age_s=tick_age_s, atr=round(st.atr, 2), context=ctx, levels=levels,
         trigger_price=None if st.trigger_price is None else round(st.trigger_price, 2),
-        trigger_utc=bars[i].ts, timeline=tuple(timeline))
+        trigger_utc=bars[i].ts, timeline=tuple(timeline), macro=macro)
 
 
 # --------------------------------------------------------------------------

@@ -50,6 +50,7 @@ from .analyst import CompiledSignal, Refusal, Setup, Thresholds, compile_signal
 from .costs import CostModel
 from .features import Bar, StructureState, atr, classify, session_of, swings
 from .hypothesis import HypothesisBook
+from .macro_context import MacroContext
 from .ledger import (Bar as LBar, DecisionKind, DecisionRecord, Ledger, PathRef,
                      resolve_forward)
 from .management import (Action, Anchor, BrokerLimits, Excursion, ManagementPolicy,
@@ -241,7 +242,9 @@ class LiveDesk:
                  calendar=None,
                  regime_history=None,
                  entry_urgency: float = 0.5,
-                 forward_bars: int = 480):
+                 forward_bars: int = 480,
+                 macro_provider=None,
+                 macro_refresh: timedelta = timedelta(hours=6)):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
@@ -297,6 +300,27 @@ class LiveDesk:
         # Used for TRUE OHLC aggregation, never for sampling.
         self.htf_factor = htf_factor
         self.measure_position_constraint = measure_position_constraint
+        # MACRO. `macro_provider` is a zero-arg callable returning a
+        # MacroContext -- normally
+        # `lambda: macro_context.from_drivers(build_drivers(fred_key))`.
+        # None means no macro feed, and every brief then renders
+        # "MACRO CONTEXT: UNMEASURED" rather than quietly omitting the section.
+        #
+        # REFRESHED ON A CADENCE, NOT PER BAR. Every driver behind it is DAILY:
+        # FRED publishes once a day, and the desk reads daily CHANGES from
+        # Yahoo. Re-fetching per bar would hammer two free feeds for a number
+        # that cannot have moved, and would put an external HTTP call inside
+        # the decision path, where a slow response becomes a missed bar.
+        #
+        # A FAILED REFRESH DOES NOT CLEAR THE LAST GOOD READ, deliberately.
+        # MacroContext carries its own age and reports UNMEASURED once stale,
+        # so keeping the previous value lets it say "72h old" instead of the
+        # strictly less informative "absent" -- which would lose the fact that
+        # the fetch used to work, and when it stopped.
+        self.macro_provider = macro_provider
+        self.macro_refresh = macro_refresh
+        self._macro: Optional[MacroContext] = None
+        self._macro_at: Optional[datetime] = None
         # A hard ceiling on simultaneous theses, independent of heat. Not a
         # quota on opportunity: heat is the economic limit and normally binds
         # first. This only stops a pathological state opening dozens.
@@ -543,7 +567,8 @@ class LiveDesk:
                 bid, ask, age = quote
                 try:
                     b2 = build_brief(bars, i, st, sw, bid, ask, age, htf_state,
-                                     timeline, timeframe=ENTRY_TF)
+                                     timeline, timeframe=ENTRY_TF,
+                                     macro=self._macro)
                     self._record(bars, i, b2, DecisionKind.REFUSAL_COMPILER, "POLICY",
                                  {"declined": "UNEVALUATED",
                                   "constraint": "one_position"},
@@ -558,6 +583,10 @@ class LiveDesk:
         if not w.wake:
             return
         self.stats.wakes += 1
+        # Refreshed HERE, after the wake test, so a desk that is not deciding
+        # anything does not fetch. The wake rule is already the desk's
+        # economic gate on doing work; macro sits behind it, not alongside it.
+        self._refresh_macro(ts)
 
         # The prior trade is only relevant while its structural context still
         # exists. Once the trend that defined it has flipped away, it is not a
@@ -571,7 +600,7 @@ class LiveDesk:
         self.last_bid, self.last_ask = bid, ask
         self.last_spread = max(0.0, ask - bid)
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
-                            timeframe=ENTRY_TF)
+                            timeframe=ENTRY_TF, macro=self._macro)
         # THE CAUSAL SNAPSHOT OF THIS DECISION MOMENT, built before anything
         # decides. It is what makes the model league real rather than
         # theoretical: a competitor -- another model, a rule, the user -- can be
@@ -662,6 +691,37 @@ class LiveDesk:
             return
 
         self._enter(bars, i, brief, res, pr, len(imgs))
+
+    # -- macro ------------------------------------------------------------
+    def _refresh_macro(self, now: datetime) -> None:
+        """Pull a fresh macro read if the cadence is due. Never raises.
+
+        A macro fetch that throws must not take down the decision path. The
+        desk's job is to read the market; losing macro is a degradation, not a
+        failure, and a desk that stops trading because FRED is down has
+        converted a missing input into an outage.
+
+        On error the PREVIOUS read is kept (see __init__), so MacroContext can
+        report its true age -- "72h old" -- rather than "absent", which would
+        throw away the information that the fetch used to work. `_macro_at` is
+        stamped even on failure so a broken feed is retried on the cadence
+        rather than on every single wake.
+        """
+        if self.macro_provider is None:
+            return
+        if (self._macro_at is not None
+                and now - self._macro_at < self.macro_refresh):
+            return
+        try:
+            m = self.macro_provider()
+        except Exception as e:                        # noqa: BLE001
+            log.warning("macro refresh failed (%s) -- keeping the previous read, "
+                        "which reports its own age", e)
+            self._macro_at = now
+            return
+        if m is not None:
+            self._macro = m
+        self._macro_at = now
 
     # -- the opportunity universe -----------------------------------------
     def _decide_universe(self, bars, i, brief, imgs, ts, st) -> None:
