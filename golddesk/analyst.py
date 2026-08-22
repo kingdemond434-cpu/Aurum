@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .chart import Chart, estimate_image_tokens
 from .costs import CostModel, breakeven_win_rate, cost_in_r, round_trip_cost
+from .macro_context import MacroContext
 from .opportunity import CohortStat, ev_gate
 from .router import route
 
@@ -113,6 +114,13 @@ class MarketBrief:
     trigger_utc: Optional[datetime] = None
     timeline: Sequence[str] = field(default_factory=tuple)   # rolling memory
     notes: Sequence[str] = field(default_factory=tuple)
+    # Macro state. EVIDENCE ONLY -- it has no vote on direction and never
+    # overrides structure, the same rule crossmarket.py already states. It is
+    # here because the analyst previously saw NO macro variable at all while
+    # reading an instrument whose entire bid is macro. Optional and defaulting
+    # to None: a brief built without it renders UNMEASURED rather than
+    # silently implying a neutral macro backdrop.
+    macro: Optional["MacroContext"] = None
 
     @property
     def mid(self) -> float:
@@ -133,6 +141,14 @@ class MarketBrief:
             "MEASURED CONTEXT (deterministic — these are facts, not opinions)",
             self.context.render(),
         ]
+        # Macro goes AFTER structure, deliberately. The desk's read is a
+        # structural one that macro may inform; leading with macro invites a
+        # top-down narrative that then goes looking for structure to confirm
+        # it, which is the failure mode a macro-aware discretionary desk has
+        # to design against rather than hope about.
+        lines += ["", (self.macro.render() if self.macro is not None
+                       else "MACRO CONTEXT: UNMEASURED — no macro state supplied "
+                            "to this brief.\n  Treat as ABSENT, not as neutral.")]
         if self.timeline:
             lines += ["", "HOW THIS DEVELOPED (most recent last)"]
             lines += [f"  {t}" for t in self.timeline]
