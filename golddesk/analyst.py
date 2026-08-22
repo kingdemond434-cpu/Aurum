@@ -36,6 +36,7 @@ from .chart import Chart, estimate_image_tokens
 if TYPE_CHECKING:                                                  # pragma: no cover
     from .hierarchical_bias import TimeframeRead
 from .costs import CostModel, breakeven_win_rate, cost_in_r, round_trip_cost
+from .macro_context import MacroContext
 from .day_state import DayState
 from .gold_trend import GoldTrendRead
 from .opportunity import CohortStat, ev_gate
@@ -124,6 +125,17 @@ class MarketBrief:
     # zero authority of its own, the model reasons over it. Optional and
     # defaulted so every existing caller of MarketBrief(...) is unaffected.
     trend: Optional[GoldTrendRead] = None
+    #: Macro state -- real yield, dollar, risk, breakeven. EVIDENCE ONLY, the
+    #: same standing as `trend` and every Context field: it has no vote on
+    #: direction and never overrides structure, which is the rule
+    #: crossmarket.py already states for cross-market context.
+    #:
+    #: For an instrument whose entire bid is macro, the analyst previously saw
+    #: none of it. Optional and defaulted to None so every existing caller is
+    #: unaffected -- and a brief built without it renders UNMEASURED rather
+    #: than omitting the section, because the model must be able to tell a
+    #: missing macro read from one that was never going to be there.
+    macro: Optional[MacroContext] = None
     #: Pre-rendered deterministic blocks — seasonality, supply calendar, and the multi-timeframe
     #: STATES. Verbatim, after the cache breakpoint, so adding one never invalidates the cached
     #: system prefix.
@@ -165,6 +177,13 @@ class MarketBrief:
                       "GOLD TREND (ported from the quant desk; sealed external "
                       "finding, zero authority — see quant_findings.py)",
                       self.trend.render()]
+        # AFTER structure, deliberately. Leading with macro invites a top-down
+        # narrative that then goes looking for structure to confirm it, which is
+        # the failure mode a macro-aware discretionary desk designs against
+        # rather than hopes about.
+        lines += ["", (self.macro.render() if self.macro is not None
+                       else "MACRO CONTEXT: UNMEASURED — no macro state supplied "
+                            "to this brief.\n  Treat as ABSENT, not as neutral.")]
         if self.timeline:
             lines += ["", "HOW THIS DEVELOPED (most recent last)"]
             lines += [f"  {t}" for t in self.timeline]

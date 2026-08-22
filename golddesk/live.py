@@ -242,7 +242,9 @@ class LiveDesk:
                  calendar=None,
                  regime_history=None,
                  entry_urgency: float = 0.5,
-                 forward_bars: int = 480):
+                 forward_bars: int = 480,
+                 macro_provider=None,
+                 macro_refresh: timedelta = timedelta(hours=6)):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
@@ -298,6 +300,24 @@ class LiveDesk:
         # Used for TRUE OHLC aggregation, never for sampling.
         self.htf_factor = htf_factor
         self.measure_position_constraint = measure_position_constraint
+        # MACRO. A zero-arg callable returning a MacroContext -- normally
+        # macro_context.from_drivers(build_drivers(...)). None means no feed and
+        # every brief then renders MACRO CONTEXT: UNMEASURED rather than
+        # quietly omitting the section.
+        #
+        # REFRESHED ON A CADENCE, NOT PER BAR: every driver behind it is DAILY,
+        # so a per-bar fetch would hammer two free feeds for a number that
+        # cannot have moved, and would put an external HTTP call inside the
+        # decision path where a slow response becomes a missed bar.
+        #
+        # A FAILED REFRESH KEEPS THE PREVIOUS READ. Losing macro is a
+        # degradation, not an outage, and MacroContext reports its own age --
+        # so a kept value says "72h old" where a cleared one would say "absent"
+        # and throw away the fact that the fetch ever worked.
+        self.macro_provider = macro_provider
+        self.macro_refresh = macro_refresh
+        self._macro = None
+        self._macro_at = None
         # A hard ceiling on simultaneous theses, independent of heat. Not a
         # quota on opportunity: heat is the economic limit and normally binds
         # first. This only stops a pathological state opening dozens.
@@ -544,7 +564,8 @@ class LiveDesk:
                 bid, ask, age = quote
                 try:
                     b2 = build_brief(bars, i, st, sw, bid, ask, age, htf_state,
-                                     timeline, timeframe=ENTRY_TF)
+                                     timeline, timeframe=ENTRY_TF,
+                                     macro=self._macro)
                     self._record(bars, i, b2, DecisionKind.REFUSAL_COMPILER, "POLICY",
                                  {"declined": "UNEVALUATED",
                                   "constraint": "one_position"},
@@ -571,7 +592,9 @@ class LiveDesk:
         bid, ask, age = quote
         self.last_bid, self.last_ask = bid, ask
         self.last_spread = max(0.0, ask - bid)
+        self._refresh_macro(ts)
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
+                            macro=self._macro,
                             timeframe=ENTRY_TF)
         # THE CAUSAL SNAPSHOT OF THIS DECISION MOMENT, built before anything
         # decides. It is what makes the model league real rather than
@@ -663,6 +686,37 @@ class LiveDesk:
             return
 
         self._enter(bars, i, brief, res, pr, len(imgs))
+
+    # -- macro ------------------------------------------------------------
+    def _refresh_macro(self, now) -> None:
+        """Pull a fresh macro read if the cadence is due. NEVER raises.
+
+        A macro fetch that throws must not take down the decision path. The
+        desk's job is to read the market; losing macro is a degradation, and a
+        desk that stops trading because FRED is down has converted a missing
+        input into an outage.
+
+        On error the PREVIOUS read is kept, so MacroContext can report its true
+        age -- "72h old" -- rather than "absent", which would discard the fact
+        that the fetch used to work and when it stopped. `_macro_at` is stamped
+        even on failure so a broken feed is retried on the cadence rather than
+        on every wake.
+        """
+        if self.macro_provider is None:
+            return
+        if (self._macro_at is not None
+                and now - self._macro_at < self.macro_refresh):
+            return
+        try:
+            m = self.macro_provider()
+        except Exception as e:                        # noqa: BLE001
+            log.warning("macro refresh failed (%s) -- keeping the previous read, "
+                        "which reports its own age", e)
+            self._macro_at = now
+            return
+        if m is not None:
+            self._macro = m
+        self._macro_at = now
 
     # -- the opportunity universe -----------------------------------------
     def _decide_universe(self, bars, i, brief, imgs, ts, st) -> None:

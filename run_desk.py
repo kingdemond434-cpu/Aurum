@@ -351,6 +351,12 @@ def main() -> int:
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
                          "ARM — not a free improvement")
+    ap.add_argument("--no-macro", action="store_true",
+                    help="do not feed macro context to the analyst. Briefs then "
+                         "render MACRO CONTEXT: UNMEASURED — the read still "
+                         "happens, it just has no macro backdrop. Macro is "
+                         "EVIDENCE with no vote on direction, so this changes "
+                         "what the model knows, never what it is allowed to do")
     ap.add_argument("--effort", default=None,
                     choices=("low", "medium", "high", "xhigh", "max"),
                     help="analyst reasoning effort. Supported by 'anthropic:' "
@@ -436,6 +442,7 @@ def main() -> int:
                         shadow_management=args.shadow_management,
                         shadow_contextual=args.shadow_contextual,
                         universe_mode=args.universe,
+                        enable_macro=not args.no_macro,
                         broker_limits=(BrokerLimits(min_stop_distance=args.min_stop)
                                        if args.min_stop else None))
     try:

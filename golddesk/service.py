@@ -662,7 +662,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   calendar=None,
                   spread_profile_path: str = "config/spread_profile.json",
                   declared_spread: Optional[float] = None,
-                  broker_limits: Optional[BrokerLimits] = None) -> DeskService:
+                  broker_limits: Optional[BrokerLimits] = None,
+                  enable_macro: bool = True) -> DeskService:
     """Wire the real client, feed, desk and sink. One call, one deployed desk.
 
     `feed_backend` selects where PERCEPTION comes from. It does not select where
@@ -753,6 +754,27 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     except Exception as e:
         log.info("no regime history yet (%s) — novelty will read UNKNOWN", e)
 
+    # MACRO. Built here rather than inside LiveDesk so the desk keeps taking a
+    # plain callable and stays testable without a network. None means no feed,
+    # and every brief then renders MACRO CONTEXT: UNMEASURED -- the honest
+    # state, not a silent omission.
+    #
+    # This closes the last unwired link on the macro path: macro_context could
+    # build a block and MarketBrief could carry one, but nothing ever
+    # CONSTRUCTED a provider, so the analyst would have read UNMEASURED forever
+    # while every individual part looked correctly wired.
+    macro_fn = None
+    if enable_macro:
+        def macro_fn():
+            from .drivers_free import build_drivers
+            from .macro_context import from_drivers
+            return from_drivers(build_drivers(os.environ.get("FRED_API_KEY")))
+        log.info("macro feed: drivers_free (dxy, spx, vix, real_yield_10y, "
+                 "breakeven_10y) on the desk's own refresh cadence")
+    else:
+        log.info("macro feed DISABLED -- briefs render MACRO CONTEXT: UNMEASURED, "
+                 "which the analyst is told to treat as absent, not neutral")
+
     desk = LiveDesk(build_provider(provider_spec, effort=provider_effort)
                     if provider_effort is not None else build_provider(provider_spec),
                     Ledger(cfg.ledger_path),
@@ -761,7 +783,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                     shadow_management=shadow_management,
                     shadow_contextual=shadow_contextual,
                     universe_mode=universe_mode,
-                    calendar=calendar, regime_history=history)
+                    calendar=calendar, regime_history=history,
+                    macro_provider=macro_fn)
 
     # WHO HAS AUTHORITY over the open position. An explicit production decision:
     # the desk ships with Claude forming the entry judgement and a deterministic
