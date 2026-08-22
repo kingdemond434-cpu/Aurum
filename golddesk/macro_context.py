@@ -47,10 +47,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-#: FRED publishes most series monthly; daily rate series refresh on business
-#: days. 48h keeps a Friday read usable across the weekend while still
-#: catching a fetcher that has genuinely stopped.
-DEFAULT_MAX_AGE_H = 48.0
+#: HOW OLD A MACRO READ MAY BE BEFORE IT IS UNMEASURED.
+#:
+#: WAS 48h, AND THAT WAS MEASURABLY WRONG. Observed on the live box, Saturday
+#: 2026-08-22: `oldest driver 63.0h old (limit 48h)` -> the whole block read
+#: UNMEASURED on a perfectly healthy feed. FRED's daily series publish on
+#: BUSINESS DAYS and with their own lag, so across a weekend the freshest
+#: DFII10 is routinely ~3 days old, and a long weekend pushes it to 4. A 48h
+#: limit therefore blanks macro every Sunday -- which is exactly when the desk
+#: restarts for the week's open, so the analyst would have lost its macro
+#: backdrop precisely at the moment it first needs one.
+#:
+#: 96h covers a normal weekend plus a public holiday and still catches a fetch
+#: that has genuinely stopped: a feed dead since Monday is 96h+ stale by
+#: Friday and reports as such. The limit exists to distinguish "no fetcher" from
+#: "the market was shut", and 48h could not tell those apart.
+#:
+#: NOTE THIS IS A CEILING ON THE OLDEST DRIVER, not an average. A block whose
+#: DXY is an hour old and whose real yield is four days old is stamped with the
+#: four days, because the weakest link is what the read is actually worth.
+DEFAULT_MAX_AGE_H = 96.0
 
 
 @dataclass(frozen=True)
