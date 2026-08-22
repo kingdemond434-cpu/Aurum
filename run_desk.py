@@ -276,6 +276,17 @@ def main() -> int:
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
                          "ARM — not a free improvement")
+    ap.add_argument("--provider", default="auto",
+                    help="which route to the model. 'auto' (default) picks "
+                         "headless when only the Claude Code CLI is available and "
+                         "anthropic when an API key is set; 'headless:<model>' "
+                         "forces subscription billing; 'anthropic:<model>' forces "
+                         "metered. THIS DECIDES WHO PAYS, so auto prints what it "
+                         "chose and why rather than resolving silently")
+    ap.add_argument("--no-macro", action="store_true",
+                    help="do not feed macro context to the analyst. Briefs then "
+                         "render MACRO CONTEXT: UNMEASURED — the read still "
+                         "happens, it just has no macro backdrop")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -335,11 +346,46 @@ def main() -> int:
     print("\nevery decision, refusal, management step and outcome is journalled to")
     print("state/ledger.jsonl — that file IS the forward evidence. Do not delete it.\n")
 
+    # WHICH ROUTE TO THE MODEL, resolved out loud. build_service used to default
+    # to 'anthropic:claude-opus-5' and run_desk never overrode it, so a box with
+    # no API key and a logged-in CLI still tried the metered path and failed --
+    # the subscription provider existed and was unreachable from the only
+    # entrypoint that starts the desk.
+    import shutil as _shutil
+    provider_spec = args.provider
+    if provider_spec == "auto":
+        has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        has_cli = bool(_shutil.which("claude"))
+        if has_key:
+            provider_spec = "anthropic:claude-opus-5"
+            why = ("ANTHROPIC_API_KEY is set, so METERED billing. Unset it and "
+                   "keep the CLI logged in to run on the subscription instead.")
+        elif has_cli:
+            provider_spec = "headless:claude-opus-5"
+            why = ("no API key, Claude Code CLI present, so SUBSCRIPTION billing. "
+                   "Charts are refused on this route — run --numeric-only.")
+        else:
+            print("\nFATAL: --provider auto found neither an ANTHROPIC_API_KEY nor "
+                  "a `claude` CLI.\nThere is no route to the model. Preflight said "
+                  "the same thing; fix that first.")
+            return 1
+        print(f"  MODEL ROUTE      : {provider_spec}\n"
+              f"                     {why}")
+    else:
+        print(f"  MODEL ROUTE      : {provider_spec} (explicit)")
+    if provider_spec.startswith("headless") and not args.numeric_only:
+        print("\nFATAL: the headless (subscription) provider refuses charts, and "
+              "--numeric-only was not\ngiven. Every read would fail. Add "
+              "--numeric-only, or use --provider anthropic:<model>.")
+        return 1
+
     from golddesk.management import BrokerLimits
     svc = build_service(symbol=args.symbol, shadow=shadow, vision=vision,
                         cfg=ServiceConfig(symbol=args.symbol),
                         secrets_dir=args.secrets, feed_backend=args.feed,
                         management=args.management,
+                        provider_spec=provider_spec,
+                        enable_macro=not args.no_macro,
                         declared_spread=args.declared_spread,
                         shadow_management=args.shadow_management,
                         shadow_contextual=args.shadow_contextual,
