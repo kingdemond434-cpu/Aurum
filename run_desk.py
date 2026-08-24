@@ -377,7 +377,14 @@ def main() -> int:
                          "free quality upgrade.")
     args = ap.parse_args()
 
-    logging.basicConfig(level=logging.INFO,
+    # STDOUT, NOT THE DEFAULT STDERR. logging.basicConfig() writes to stderr unless told
+    # otherwise, while the startup banner just above uses plain print() (stdout) -- an arbitrary
+    # split between two halves of the same output that has burned an operator checking "is this
+    # process actually doing anything" while tailing only the stdout capture: every log line
+    # after the banner (feed connected, warmed with N bars, every decision) was going to stderr,
+    # a completely separate file under Start-AurumDesk.ps1's redirection, and looked identical to
+    # a hung process. Unifying onto stdout makes "tail the stdout capture to see it live" true.
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
 
     print("=" * 78)
