@@ -452,8 +452,14 @@ class ClaudeCodeAnalyst(AnalystProvider):
         except subprocess.TimeoutExpired as e:
             raise AnalystError(f"claude timed out after {self.timeout_s}s") from e
         if p.returncode != 0:
+            # 300 chars was cutting off every failure at almost exactly the point where the
+            # CLI's own JSON error payload names the actual problem -- every "analyst
+            # unavailable" line in production ended with "output_tokens": and nothing after,
+            # for days, because the field that would have explained the failure sits past that
+            # cutoff. 2000 chars comfortably covers the CLI's error JSON without risking an
+            # unbounded log line from a truly pathological response.
             raise AnalystError(f"claude exited {p.returncode}: "
-                               f"{(p.stderr or p.stdout)[:300]}")
+                               f"{(p.stderr or p.stdout)[:2000]}")
         try:
             return json.loads(p.stdout)
         except json.JSONDecodeError as e:
