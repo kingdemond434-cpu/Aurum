@@ -813,6 +813,9 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     # decomposition reports as UNKNOWN rather than as "familiar".
     history = None
     cohorts = None
+    rows: list = []          # bound BEFORE the try: the self-audit below reads
+                             # it, and an exception here must leave it empty
+                             # rather than unbound.
     try:
         from .regime import load_history
         rows = Ledger(cfg.ledger_path).read_all()
@@ -897,6 +900,23 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     # the desk ships with Claude forming the entry judgement and a deterministic
     # heuristic running the lifecycle, and that asymmetry should be chosen out
     # loud rather than inherited from a default nobody revisited.
+    # WIRING SELF-AUDIT. run_desk.py's preflight checks the WORLD -- MT5, the
+    # broker, Telegram -- and every one of those passed all day on 2026-08-27
+    # while the desk was broken in five places. None was a world problem: each
+    # was a JOIN between two components that both worked and both passed their
+    # own tests. A join is invisible to any check that looks at one side of it.
+    #
+    # Reports, never blocks. A desk that refuses to start because an audit is
+    # unhappy is worse than one that starts and says so loudly.
+    try:
+        from .self_audit import audit, render
+        _findings = audit(rows, cohorts)
+        for _line in render(_findings).splitlines():
+            log.warning(_line) if any(not f.ok for f in _findings) else log.info(_line)
+    except Exception as e:                            # noqa: BLE001
+        log.warning("self-audit skipped (%s) — wiring is UNVERIFIED, which is "
+                    "not the same as verified-good", e)
+
     desk.set_management(management)
     log.info("management authority: %s (shadow=%s, contextual shadowed=%s)",
              management, shadow_management, shadow_contextual)

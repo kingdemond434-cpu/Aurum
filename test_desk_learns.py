@@ -192,3 +192,61 @@ def test_absorb_is_on_the_list_the_scheduler_runs():
     """The ordering is pointless if the step that reads the inbox is not run."""
     import aurum_cycle as C
     assert "absorb" in {n for n, _ in C.STEPS}
+
+
+# ------------------------------------------- the box updates itself
+
+UPDATER = Path(__file__).parent / "deploy" / "windows" / "Update-AurumDesk.ps1"
+
+
+def test_an_updater_exists_and_is_scheduled():
+    """Every change used to need the operator at a terminal, so a fix sat unused
+    for as long as they were away from the box."""
+    assert UPDATER.exists()
+    src = INSTALLER.read_text(encoding="utf-8")
+    assert "Update-AurumDesk.ps1" in src and "-Update" in src
+
+
+def test_it_tests_the_new_code_BEFORE_swapping():
+    """A blind pull-and-restart loop is worse than manual updates: it can pull a
+    broken commit and restart into a crash loop with nobody watching."""
+    src = UPDATER.read_text(encoding="utf-8")
+    assert "pytest" in src
+    assert "git reset --hard $before" in src, "no rollback on a red suite"
+
+
+def test_it_will_not_restart_on_an_open_position_by_default():
+    src = UPDATER.read_text(encoding="utf-8")
+    assert "$st.open_trade" in src
+    assert "-not $Force" in src
+
+
+def test_it_refuses_to_touch_a_dirty_tree():
+    """A dirty tree on the desk box is far likelier to be someone mid-
+    investigation than junk, and a script that resolves that by discarding it
+    eventually discards the one thing that mattered."""
+    src = UPDATER.read_text(encoding="utf-8")
+    assert "git status --porcelain" in src
+    assert "Not touching it" in src
+
+
+def test_it_refuses_a_non_fast_forward():
+    """Diverged history cannot be reconciled automatically without risking
+    discarding one side."""
+    src = UPDATER.read_text(encoding="utf-8")
+    assert "merge --ff-only" in src
+    assert "ABORT" in src
+
+
+def test_it_does_not_re_register_scheduled_tasks():
+    """Registering tasks changes machine configuration and can fail leaving the
+    desk unregistered — that stays a deliberate operator act."""
+    src = UPDATER.read_text(encoding="utf-8")
+    assert "Register-ScheduledTask" not in src
+    assert "Install-AurumStartup" in src, "it must at least SAY when one is needed"
+
+
+def test_the_update_task_is_removed_by_the_uninstaller():
+    src = INSTALLER.read_text(encoding="utf-8")
+    block = src[src.index("foreach ($t in @($TaskName"):][:400]
+    assert "-Update" in block

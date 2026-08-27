@@ -123,7 +123,7 @@ $WatchdogTaskName = "$TaskName-Watchdog"
 
 if ($Remove) {
     foreach ($t in @($TaskName, $WatchdogTaskName, "$TaskName-Cycle",
-                     "$TaskName-VantageSpread")) {
+                     "$TaskName-Update", "$TaskName-VantageSpread")) {
         if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
             Unregister-ScheduledTask -TaskName $t -Confirm:$false
             Write-Host "removed scheduled task '$t'"
@@ -364,6 +364,51 @@ if ($spTask) {
     Write-Host "  state     : $($spTask.State)"
     Write-Host ""
 }
+# ---------------------------------------------------------------------------
+# AUTO-UPDATE. Every change to this desk used to need the operator at a
+# terminal: pull, re-run the installer, restart. That is not a small friction --
+# it means a fix sits unused for as long as the operator is away, and on
+# 2026-08-27 a set of fixes sat undeployed for hours while the desk kept
+# reproducing the exact defects they addressed.
+#
+# Every 30 minutes. Almost every run exits in under a second having found
+# nothing. Update-AurumDesk.ps1 carries the safety: it runs the suite against
+# the NEW code while the OLD desk is still live and rolls back on red, it
+# refuses to restart on an open position, it refuses to touch a dirty tree, and
+# it will not re-register scheduled tasks -- that stays an operator act.
+$updScript = Join-Path $DeskRoot "deploy\windows\Update-AurumDesk.ps1"
+if (Test-Path $updScript) {
+    $UpdateTaskName = "$TaskName-Update"
+    $uAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$updScript`" -DeskRoot `"$DeskRoot`"" `
+        -WorkingDirectory $DeskRoot
+    $uTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+                                         -RepetitionInterval (New-TimeSpan -Minutes 30) `
+                                         -RepetitionDuration (New-TimeSpan -Days 3650)
+    $uPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+                                             -LogonType Interactive -RunLevel Limited
+    # ExecutionTimeLimit is generous because the SUITE runs inside this task and
+    # a slow box must not have its update killed halfway through a rollback.
+    $uSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $UpdateTaskName -Action $uAction -Trigger $uTrigger `
+                           -Principal $uPrincipal -Settings $uSettings -Force | Out-Null
+    $uTask = Get-ScheduledTask -TaskName $UpdateTaskName -ErrorAction SilentlyContinue
+    if (-not $uTask) { throw "task '$UpdateTaskName' did not register" }
+} else {
+    Write-Host "  [SKIP] $TaskName-Update : Update-AurumDesk.ps1 not found"
+}
+
+Write-Host ""
+
+Write-Host "REGISTERED: $TaskName-Update"
+Write-Host "  runs      : $DeskRoot\deploy\windows\Update-AurumDesk.ps1"
+Write-Host "  trigger   : every 30 minutes, indefinitely"
+Write-Host "  purpose   : pull, run the SUITE against the new code while the old"
+Write-Host "              desk is still live, roll back on red, and restart only"
+Write-Host "              when flat. No more manual pulls."
+Write-Host ""
 Write-Host "REGISTERED: $TaskName-Cycle"
 Write-Host "  runs      : $DeskRoot\aurum_cycle.py"
 Write-Host "  trigger   : daily 22:40 (AFTER Aurum-Sync 22:15 delivers quant findings)"
