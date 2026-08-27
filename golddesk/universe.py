@@ -249,6 +249,7 @@ def compile_universe(brief: MarketBrief, universe: AnalystUniverse,
                      thresholds: Thresholds = Thresholds(),
                      cost_model: CostModel = CostModel(),
                      cohorts: Optional[dict[str, CohortStat]] = None,
+                     shadow: bool = False,
                      ) -> list[Candidate]:
     """Compile every proposition through the identical path.
 
@@ -263,14 +264,15 @@ def compile_universe(brief: MarketBrief, universe: AnalystUniverse,
             out.append(Candidate(k, read, None, None, None, "n/a",
                                  "GATED", "analyst returned NO_SETUP in a candidate slot"))
             continue
-        res = compile_signal(brief, read, thresholds, cost_model, cohorts)
+        res = compile_signal(brief, read, thresholds, cost_model, cohorts,
+                             shadow=shadow)
         if isinstance(res, Refusal):
             out.append(Candidate(k, read, None, res, None, "n/a",
                                  "GATED", res.reason))
             continue
         v = ev_gate(res.rr_tp2, res.cost_r, read.mechanism_name, cohorts,
                     fallback_min_rr=thresholds.fallback_min_rr,
-                    min_ev_r=thresholds.min_ev_r)
+                    min_ev_r=thresholds.min_ev_r, shadow=shadow)
         ev = None if (v.ev_r is None or math.isnan(v.ev_r)) else v.ev_r
         out.append(Candidate(k, read, res, None, ev, v.basis))
     return out

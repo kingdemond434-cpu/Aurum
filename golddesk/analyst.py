@@ -596,6 +596,7 @@ def compile_signal(
     cost_model: CostModel = CostModel(),
     cohorts: Optional[dict] = None,
     tf_reads: Sequence["TimeframeRead"] = (),
+    shadow: bool = False,
 ) -> CompiledSignal | Refusal:
     """Resolve the model's refs to prices and apply every gate.
 
@@ -728,7 +729,8 @@ def compile_signal(
     # decide neither, and using it as the gate discarded positive-value trades.
     ev_verdict = ev_gate(rr_tp2, cost_r, read.mechanism_name, cohorts,
                          fallback_min_rr=thresholds.fallback_min_rr,
-                         min_ev_r=thresholds.min_ev_r)
+                         min_ev_r=thresholds.min_ev_r,
+                         shadow=shadow)
     if not ev_verdict.take:
         return refuse(f"expectancy gate: {ev_verdict.reason}")
 

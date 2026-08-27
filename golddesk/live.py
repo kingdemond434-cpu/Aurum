@@ -675,7 +675,7 @@ class LiveDesk:
             self._notify(f"*RE-ENTRY* {pr.read.direction} — {v.reason}")
 
         res = compile_signal(brief, pr.read, self.thresholds, self.cost_model,
-                             self.cohorts)
+                             self.cohorts, shadow=self.shadow)
         if isinstance(res, Refusal):
             router = "edge router" in res.reason
             self._record(bars, i, brief,
@@ -792,7 +792,7 @@ class LiveDesk:
             return
 
         cands = compile_universe(brief, uni, self.thresholds, self.cost_model,
-                                 self.cohorts)
+                                 self.cohorts, shadow=self.shadow)
         heat = Heat(max_open_risk_r=self.limits.max_open_risk_r,
                     correlation_haircut=self.limits.correlation_haircut,
                     max_daily_loss_r=self.limits.max_daily_loss_r)

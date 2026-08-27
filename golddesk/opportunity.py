@@ -149,7 +149,8 @@ class EVVerdict:
 def ev_gate(rr: float, cost_r: float, mechanism: str,
             cohorts: Optional[dict[str, CohortStat]] = None,
             *, fallback_min_rr: float = 1.5,
-            min_ev_r: float = 0.0) -> EVVerdict:
+            min_ev_r: float = 0.0,
+            shadow: bool = False) -> EVVerdict:
     """Take when expected value is positive. Frequency follows from that.
 
     `min_ev_r` is the only economic bar: a trade must add expected value after
@@ -177,12 +178,38 @@ def ev_gate(rr: float, cost_r: float, mechanism: str,
     # registered, its false-negative cost is measured from the refusal ledger's
     # forward paths, and it stops blocking the moment that measurement says it
     # costs more than it saves.
+    #
+    # THE DEADLOCK THIS BREAKS. The rationale above promises the prior "stops
+    # blocking the moment that measurement says it costs more than it saves" --
+    # and that measurement can never be made. Demotion runs off the review,
+    # the review needs resolved outcomes, and this gate blocks the trades that
+    # would produce them. Prior blocks unknown mechanisms -> no history accrues
+    # -> the review returns UNDETERMINED -> the prior never demotes -> it blocks
+    # forever. A gate holding its own escape hatch shut.
+    #
+    # IN SHADOW THERE IS NO LOSS TO AVOID. This restriction exists to protect
+    # capital from mechanisms whose hit rate is unknown. Advisory-only mode puts
+    # no capital at risk, so the entire BENEFIT side of the trade-off is zero,
+    # while the COST side -- evidence never gathered -- is the whole reason the
+    # desk is running at all. Blocking here buys nothing and pays the full
+    # learning rate for it.
+    #
+    # NOT a general loosening. The moment the desk is armed, `shadow` is False
+    # and the prior enforces exactly as before. Live risk is unchanged; what
+    # changed is that measuring is no longer forbidden.
     from .constitution import is_enforcing
     breakeven = (1.0 + cost_r) / (1.0 + rr)
     meets = rr >= fallback_min_rr
-    enforcing = is_enforcing("entry.fallback_min_rr")
+    registered = is_enforcing("entry.fallback_min_rr")
+    enforcing = registered and not shadow
     take = meets or not enforcing
-    stance = "prior ENFORCING" if enforcing else "prior DEMOTED (advisory only)"
+    if not registered:
+        stance = "prior DEMOTED (advisory only)"
+    elif shadow:
+        stance = ("prior NOT ENFORCED IN SHADOW — no capital at risk, and "
+                  "blocking here is what starves its own demotion review")
+    else:
+        stance = "prior ENFORCING"
     return EVVerdict(take, float("nan"), breakeven, "COLD_START_PRIOR",
                      f"no resolved history for {mechanism!r}; "
                      f"R:R {rr:.2f} vs cold-start prior {fallback_min_rr:.2f} "
