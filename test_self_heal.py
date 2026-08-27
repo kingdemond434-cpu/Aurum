@@ -419,3 +419,62 @@ def test_the_log_still_gets_every_run(tmp_path):
     assert src.index("print(report)", i) < src.index("_should_notify(key", i), (
         "the report must be logged BEFORE the channel gate, or an incident "
         "review has gaps exactly where the fault persisted")
+
+
+# ------------------- analyst and watchdog faults route correctly
+
+def _task(name, fixable):
+    from golddesk.task_health import Finding as TF
+    return TF(name, False, "x", fixable=fixable)
+
+
+@pytest.mark.parametrize("finding,expect_fix,label", [
+    (None, True, "analyst answering"),
+    (None, False, "analyst latency"),
+    (None, False, "analyst model"),
+])
+def test_analyst_faults_route_correctly(finding, expect_fix, label):
+    rem, esc = plan([_broken(label)], restart_desk=_Spy(), enable_task=_Spy())
+    assert bool(rem) is expect_fix, label
+    assert bool(esc) is (not expect_fix), label
+
+
+def test_a_disabled_watchdog_is_re_enabled_automatically():
+    """Flipping a flag on an existing registration is deterministic, bounded and
+    reversible — the one task-control action safe to take unattended."""
+    calls = []
+    rem, esc = plan([_task("AurumSignalDesk-SelfHeal", True)],
+                    restart_desk=_Spy(),
+                    enable_task=lambda n: calls.append(n) or True)
+    Remediator().run(rem, now=NOW)
+    assert calls == ["AurumSignalDesk-SelfHeal"]
+    assert not esc
+
+
+def test_a_MISSING_watchdog_is_never_registered_automatically():
+    """Registering a task changes machine configuration, can prompt, and can
+    fail leaving the desk worse off than it started."""
+    calls = []
+    rem, esc = plan([_task("AurumSignalDesk-Cycle", False)],
+                    restart_desk=_Spy(),
+                    enable_task=lambda n: calls.append(n) or True)
+    Remediator().run(rem, now=NOW)
+    assert calls == []
+    assert [f.check for f in esc] == ["AurumSignalDesk-Cycle"]
+
+
+def test_no_task_is_enabled_without_the_action():
+    rem, esc = plan([_task("AurumSignalDesk-SelfHeal", True)], restart_desk=_Spy())
+    assert not rem and len(esc) == 1
+
+
+def test_the_healer_runs_all_four_audits():
+    """A watchdog written and not called is the defect class this whole file
+    exists to catch."""
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    for mod in ("self_audit", "capture", "analyst_health", "task_health"):
+        assert mod in src, mod
+    i = src.index("findings = (list(findings)")
+    block = src[i:i + 250]
+    for name in ("cap_findings", "ah_findings", "th_findings"):
+        assert name in block, f"{name} is computed but never reaches remediation"

@@ -20,10 +20,13 @@ FAST rather than absent -- which is the honest improvement available.
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import logging
 import subprocess
 import sys
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -124,6 +127,52 @@ def _rotate_logs() -> bool:
     if freed:
         log.info("freed %.1fMB of rotated logs", freed / (1024 * 1024))
     return freed > 0
+
+
+def _read_task(name: str):
+    """Read one scheduled task's real state via schtasks CSV.
+
+    schtasks and not PowerShell's Get-ScheduledTaskInfo: schtasks exists on
+    every Windows since XP, needs no module import, and is already the only
+    process-control verb this file uses. On a non-Windows box it raises, and
+    task_health.audit turns that into UNMEASURED rather than a pass.
+    """
+    from golddesk.task_health import TaskInfo
+    r = subprocess.run(["schtasks", "/Query", "/TN", name, "/FO", "CSV", "/V"],
+                       capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        return TaskInfo(name, False, False, None, None)
+    rows = list(csv.DictReader(io.StringIO(r.stdout)))
+    if not rows:
+        return TaskInfo(name, False, False, None, None)
+    d = rows[0]
+    status = (d.get("Scheduled Task State") or d.get("Status") or "").strip()
+    last_run, last_res = None, None
+    raw = (d.get("Last Run Time") or "").strip()
+    for fmt in ("%d/%m/%Y %H:%M:%S", "%m/%d/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            last_run = datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+            break
+        except ValueError:
+            continue
+    try:
+        last_res = int(str(d.get("Last Result") or "").strip())
+    except ValueError:
+        last_res = None
+    return TaskInfo(name, True, status.lower() != "disabled", last_run, last_res)
+
+
+def _enable_task(name: str) -> bool:
+    """Re-enable a registered task. The ONE task-control action taken
+    automatically: flipping a flag on an existing registration is deterministic
+    and reversible. REGISTERING one is not, and stays the operator's act."""
+    try:
+        r = subprocess.run(["schtasks", "/Change", "/TN", name, "/ENABLE"],
+                           capture_output=True, timeout=60)
+        return r.returncode == 0
+    except Exception as e:                             # noqa: BLE001
+        log.warning("could not enable %s: %s", name, e)
+        return False
 
 
 def _sync_quant() -> bool:
@@ -233,7 +282,9 @@ def main(argv=None) -> int:
 
     from golddesk.ledger import Ledger
     from golddesk.opportunity import build_cohorts
+    from golddesk import analyst_health as ah
     from golddesk import capture as cap
+    from golddesk import task_health as th
     from golddesk.remediate import Remediator, plan, render
     from golddesk.self_audit import audit, render as audit_render
 
@@ -258,14 +309,28 @@ def main(argv=None) -> int:
     # of those raises an error or looks like anything but a quiet week.
     cap_findings = cap.audit(rows, base=BASE)
     print(cap.render(cap_findings))
-    findings = list(findings) + list(cap_findings)
+
+    # IS THE ANALYST STILL ANSWERING, and as what. A wedged session, a login
+    # that expired, or latency drifting into the timeout all look identical to a
+    # careful desk from outside -- fewer decisions, no error anywhere.
+    ah_findings = ah.audit(rows, expected_model=os.environ.get("AURUM_MODEL"))
+    print(ah.render(ah_findings))
+
+    # WHO WATCHES THE WATCHDOGS. Every check above runs inside a scheduled task,
+    # and a stopped check looks exactly like a passing one.
+    th_findings = th.audit(_read_task)
+    print(th.render(th_findings))
+
+    findings = (list(findings) + list(cap_findings) + list(ah_findings)
+                + list(th_findings))
 
     remedies, escalations = plan(findings, restart_desk=_restart_desk,
                                  refresh_flows=_refresh_flows,
                                  sample_spread=_sample_spread,
                                  refresh_macro=_refresh_macro,
                                  rotate_logs=_rotate_logs,
-                                 sync_quant=_sync_quant)
+                                 sync_quant=_sync_quant,
+                                 enable_task=_enable_task)
     if args.dry_run:
         for r in remedies:
             print(f"  WOULD FIX  {r.fault}: {r.action} — {r.why}")

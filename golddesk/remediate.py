@@ -121,7 +121,8 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
          sample_spread: Optional[Callable[[], bool]] = None,
          refresh_macro: Optional[Callable[[], bool]] = None,
          rotate_logs: Optional[Callable[[], bool]] = None,
-         sync_quant: Optional[Callable[[], bool]] = None) -> tuple[list[Remedy], list]:
+         sync_quant: Optional[Callable[[], bool]] = None,
+         enable_task: Optional[Callable[[str], bool]] = None) -> tuple[list[Remedy], list]:
     """Split audit findings into what can be fixed and what must escalate.
 
     Returns (remedies, escalations). A finding that maps to no remedy is NOT
@@ -194,6 +195,38 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
                 f.check, "delete rotated logs",
                 "rotated logs only — never the ledger, a checkpoint or an archive",
                 rotate_logs))
+
+        elif getattr(f, "fixable", False) and enable_task is not None:
+            # A DISABLED scheduled task. The only task-control action taken
+            # automatically: flipping a flag on an existing registration is
+            # deterministic, bounded and reversible. REGISTERING one changes
+            # machine configuration, can prompt, and can fail leaving the desk
+            # worse off -- task_health marks only the disabled case fixable, and
+            # a MISSING task escalates for exactly that reason.
+            name = f.check
+            remedies.append(Remedy(
+                name, f"re-enable {name}",
+                "a registered task that is switched off; re-enabling flips a "
+                "flag and registers nothing",
+                lambda n=name: enable_task(n)))
+
+        elif f.check == "analyst answering":
+            # MECHANICAL, and the desk's own restart is the remedy: a wedged CLI
+            # session or a stale login is cleared by a fresh process, and that is
+            # the same action the watchdog would eventually take. If it does not
+            # work, the attempt cap escalates it -- which is the correct second
+            # answer for an expired credential.
+            remedies.append(Remedy(
+                f.check, "restart the desk",
+                "a wedged provider session clears on a fresh process; an expired "
+                "login does not, and the attempt cap says which it was",
+                restart_desk))
+
+        elif f.check in ("analyst latency", "analyst model"):
+            # NOT MECHANICAL. Latency drifting into the budget is a provider
+            # capacity question and a model that changed under the desk is a
+            # configuration question. Restarting hides both for one cycle.
+            escalate.append(f)
 
         elif f.check == "quant inbox" and sync_quant is not None:
             # MECHANICAL. The transport is a deduped file copy, idempotent on

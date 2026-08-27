@@ -1,0 +1,138 @@
+"""Who watches the watchdogs.
+
+THE GAP THIS CLOSES
+
+Every check this desk runs lives INSIDE a scheduled task. If that task is
+disabled, deleted, or has been failing on every run, nothing notices -- the
+checks simply stop, and stopped checks look exactly like passing ones. A watchdog
+that cannot detect its own absence is a watchdog you cannot rely on, and the
+failure is silent by construction.
+
+Worse, they fail TOGETHER. Every task registers at LogonType Interactive, so a
+reboot that does not reach a desktop takes the desk AND every watchdog at once.
+That specific case cannot be caught from inside the box at all -- nothing is
+running to catch it -- and it is named here so the limit is written down rather
+than assumed away.
+
+WHAT IS FIXED AND WHAT IS NOT
+
+  DISABLED   re-enabled automatically. Flipping a flag on an existing
+             registration is deterministic, bounded and reversible.
+  MISSING    escalated. Registering a task changes machine configuration, can
+             prompt, and can fail leaving the desk in a worse state than it
+             started -- that stays the operator's act, as it is in the updater.
+  FAILING    escalated. A task that runs and exits non-zero every time has a
+             cause no restart addresses.
+  STALE      escalated. A task that has not run in several intervals is either
+             blocked on something or the scheduler is not firing it.
+
+The reader is INJECTED so this module has no Windows dependency and every branch
+is exercised on a Linux test box.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Optional, Sequence
+
+TASK_HEALTH_VERSION = "tasks-2026-08-28-a"
+
+#: name -> (expected interval, what its absence costs). The interval is used to
+#: decide staleness; a task is stale at several times its own period, never at
+#: one, because a machine can be busy.
+EXPECTED: dict[str, tuple[timedelta, str]] = {
+    "AurumSignalDesk":            (timedelta(days=1),      "the desk itself"),
+    "AurumSignalDesk-Watchdog":   (timedelta(minutes=5),   "restarts a dead desk"),
+    "AurumSignalDesk-SelfHeal":   (timedelta(minutes=15),  "every wiring and capture check"),
+    "AurumSignalDesk-Update":     (timedelta(minutes=30),  "pulls and deploys fixes"),
+    "AurumSignalDesk-VantageSpread": (timedelta(minutes=20), "execution-venue spread"),
+    "AurumSignalDesk-Cycle":      (timedelta(days=1),      "the whole learning loop"),
+}
+
+#: Multiples of a task's own interval before it is called stale. Three, so an
+#: ordinary busy patch does not fire it and a genuinely stopped task does.
+STALE_MULTIPLE = 3
+
+
+@dataclass(frozen=True)
+class TaskInfo:
+    name: str
+    exists: bool
+    enabled: bool
+    last_run: Optional[datetime]
+    last_result: Optional[int]
+
+
+@dataclass(frozen=True)
+class Finding:
+    check: str
+    ok: bool
+    detail: str
+    fixable: bool = False
+
+    @property
+    def line(self) -> str:
+        return f"  [{'PASS' if self.ok else 'BROKEN'}] {self.check:<32} {self.detail}"
+
+
+def audit(read: Callable[[str], TaskInfo],
+          now: Optional[datetime] = None,
+          expected: Optional[dict] = None) -> list[Finding]:
+    """One finding per expected task. `read` never raises for this to work; a
+    reader that throws is treated as UNMEASURED for that task rather than as a
+    passing one."""
+    now = now or datetime.now(timezone.utc)
+    out: list[Finding] = []
+    for name, (interval, why) in (expected or EXPECTED).items():
+        try:
+            info = read(name)
+        except Exception as e:                         # noqa: BLE001
+            out.append(Finding(name, True,
+                               f"UNMEASURED — could not read the task ({e}). "
+                               f"Not the same as healthy."))
+            continue
+
+        if not info.exists:
+            out.append(Finding(name, False,
+                               f"NOT REGISTERED — {why} is not running at all. "
+                               f"Re-run Install-AurumStartup.ps1; registering a "
+                               f"task is not done automatically."))
+            continue
+        if not info.enabled:
+            out.append(Finding(name, False,
+                               f"DISABLED — {why} is registered and switched "
+                               f"off.", fixable=True))
+            continue
+        if info.last_result not in (None, 0, 267009):    # 267009 = still running
+            out.append(Finding(name, False,
+                               f"last run exited {info.last_result} — {why} is "
+                               f"firing and FAILING, which no restart fixes."))
+            continue
+        if info.last_run is not None:
+            age = now - info.last_run
+            if age > interval * STALE_MULTIPLE:
+                out.append(Finding(name, False,
+                                   f"last ran {age.total_seconds() / 3600:.1f}h "
+                                   f"ago, {STALE_MULTIPLE}x its {interval} "
+                                   f"interval — {why} has stopped firing."))
+                continue
+        out.append(Finding(name, True, f"enabled, last result "
+                                       f"{info.last_result if info.last_result is not None else 'n/a'}"))
+    return out
+
+
+def render(findings: Sequence[Finding]) -> str:
+    bad = [f for f in findings if not f.ok]
+    head = (f"TASK HEALTH ({TASK_HEALTH_VERSION}) — "
+            + ("every watchdog is running" if not bad
+               else f"{len(bad)} WATCHDOG FAULT(S)"))
+    out = [head] + [f.line for f in findings]
+    if bad:
+        out += ["",
+                "  A stopped check looks exactly like a passing one, which is why",
+                "  these are read rather than assumed. NOT COVERED, and it cannot",
+                "  be from in here: every task runs at LogonType Interactive, so",
+                "  a reboot that never reaches a desktop takes the desk and all",
+                "  of these together and nothing is left running to notice."]
+    return "\n".join(out)
