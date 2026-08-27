@@ -127,3 +127,80 @@ def test_the_compiler_passes_shadow_through():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# ------------------------- the count is a quota, and heat is the limiter
+
+def _desk(shadow: bool, tmp_path):
+    from golddesk.ledger import Ledger
+    from golddesk.live import LiveDesk, Vision
+    from golddesk.analyst import Thresholds
+    from golddesk.notify import Sink
+    from golddesk.providers import AnalystProvider
+
+    class _P(AnalystProvider):
+        name, model = "p", "p"
+        def read(self, brief, charts=()):
+            raise NotImplementedError
+
+    class _S(Sink):
+        def send(self, text):
+            return True
+
+    return LiveDesk(_P(), Ledger(tmp_path / f"l{shadow}.jsonl"), _S(),
+                    shadow=shadow, vision=Vision.NUMERIC_ONLY,
+                    thresholds=Thresholds())
+
+
+def test_one_position_still_binds_when_armed(tmp_path):
+    """The count is a real production choice with money on the table. Untouched."""
+    assert _desk(False, tmp_path).max_concurrent() == 1
+
+
+def test_one_position_does_not_bind_in_shadow(tmp_path):
+    """Observed 2026-08-27: the first signal fired at 11:15 and the next FOUR
+    opportunities — three of them in a single bar — were refused with "a trade
+    is already open". In advisory mode nothing is allocated, so that count
+    limited no exposure; it limited only what got measured."""
+    assert _desk(True, tmp_path).max_concurrent() > 1
+
+
+def test_shadow_does_not_remove_the_real_limiter(tmp_path):
+    """This is the load-bearing half. Dropping the COUNT must not drop HEAT —
+    max_open_risk_r with the correlation haircut still bounds total exposure,
+    so five copies of one idea cannot each claim full independent risk."""
+    d = _desk(True, tmp_path)
+    assert d.limits.max_open_risk_r == 2.0
+    assert d.limits.correlation_haircut == 0.65
+    assert d.limits.max_daily_loss_r == 3.0
+
+
+def test_an_operator_ceiling_still_wins_in_shadow(tmp_path):
+    """concurrency_ceiling is the runaway-process guard. Shadow must not
+    silently overrule an operator who set one deliberately."""
+    from golddesk.ledger import Ledger
+    from golddesk.live import LiveDesk, Vision
+    from golddesk.analyst import Thresholds
+    from golddesk.notify import Sink
+    from golddesk.providers import AnalystProvider
+
+    class _P(AnalystProvider):
+        name, model = "p", "p"
+        def read(self, brief, charts=()):
+            raise NotImplementedError
+
+    class _S(Sink):
+        def send(self, text):
+            return True
+
+    d = LiveDesk(_P(), Ledger(tmp_path / "c.jsonl"), _S(), shadow=True,
+                 vision=Vision.NUMERIC_ONLY, thresholds=Thresholds(),
+                 concurrency_ceiling=3)
+    assert d.max_concurrent() == 3
+
+
+def test_the_restriction_stays_registered_and_discretionary():
+    r = BY_ID["risk.one_position"]
+    assert r.kind is Kind.DISCRETIONARY
+    assert not r.exempt
+    assert r.status is Status.ENFORCING

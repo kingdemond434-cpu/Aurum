@@ -411,9 +411,26 @@ class LiveDesk:
         who wants one. If it ever binds it is logged as an anomaly, because a
         count binding before heat means something is wrong with the risk maths,
         not that the desk found too many opportunities.
+
+        SHADOW. Same deadlock as entry.fallback_min_rr, in a second place. This
+        count demotes only when review() prices its counterfactual, review()
+        needs resolved outcomes, and the count blocks the trades that would
+        produce them -- so it never demotes. Observed 2026-08-27: the desk's
+        first-ever signal fired at 11:15 and the next FOUR opportunities, three
+        of them in one bar, were refused with "a trade is already open".
+
+        In advisory mode nothing is allocated, so a count limiting concurrent
+        exposure limits no exposure -- it only limits what the operator gets to
+        SEE and what the ledger gets to measure. And removing it here is not
+        removing the limiter: portfolio heat still binds at max_open_risk_r with
+        the correlation haircut, which by this docstring's own arithmetic
+        already refuses a second same-direction thesis. What becomes possible is
+        an INDEPENDENT one -- the opposite-direction and uncorrelated setups
+        that were being discarded unmeasured. Armed, the count enforces exactly
+        as before.
         """
         from .constitution import is_enforcing
-        if is_enforcing("risk.one_position"):
+        if is_enforcing("risk.one_position") and not self.shadow:
             return 1
         if self.concurrency_ceiling is None:
             return 1 << 30            # unlimited; heat is the only real limit
