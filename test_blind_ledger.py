@@ -362,3 +362,33 @@ def test_a_short_blip_does_not_alarm(tmp_path):
     rows = [json.loads(ln) for ln in
             (tmp_path / "l.jsonl").read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len([r for r in rows if r.get("kind") == "BLIND"]) == BLIND_ALARM_AFTER - 1
+
+
+# ------------------------------------------ the budget must not misdiagnose
+
+def test_blind_bars_do_not_deflate_usage_coverage():
+    """A wrong explanation is worse than a missing one.
+
+    `coverage` answers "what fraction of decisions carry a cost stamp", and
+    below 0.9 the report NOTES that "older rows predate the stamp". A blind bar
+    has no completed call to stamp, so counting it would push coverage under the
+    bar during any outage and print that note — asserting a cause (old rows) that
+    nobody measured, when the real cause was an analyst that was down.
+    """
+    from golddesk.budget import report
+    stamp = {"provider": "p", "model": "m", "latency_ms": 1.0,
+             "usage": {"in": 100, "out": 10}}
+    rows = [{"kind": "SIGNAL", "decision": dict(stamp)},
+            {"kind": "REFUSAL_MODEL", "decision": dict(stamp)}]
+    clean = report(rows)
+    assert clean.coverage == 1.0
+    assert clean.blind == 0
+
+    outage = report(rows + [{"kind": "BLIND", "decision": {"stage": "read"}}] * 8)
+    assert outage.coverage == 1.0, (
+        f"coverage fell to {outage.coverage:.0%} because the analyst was DOWN, "
+        f"and the report would have blamed old rows for it")
+    assert outage.blind == 8
+    text = outage.render()
+    assert "BLIND BARS" in text and "8" in text
+    assert "predate the stamp" not in text
