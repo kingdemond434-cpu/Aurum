@@ -369,8 +369,20 @@ class ClaudeCodeAnalyst(AnalystProvider):
     #: feeds this, the same way an invalid --management value already is.
     EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
+    #: 240s was measured too tight on 2026-08-26: the live desk logged "claude timed out after
+    #: 240.0s" on repeated reads (22:00, 23:32), each one discarded as a refusal. A reasoning
+    #: model asked for a full structured read legitimately spends minutes, so the old bound was
+    #: cutting off sound work rather than catching a hang.
+    #:
+    #: THE CEILING IS THE READ CADENCE, NOT COMFORT. Observed live gaps between reads ran ~15
+    #: to ~75 minutes, so the shortest real gap is about 15 minutes; a timeout at or above that
+    #: would let one slow call still be running when the next bar's read begins, which is the
+    #: failure this bound exists to prevent. 600s keeps a comfortable margin under that floor
+    #: while giving 2.5x the room -- a call still running at ten minutes is genuinely wedged.
+    DEFAULT_TIMEOUT_S = 600.0
+
     def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
-                 timeout_s: float = 240.0, cwd: Optional[str] = None,
+                 timeout_s: float = DEFAULT_TIMEOUT_S, cwd: Optional[str] = None,
                  billed: Optional[bool] = None, runner: Any = None,
                  effort: Optional[str] = None):
         self.model, self.binary, self.timeout_s = model, binary, timeout_s
@@ -391,6 +403,63 @@ class ClaudeCodeAnalyst(AnalystProvider):
         if self._billed is not None:
             return self._billed
         return bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+
+    @staticmethod
+    def _repair(text: str) -> tuple[str, list[str]]:
+        """Bounded repair of the two schema violations actually observed in production.
+
+        WHY THIS IS NOT "BEING LENIENT WITH THE MODEL". Both repairs are provably incapable of
+        changing what the desk would do, because of how AnalystRead is shaped: every field
+        carrying a DECISION -- setup, direction, entry_ref, stop_ref, tp1_ref, tp2_ref,
+        confidence -- is uncapped and is never touched here. Every field that IS length-capped
+        is prose commentary. So a truncated `why` loses the tail of an explanation and cannot
+        turn a NONE into a LONG; a missing or malformed decision field still fails validation
+        exactly as before, which is the property that matters.
+
+        The two repairs:
+
+          - EXTRA FIELDS ARE DROPPED. `extra: "forbid"` exists on AnalystRead specifically to
+            keep price fields out of the model's output surface ("No price fields exist here by
+            design"), so a model inventing `entry_price` is a violation whose correct handling
+            is to discard it -- which is what the config already intends. Dropping it enforces
+            the schema rather than bypassing it.
+          - OVER-LONG PROSE IS TRUNCATED to the model's own declared cap.
+
+        Caps and the allowed key set are READ OFF AnalystRead rather than restated, so this
+        cannot drift into a second copy of the schema: change a Field(max_length=...) and this
+        follows automatically.
+
+        Returns (possibly-rewritten JSON text, human-readable list of repairs made). An empty
+        repair list means nothing here applied and the caller must surface the original error --
+        silence would turn a genuine schema failure into a shrug.
+        """
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return text, []                       # not JSON at all; not this function's problem
+        if not isinstance(data, dict):
+            return text, []
+
+        allowed = set(AnalystRead.model_fields)
+        caps: dict[str, int] = {}
+        for fname, finfo in AnalystRead.model_fields.items():
+            for meta in finfo.metadata:
+                cap = getattr(meta, "max_length", None)
+                if cap is not None:
+                    caps[fname] = cap
+
+        repairs: list[str] = []
+        for key in [k for k in data if k not in allowed]:
+            data.pop(key)
+            repairs.append(f"dropped forbidden extra field {key!r}")
+        for fname, cap in caps.items():
+            value = data.get(fname)
+            if isinstance(value, str) and len(value) > cap:
+                data[fname] = value[:cap]
+                repairs.append(f"truncated {fname} {len(value)}->{cap} chars")
+        if not repairs:
+            return text, []
+        return json.dumps(data), repairs
 
     @staticmethod
     def _unfence(text: str) -> str:
@@ -491,9 +560,28 @@ class ClaudeCodeAnalyst(AnalystProvider):
             raise AnalystError("claude returned an empty result")
         try:
             read = AnalystRead.model_validate_json(text)
-        except Exception as e:                                   # noqa: BLE001
-            raise AnalystError(f"claude returned text that is not a valid "
-                               f"AnalystRead: {e}; got {text[:300]!r}") from e
+        except Exception as strict_err:                          # noqa: BLE001
+            # A CLEAN READ STAYS CLEAN: strict validation is tried first and unchanged, so this
+            # path only runs on output that already failed. Observed live 2026-08-26: the desk
+            # logged "analyst unavailable ... N validation errors" on read after read, refused
+            # every one, and looked perfectly healthy doing it (preflight PASS, Telegram PASS,
+            # process up) because a refusal is a legitimate outcome. Discarding a sound read
+            # over an over-long `why` is a formatting failure wearing a judgement's clothes.
+            repaired, repairs = self._repair(text)
+            if not repairs:
+                raise AnalystError(f"claude returned text that is not a valid "
+                                   f"AnalystRead: {strict_err}; got {text[:300]!r}"
+                                   ) from strict_err
+            try:
+                read = AnalystRead.model_validate_json(repaired)
+            except Exception as e:                               # noqa: BLE001
+                raise AnalystError(f"claude returned text that is not a valid AnalystRead "
+                                   f"even after repair ({'; '.join(repairs)}): {e}; "
+                                   f"got {text[:300]!r}") from e
+            # LOUD ON PURPOSE. The repair is safe but it is not free: a truncated field means
+            # the model wrote more than the schema allows, and a persistent stream of these is
+            # a prompt/schema mismatch to fix at the source, not a condition to normalise.
+            log.warning("analyst read accepted after repair (%s)", "; ".join(repairs))
 
         u = env.get("usage") or {}
         fresh = int(u.get("input_tokens") or 0)

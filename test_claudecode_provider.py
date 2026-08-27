@@ -139,6 +139,65 @@ def test_a_valid_json_object_of_the_wrong_shape_is_rejected():
         p.read(brief())
 
 
+def test_over_long_prose_is_repaired_rather_than_discarding_the_read():
+    """MEASURED, not hypothetical: the live desk refused read after read on 2026-08-26 with
+    "analyst unavailable ... N validation errors for AnalystRead", while looking healthy in
+    every other respect. A sound judgement thrown away because its `why` ran past a prose cap
+    is a formatting failure wearing a judgement's clothes."""
+    over = dict(VALID_READ, why="x" * 900)          # cap is 500
+    r = ClaudeCodeAnalyst(runner=fake(json.dumps(over))).read(brief())
+    assert r.read.direction == "LONG"
+    assert len(r.read.why) == 500
+
+
+def test_a_forbidden_extra_field_is_dropped_not_fatal():
+    """`extra: "forbid"` exists to keep price fields out of the model's output surface, so
+    discarding an invented one enforces that intent rather than bypassing it."""
+    over = dict(VALID_READ, entry_price=4619.22)
+    r = ClaudeCodeAnalyst(runner=fake(json.dumps(over))).read(brief())
+    assert r.read.direction == "LONG"
+    assert not hasattr(r.read, "entry_price")
+
+
+@pytest.mark.parametrize("field,value", [
+    ("direction", "SIDEWAYS"),      # not in the Literal
+    ("confidence", 9),              # ge=1 le=5
+    ("setup", "VIBES"),             # not a Setup
+])
+def test_repair_never_rescues_a_bad_decision_field(field, value):
+    """THE SAFETY PROPERTY, PINNED. Repair only ever truncates prose or drops forbidden keys.
+    Every field that carries a DECISION is uncapped and untouched, so a malformed one must
+    still fail exactly as it did before -- otherwise the repair would be laundering junk into
+    a tradeable read."""
+    bad = dict(VALID_READ, **{field: value})
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(bad)))
+    with pytest.raises(AnalystError, match="not a valid AnalystRead"):
+        p.read(brief())
+
+
+def test_a_missing_decision_field_is_still_fatal_after_repair():
+    """Same property from the other side: repair adds nothing, so absence stays absence."""
+    missing = {k: v for k, v in VALID_READ.items() if k != "direction"}
+    missing["why"] = "y" * 900                      # force the repair path to actually run
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(missing)))
+    with pytest.raises(AnalystError, match="even after repair"):
+        p.read(brief())
+
+
+def test_a_clean_read_is_never_repaired():
+    """Strict validation runs first and is unchanged, so a conforming read is untouched."""
+    r = ClaudeCodeAnalyst(runner=fake(json.dumps(VALID_READ))).read(brief())
+    assert r.read.why == VALID_READ["why"]
+
+
+def test_the_timeout_clears_the_observed_read_cadence():
+    """240s was measured too tight live (repeated "claude timed out after 240.0s"), but the
+    bound cannot approach the ~15 minute floor between reads or a slow call would still be
+    running when the next bar's read begins."""
+    assert ClaudeCodeAnalyst().timeout_s == 600.0
+    assert ClaudeCodeAnalyst().timeout_s < 15 * 60
+
+
 def test_an_error_envelope_is_surfaced():
     p = ClaudeCodeAnalyst(runner=fake(envelope("boom", is_error=True)))
     with pytest.raises(AnalystError, match="reported failure"):
