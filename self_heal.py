@@ -24,7 +24,7 @@ import json
 import logging
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -152,22 +152,76 @@ def _sync_quant() -> bool:
         return False
 
 
+#: A fault that is still there is not news. Re-announce an UNCHANGED fault set
+#: at most this often, so a standing problem is not forgotten entirely while a
+#: 15-minute cadence does not turn the channel into noise. A CHANGED set is
+#: always announced immediately -- a new fault, or one clearing, is the event.
+RENOTIFY_AFTER = timedelta(hours=12)
+
+
+def _fault_key(findings) -> str:
+    """A stable fingerprint of WHICH checks are unhappy, not of their wording.
+
+    Deliberately the check NAMES only. Detail text carries live numbers -- "15%
+    of MFE kept across 6 winners" becomes "14% ... across 7" on the next closed
+    trade -- and fingerprinting that would make every fault look new every time
+    and defeat the whole mechanism.
+    """
+    return ",".join(sorted(f.check for f in findings if not f.ok))
+
+
+def _should_notify(key: str, now: datetime) -> bool:
+    """True when the fault SET changed, or when it has stood long enough to be
+    worth repeating. Persisted, because the task starts fresh every 15 minutes
+    and an in-memory memory would remember nothing."""
+    try:
+        d = json.loads(STATE.read_text(encoding="utf-8"))
+        last_key = d.get("last_fault_key")
+        last_at = d.get("last_notified_at")
+        last_at = datetime.fromisoformat(last_at) if last_at else None
+    except Exception:                                  # noqa: BLE001
+        return True
+    if key != last_key:
+        return True
+    if last_at is None:
+        return True
+    return (now - last_at) >= RENOTIFY_AFTER
+
+
+def _record_notify(key: str, now: datetime) -> None:
+    try:
+        d = json.loads(STATE.read_text(encoding="utf-8"))
+    except Exception:                                  # noqa: BLE001
+        d = {}
+    d["last_fault_key"] = key
+    d["last_notified_at"] = now.isoformat()
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(json.dumps(d, indent=2), encoding="utf-8")
+
+
 def _load_attempts() -> dict:
     """Attempt history OUTLIVES the process, or the cooldown is a fiction: a
     task that starts fresh every 15 minutes would have no memory of the restart
     it ordered 15 minutes ago and would loop forever."""
     try:
         raw = json.loads(STATE.read_text(encoding="utf-8"))
-        return {k: [datetime.fromisoformat(t) for t in v] for k, v in raw.items()}
+        return {k: [datetime.fromisoformat(t) for t in v]
+                for k, v in raw.items() if isinstance(v, list)}
     except Exception:                                  # noqa: BLE001
         return {}
 
 
 def _save_attempts(attempts: dict) -> None:
+    """Merge, never overwrite: the notification bookkeeping lives in this same
+    file and a blind write would silently reset the de-duplication every pass."""
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(
-        {k: [t.isoformat() for t in v] for k, v in attempts.items()},
-        indent=2), encoding="utf-8")
+    try:
+        d = json.loads(STATE.read_text(encoding="utf-8"))
+    except Exception:                                  # noqa: BLE001
+        d = {}
+    d = {k: v for k, v in d.items() if not isinstance(v, list)}
+    d.update({k: [t.isoformat() for t in v] for k, v in attempts.items()})
+    STATE.write_text(json.dumps(d, indent=2), encoding="utf-8")
 
 
 def main(argv=None) -> int:
@@ -225,15 +279,24 @@ def main(argv=None) -> int:
 
     report = render(outcomes, escalations)
     if report:
-        print(report)
-        # The operator hears about it on the channel the desk already uses. A
-        # self-healer whose only output is a log file nobody greps has moved the
-        # silence rather than removed it.
-        try:
-            from golddesk.notify import build_sink
-            build_sink(None).send("*SELF-HEAL*\n" + report)
-        except Exception as e:                         # noqa: BLE001
-            log.warning("could not notify: %s", e)
+        print(report)                                  # the log gets it EVERY run
+        # THE CHANNEL DOES NOT. A fault that is still there is not news, and at
+        # a 15-minute cadence a standing problem -- capture at 15%, an absent
+        # spread profile -- would be 96 messages a day. An alert channel that
+        # fires every quarter hour is one nobody reads, which costs more than
+        # the alert was ever worth. Announced when the fault SET changes, and
+        # otherwise at most twice a day so a standing problem is not forgotten.
+        now = datetime.now(timezone.utc)
+        key = _fault_key([f for f in findings if not f.ok])
+        if _should_notify(key, now):
+            try:
+                from golddesk.notify import build_sink
+                build_sink(None).send("*SELF-HEAL*\n" + report)
+                _record_notify(key, now)
+            except Exception as e:                     # noqa: BLE001
+                log.warning("could not notify: %s", e)
+        else:
+            log.info("fault set unchanged — logged, not re-sent")
     return 0
 
 

@@ -335,3 +335,87 @@ def test_capture_and_rate_can_never_be_auto_tuned():
     Remediator().run(rem, now=NOW)
     assert spy.calls == 0
     assert {f.check for f in esc} == {"capture", "signal rate"}
+
+
+# ---------------------- a standing fault is not news every 15 minutes
+
+def _fresh_state(tmp_path, monkeypatch):
+    import self_heal as SH
+    monkeypatch.setattr(SH, "STATE", tmp_path / "self_heal.json")
+    return SH
+
+
+def test_a_new_fault_set_is_announced(tmp_path, monkeypatch):
+    SH = _fresh_state(tmp_path, monkeypatch)
+    assert SH._should_notify("capture", NOW)
+
+
+def test_an_unchanged_fault_set_is_not_re_announced(tmp_path, monkeypatch):
+    """THE DEFECT THIS FIXES. self_heal runs every 15 minutes. A standing
+    problem — capture at 15%, an absent spread profile — would have been 96
+    Telegram messages a day, and an alert channel that fires every quarter hour
+    is one nobody reads. That costs more than the alert was ever worth."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture", NOW)
+    assert not SH._should_notify("capture", NOW + timedelta(minutes=15))
+    assert not SH._should_notify("capture", NOW + timedelta(hours=6))
+
+
+def test_a_standing_fault_is_repeated_eventually(tmp_path, monkeypatch):
+    """Silence forever is the opposite failure — a problem nobody is reminded of
+    is one that quietly becomes permanent."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture", NOW)
+    assert SH._should_notify("capture", NOW + SH.RENOTIFY_AFTER)
+
+
+def test_a_fault_APPEARING_alongside_an_old_one_is_announced(tmp_path, monkeypatch):
+    """A second fault is an event even while the first is still standing."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture", NOW)
+    assert SH._should_notify("capture,cohorts", NOW + timedelta(minutes=15))
+
+
+def test_a_fault_CLEARING_is_announced(tmp_path, monkeypatch):
+    """Recovery matters as much as failure: without it the last thing the
+    operator heard was that something was broken."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture,cohorts", NOW)
+    assert SH._should_notify("cohorts", NOW + timedelta(minutes=15))
+
+
+def test_the_fingerprint_ignores_live_numbers_in_the_detail(tmp_path, monkeypatch):
+    """Detail text carries numbers that move on every closed trade — "15% across
+    6 winners" becomes "14% across 7". Fingerprinting that would make every
+    fault look new every pass and defeat the whole mechanism."""
+    import self_heal as SH
+    a = SH._fault_key([Finding("capture", False, "15% of MFE across 6 winners")])
+    b = SH._fault_key([Finding("capture", False, "14% of MFE across 7 winners")])
+    assert a == b == "capture"
+
+
+def test_the_fingerprint_is_order_independent():
+    import self_heal as SH
+    a = SH._fault_key([Finding("capture", False, "x"), Finding("cohorts", False, "y")])
+    b = SH._fault_key([Finding("cohorts", False, "y"), Finding("capture", False, "x")])
+    assert a == b
+
+
+def test_notification_bookkeeping_does_not_erase_the_attempt_history(tmp_path, monkeypatch):
+    """Both live in one file. A blind write would silently reset the remediation
+    cooldown every pass, and the cooldown is what stops a crash loop."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture", NOW)
+    SH._save_attempts({"cohorts": [NOW]})
+    assert SH._load_attempts()["cohorts"] == [NOW]
+    assert not SH._should_notify("capture", NOW + timedelta(minutes=1))
+
+
+def test_the_log_still_gets_every_run(tmp_path):
+    """De-duplication is for the CHANNEL. The log must stay complete, or an
+    incident review has gaps exactly where the fault persisted."""
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    i = src.index("report = render(outcomes, escalations)")
+    assert src.index("print(report)", i) < src.index("_should_notify(key", i), (
+        "the report must be logged BEFORE the channel gate, or an incident "
+        "review has gaps exactly where the fault persisted")
