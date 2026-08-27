@@ -250,3 +250,43 @@ def test_the_update_task_is_removed_by_the_uninstaller():
     src = INSTALLER.read_text(encoding="utf-8")
     block = src[src.index("foreach ($t in @($TaskName"):][:400]
     assert "-Update" in block
+
+
+# ---------------- the updater must never fail without saying why
+
+def test_it_resolves_git_explicitly():
+    """A scheduled task runs with a minimal environment. git is frequently on
+    the interactive user's PATH and not on the task's, and with
+    ErrorActionPreference 'Stop' the first git call then threw before the first
+    log write — so the task exited 1 and wrote NO LOG AT ALL. Observed live: the
+    watchdog said "firing and FAILING" and logs\\update.log did not exist."""
+    src = UPDATER.read_text(encoding="utf-8")
+    assert "Get-Command git" in src
+    assert "does not inherit the" in src, "the abort must explain the cause"
+
+
+def test_nothing_can_fail_without_a_line_in_the_log():
+    """An updater that dies without a line is indistinguishable from one that
+    ran and found nothing, and the watchdog can only report 'exited 1'."""
+    src = UPDATER.read_text(encoding="utf-8")
+    assert "} catch {" in src
+    assert "UNHANDLED:" in src
+    assert "ScriptLineNumber" in src, "the catch must say WHERE"
+
+
+def test_a_no_op_run_still_leaves_a_trace():
+    """Silence on 'nothing to do' is the same silence as a crash, and telling
+    them apart is the whole point of the log."""
+    src = UPDATER.read_text(encoding="utf-8")
+    assert "update_lastcheck.txt" in src
+    i = src.index("if ($before -eq $after)")
+    assert "update_lastcheck" in src[i:i + 700]
+
+
+def test_the_heartbeat_does_not_pollute_the_change_log():
+    """48 no-ops a day would bury the runs that actually did something."""
+    src = UPDATER.read_text(encoding="utf-8")
+    i = src.index("if ($before -eq $after)")
+    block = src[i:i + 700]
+    assert "update_lastcheck.txt" in block
+    assert 'Add-Content -Path $log' not in block

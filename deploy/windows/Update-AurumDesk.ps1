@@ -77,6 +77,33 @@ function Say($m) {
     Add-Content -Path $log -Value $line -Encoding utf8
 }
 
+# RESOLVE GIT EXPLICITLY, AND SAY SO IF IT IS NOT THERE.
+#
+# A scheduled task runs with a minimal environment: git is frequently on the
+# interactive user's PATH and not on the task's. With ErrorActionPreference
+# "Stop", the first `git` call then threw before Say() had ever been reached, so
+# the task exited 1 and wrote NO LOG AT ALL. Observed on the live box: the
+# watchdog reported "firing and FAILING" and logs\update.log did not exist, which
+# is the least diagnosable failure this script could possibly produce.
+$git = (Get-Command git -ErrorAction SilentlyContinue).Source
+if (-not $git) {
+    foreach ($c in @("$env:ProgramFiles\Git\cmd\git.exe",
+                     "${env:ProgramFiles(x86)}\Git\cmd\git.exe",
+                     "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe")) {
+        if (Test-Path $c) { $git = $c; break }
+    }
+}
+if (-not $git) {
+    Say "ABORT: git is not on this task's PATH and was not found in the usual"
+    Say "       install locations. A scheduled task does not inherit the"
+    Say "       interactive PATH; pass the full path or add git to the machine"
+    Say "       PATH. Nothing was changed."
+    exit 1
+}
+Set-Alias -Name git -Value $git -Scope Script
+
+try {
+
 if (-not $Branch) { $Branch = (git rev-parse --abbrev-ref HEAD).Trim() }
 $before = (git rev-parse HEAD).Trim()
 
@@ -92,7 +119,15 @@ if ($dirty) {
 
 git fetch origin $Branch 2>&1 | Out-Null
 $after = (git rev-parse "origin/$Branch").Trim()
-if ($before -eq $after) { exit 0 }          # the common case: nothing to do
+if ($before -eq $after) {
+    # A LINE EVEN WHEN THERE IS NOTHING TO DO. Silence here is the same silence
+    # as a crash, and the whole point of the log is telling them apart. Written
+    # to a separate file so the main log stays a record of CHANGES and does not
+    # fill with 48 no-ops a day.
+    Set-Content -Path (Join-Path $logDir "update_lastcheck.txt") -Encoding utf8 `
+        -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  up to date at $($before.Substring(0,7))"
+    exit 0
+}
 
 Say "new commits on ${Branch}: $($before.Substring(0,7)) -> $($after.Substring(0,7))"
 git merge --ff-only "origin/$Branch" 2>&1 | Out-Null
@@ -142,3 +177,12 @@ schtasks /End /TN "AurumSignalDesk" 2>&1 | Out-Null
 Start-Sleep -Seconds 3
 schtasks /Run /TN "AurumSignalDesk" 2>&1 | Out-Null
 Say "updated to $($after.Substring(0,7)) and restarted"
+
+} catch {
+    # NOTHING MAY FAIL SILENTLY HERE. An updater that dies without a line is
+    # indistinguishable from one that ran and found nothing, and the watchdog
+    # can only report "exited 1" with no way to say why.
+    Say "UNHANDLED: $($_.Exception.GetType().Name): $($_.Exception.Message)"
+    Say "  at $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line.Trim())"
+    exit 1
+}
