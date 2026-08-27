@@ -145,3 +145,50 @@ def test_the_cycle_is_importable_and_runnable_headless():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# ------------------------------------- the chain only works in order
+
+#: quant's installer registers Aurum-Sync at this time. Duplicated here on
+#: purpose: the two repos deploy independently, and a silent drift between them
+#: is exactly the failure this test exists to catch.
+SYNC_MINUTES = 22 * 60 + 15
+
+
+def _cycle_minutes() -> int:
+    src = INSTALLER.read_text(encoding="utf-8")
+    i = src.index("$cyTrigger = New-ScheduledTaskTrigger -Daily -At")
+    line = src[i:src.index("\n", i)]
+    import re
+    h, m = re.search(r"AddHours\((\d+)\)\.AddMinutes\((\d+)\)", line).groups()
+    return int(h) * 60 + int(m)
+
+
+def test_the_cycle_runs_AFTER_the_quant_findings_arrive():
+    """THE ORDERING IS A DEPENDENCY, NOT A PREFERENCE.
+
+        21:45  quant writes aurum_findings.jsonl
+        22:15  Aurum-Sync carries it into inbox/quant_findings.jsonl
+        ~22:40 this cycle runs step_absorb, which READS that inbox
+
+    First shipped at 22:10 — five minutes BEFORE the sync that feeds it. Every
+    quant finding would have been absorbed a day late, and silently: step_absorb
+    reporting "0 new findings" is indistinguishable from the quant desk having
+    found nothing.
+    """
+    assert _cycle_minutes() > SYNC_MINUTES, (
+        f"the cycle runs at {_cycle_minutes() // 60:02d}:{_cycle_minutes() % 60:02d}, "
+        f"before Aurum-Sync at 22:15 — it would read yesterday's inbox forever")
+
+
+def test_it_leaves_room_for_the_syncs_retry_budget():
+    """Aurum-Sync carries RestartCount 3 at 5-minute intervals, so a first
+    attempt that fails can still land ~15 minutes late. Starting the moment the
+    sync nominally fires would race it."""
+    assert _cycle_minutes() - SYNC_MINUTES >= 15
+
+
+def test_absorb_is_on_the_list_the_scheduler_runs():
+    """The ordering is pointless if the step that reads the inbox is not run."""
+    import aurum_cycle as C
+    assert "absorb" in {n for n, _ in C.STEPS}

@@ -303,8 +303,21 @@ if (Test-Path $spreadScript) {
 # That is the difference between a desk that CAN learn and one that DOES. The
 # operator asked why it was not improving on its own; this is the answer.
 #
-# 22:10 UTC daily -- after the New York close, before the Asia open, so it reads
-# a settled day and cannot compete with the desk for the MT5 terminal.
+# 22:40 UTC daily. THE TIME IS A DEPENDENCY, NOT A PREFERENCE, and it is third
+# in a chain that only works in order:
+#
+#   21:45  quant's daily_cycle.py step 4 writes desks\mt5\reports\aurum_findings.jsonl
+#   22:15  Aurum-Sync (registered by quant's installer) carries it into inbox\quant_findings.jsonl
+#   22:40  THIS task runs step_absorb, which reads that inbox
+#
+# This was first set to 22:10 -- FIVE MINUTES BEFORE the sync that feeds it. The
+# cycle would have read a stale inbox every night and absorbed every quant
+# finding exactly one day late, silently, because "0 new findings" reads
+# identically to the quant desk having learned nothing. 22:40 leaves room for
+# the sync's own retry budget (RestartCount 3 at 5-minute intervals) to finish.
+#
+# Also after the New York close and before the Asia open, so it reads a settled
+# day and never competes with the desk for the MT5 terminal.
 $cycleScript = Join-Path $DeskRoot "aurum_cycle.py"
 if (Test-Path $cycleScript) {
     $CycleTaskName = "$TaskName-Cycle"
@@ -314,7 +327,7 @@ if (Test-Path $cycleScript) {
     $cycleCmd = "/d /s /c `"`"$cpy`" `"$cycleScript`" >> `"$cycleLog`" 2>&1`""
     $cyAction = New-ScheduledTaskAction -Execute "cmd.exe" -Argument $cycleCmd `
                                         -WorkingDirectory $DeskRoot
-    $cyTrigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours(22).AddMinutes(10))
+    $cyTrigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours(22).AddMinutes(40))
     $cyPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
                                               -LogonType Interactive -RunLevel Limited
     # StartWhenAvailable matters here specifically: a daily task that fires while
@@ -353,7 +366,7 @@ if ($spTask) {
 }
 Write-Host "REGISTERED: $TaskName-Cycle"
 Write-Host "  runs      : $DeskRoot\aurum_cycle.py"
-Write-Host "  trigger   : daily 22:10 (after NY close, before Asia open)"
+Write-Host "  trigger   : daily 22:40 (AFTER Aurum-Sync 22:15 delivers quant findings)"
 Write-Host "  purpose   : the LEARNING loop -- decay, missed-money, management"
 Write-Host "              counterfactual, stop autopsy, growth re-solve. Nothing"
 Write-Host "              on Windows ever ran it: the only launcher in the repo"
