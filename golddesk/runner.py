@@ -34,6 +34,7 @@ from .analyst import (AnalystRead, CompiledSignal, Context, Level, LevelKind,
 from .costs import CostModel
 from .features import (Bar, StructureState, atr, classify, session_of, swings,
                        visible_swings)
+from .candle_character import block as candle_character_block
 from .day_state import read as day_state_read
 from .gold_trend import read as gold_trend_read
 from .macro_context import MacroContext
@@ -181,13 +182,25 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
     # it only ever reads calendar days strictly before the last bar's date.
     dstate = day_state_read(bars[:i + 1])
 
+    # THE HALF OF A CHART THAT IS NOT A LEVEL, AS NUMBERS. ANALYST_SYSTEM asks the model to read
+    # "compression and expansion, wick character, whether bodies are closing at the extremes or
+    # the middle, whether a move looks impulsive or grinding" off a chart image -- and this desk
+    # runs --numeric-only, because the Claude Code CLI accepts no image input at all. So the
+    # analyst was being asked for a reading it had no way to take. These ratios carry that same
+    # information at zero marginal cost, on the subscription, and with no rendering through which
+    # annotations could write the answer (candle_character.py records the desk's own measurement
+    # of exactly that failure).
+    #
+    # Same causal contract as `trend` and `dstate` above: bars[:i + 1], never a peek forward.
+    blocks = (candle_character_block(bars[:i + 1]),)
+
     return MarketBrief(
         symbol=symbol, as_of_utc=bars[i].ts, session=session_of(bars[i].ts),
         bid=round(bid, 2), ask=round(ask, 2), spread=round(ask - bid, 2),
         tick_age_s=tick_age_s, atr=round(st.atr, 2), context=ctx, levels=levels,
         trigger_price=None if st.trigger_price is None else round(st.trigger_price, 2),
         trigger_utc=bars[i].ts, timeline=tuple(timeline), trend=trend,
-        day_state=dstate, macro=macro)
+        day_state=dstate, macro=macro, blocks=blocks)
 
 
 # --------------------------------------------------------------------------
