@@ -621,8 +621,7 @@ class LiveDesk:
         try:
             imgs = self._render_charts(bars, i)
         except AnalystError as e:
-            self.stats.analyst_errors += 1
-            log.warning("charts unavailable at %s: %s", ts, e)
+            self._record_blind(bars, i, brief, ts, "charts", e)
             return
 
         if self.universe_mode:
@@ -632,8 +631,7 @@ class LiveDesk:
             pr = self.provider.read(brief, imgs)
             self.stats.reads += 1
         except AnalystError as e:
-            self.stats.analyst_errors += 1
-            log.warning("analyst unavailable at %s: %s", ts, e)
+            self._record_blind(bars, i, brief, ts, "read", e)
             return
 
         if pr.read.setup is Setup.NO_SETUP:
@@ -773,8 +771,7 @@ class LiveDesk:
             stamp, uni = self.provider.survey(brief, imgs)
             self.stats.reads += 1
         except AnalystError as e:
-            self.stats.analyst_errors += 1
-            log.warning("analyst unavailable at %s: %s", ts, e)
+            self._record_blind(bars, i, brief, ts, "survey", e)
             return
 
         cands = compile_universe(brief, uni, self.thresholds, self.cost_model,
@@ -1360,6 +1357,36 @@ class LiveDesk:
         if brief.day_state is not None:
             out["prior_ny_session_state"] = brief.day_state.value
         return out
+
+    def _record_blind(self, bars, i, brief, ts, stage: str, err: Exception) -> None:
+        """Journal a bar the analyst never answered on.
+
+        Every one of these call sites used to `log.warning(...)` and `return`,
+        which left NO ROW. The consequence is not a missing log line — it is that
+        `state/ledger.jsonl`, the single artifact every downstream measurement
+        reads, could not tell a session the desk spent DECLINING from a session
+        it spent BLIND. Three ledger rows over a live window reads as a
+        disciplined desk seeing nothing worth taking; it was in fact an analyst
+        that timed out. Those are opposite facts and they had the same file.
+
+        Filed as BLIND, never REFUSAL_* — see DecisionKind.BLIND for why the name
+        is load-bearing. Direction is "NONE" because nothing formed a view; the
+        forward path is still resolved, so an outage window can be priced later
+        without pretending the desk chose to sit it out.
+        """
+        self.stats.analyst_errors += 1
+        log.warning("analyst unavailable at %s (%s): %s", ts, stage, err)
+        try:
+            self._record(bars, i, brief, DecisionKind.BLIND, "NONE",
+                         {"stage": stage, "error_type": type(err).__name__,
+                          "error": str(err)[:500],
+                          "vision": self.vision.value},
+                         f"BLIND: analyst unavailable at {stage} — {type(err).__name__}",
+                         "NONE", brief.atr)
+        except Exception as e:                        # noqa: BLE001
+            # The journal must never be the reason a bar takes the desk down.
+            # An unrecorded blind bar is bad; a crashed loop is worse.
+            log.warning("blind row not journalled at %s: %s", ts, e)
 
     def _record(self, bars, i, brief, kind, by, decision, reason, direction,
                 risk_price, suffix: str = ""):

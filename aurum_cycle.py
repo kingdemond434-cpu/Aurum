@@ -111,15 +111,35 @@ def step_evidence(ctx: dict) -> str:
     ctx["rows"] = rows
     rs = _resolved_r(rows)
     ctx["r_multiples"] = rs
-    refusals = [r for r in rows if str(r.get("kind", "")).upper()
-                in ("NO_SETUP", "REFUSED", "REFUSAL", "VETO", "BLOCKED")]
+    # MATCH THE KINDS THE LEDGER ACTUALLY WRITES. This was an exact-membership
+    # test against ("NO_SETUP", "REFUSED", "REFUSAL", "VETO", "BLOCKED") — five
+    # strings, NOT ONE of which DecisionKind emits. `golddesk/ledger.py` writes
+    # REFUSAL_MODEL / REFUSAL_COMPILER / REFUSAL_ROUTER, so this matched zero
+    # rows on a ledger full of refusals and the cycle reported "0 refusals
+    # recorded" — absence read as a clean answer, on the exact quantity the
+    # desk exists to measure. Verified against the live ledger: 0 of 2
+    # REFUSAL_MODEL rows matched before this change. `missed_money.py` had the
+    # prefix test right all along; the two now agree, and
+    # test_aurum_cycle.py pins them to each other.
+    refusals = [r for r in rows if str(r.get("kind", "")).upper().startswith("REFUSAL")]
     ctx["refusals"] = refusals
+    # BLIND is counted and reported SEPARATELY and never folded into refusals.
+    # A bar the analyst never answered is not a decision to stand aside, and
+    # summing them would let an outage read as discipline.
+    blind = [r for r in rows if str(r.get("kind", "")).upper() == "BLIND"]
+    ctx["blind"] = blind
     if not rows:
         return ("LEDGER EMPTY. No forward evidence exists yet, so every number "
                 "below is a null and not a result. This is the honest state of a "
                 "desk that has not yet run, not a finding about gold.")
-    return (f"{len(rows)} ledger rows | {len(rs)} resolved | "
+    line = (f"{len(rows)} ledger rows | {len(rs)} resolved | "
             f"{len(refusals)} refusals recorded")
+    if blind:
+        line += (f"\n{len(blind)} BLIND bars — the analyst never answered on these. "
+                 "They are NOT refusals: nothing decided anything, so no gate "
+                 "earns credit for them and the evidence they would have "
+                 "produced is simply missing.")
+    return line
 
 
 def step_growth(ctx: dict) -> str:

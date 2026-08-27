@@ -34,7 +34,13 @@ def seed_ledger(desk, n=60):
         rows.append({"ts": f"2026-06-{(i % 28) + 1:02d}T10:00:00+00:00",
                      "kind": "SIGNAL", "mechanism": ["a", "b", "c"][i % 3],
                      "realised_r": 1.8 if i % 3 else -1.0})
-    rows.append({"ts": "2026-06-02T11:00:00+00:00", "kind": "NO_SETUP",
+    # REFUSAL_MODEL, not "NO_SETUP". This fixture asserted a kind string that
+    # DecisionKind has never emitted, which is exactly how step_evidence shipped
+    # an allowlist matching zero real rows: the test and the code were wrong
+    # together, in the same invented vocabulary, so they agreed. The fixture now
+    # speaks only kinds the ledger actually writes — pinned by
+    # test_the_refusal_filter_matches_the_kinds_the_ledger_writes.
+    rows.append({"ts": "2026-06-02T11:00:00+00:00", "kind": "REFUSAL_MODEL",
                  "reason": "no alignment", "forward_r": 1.2})
     (desk / "state" / "ledger.jsonl").write_text(
         "\n".join(json.dumps(r) for r in rows) + "\n")
@@ -446,3 +452,64 @@ def test_the_new_measurement_steps_refuse_honestly_with_no_ledger():
     for name in ("missed_money", "mgmt_counterfactual"):
         _, text = aurum_cycle.run_step(name, steps[name], {})
         assert "UNMEASURED" in text, f"{name} reported absence as a result"
+
+
+# ------------------------------------------- the refusal/blind vocabulary
+
+def test_the_refusal_filter_matches_the_kinds_the_ledger_writes(desk):
+    """The filter and the writer must share ONE vocabulary.
+
+    step_evidence tested `kind in ("NO_SETUP","REFUSED","REFUSAL","VETO","BLOCKED")`.
+    DecisionKind emits none of those, so a ledger full of refusals reported
+    "0 refusals recorded" — absence read as a clean answer on the exact
+    quantity the desk exists to measure (0 of 2 real rows matched, checked
+    against the live ledger). This walks the enum itself rather than a copied
+    list, so adding a REFUSAL_* kind cannot silently fall outside the filter.
+    """
+    from golddesk.ledger import DecisionKind
+    refusal_kinds = [k.value for k in DecisionKind if k.value.startswith("REFUSAL")]
+    assert refusal_kinds, "no REFUSAL_* kinds — the enum was renamed under this test"
+    rows = [{"ts": "2026-06-01T10:00:00+00:00", "kind": k, "reason": "x"}
+            for k in refusal_kinds]
+    (desk / "state" / "ledger.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n")
+    ctx = {}
+    out = C.step_evidence(ctx)
+    assert len(ctx["refusals"]) == len(refusal_kinds), ctx["refusals"]
+    assert f"{len(refusal_kinds)} refusals recorded" in out, out
+
+
+def test_a_blind_bar_is_reported_and_is_never_counted_as_a_refusal(desk):
+    """An outage must not be able to read as discipline.
+
+    A bar the analyst never answered on is journalled BLIND. If it were folded
+    into the refusal count, a desk whose provider was timing out would look
+    like a desk patiently standing aside — and `missed_money` would bill a gate
+    that never ran for the forward move.
+    """
+    rows = [{"ts": "2026-06-01T10:00:00+00:00", "kind": "REFUSAL_MODEL", "reason": "x"},
+            {"ts": "2026-06-01T10:15:00+00:00", "kind": "BLIND",
+             "reason": "BLIND: analyst unavailable at read — TimeoutExpired"}]
+    (desk / "state" / "ledger.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n")
+    ctx = {}
+    out = C.step_evidence(ctx)
+    assert len(ctx["refusals"]) == 1, "a blind bar was counted as a refusal"
+    assert len(ctx["blind"]) == 1
+    assert "1 refusals recorded" in out
+    assert "1 BLIND bars" in out and "NOT refusals" in out
+
+
+def test_missed_money_does_not_attribute_forgone_value_to_a_blind_bar(desk):
+    """The reason BLIND is not named REFUSAL_*.
+
+    price_restrictions selects with `.startswith("REFUSAL")` and charges the
+    forward move to whatever declined. Nothing declined on a blind bar, so
+    there is no restriction to charge.
+    """
+    import missed_money as M
+    rows = [{"ts": "2026-06-01T10:15:00+00:00", "kind": "BLIND",
+             "reason": "BLIND: analyst unavailable at read — TimeoutExpired",
+             "context": {"spread": 0.2}, "outcome": {"mfe_r": 3.0}}]
+    assert M.price_restrictions(rows) == []
+    assert M.coverage(rows) == ["no refusals to assess"]
