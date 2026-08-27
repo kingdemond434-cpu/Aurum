@@ -235,7 +235,16 @@ class AnalystRead(BaseModel):
     confidence: int = Field(ge=1, le=5)
     read: str = Field(max_length=700, description="What price is doing, in plain words.")
     why: str = Field(max_length=500, description="The mechanism. Not the pattern name.")
-    why_not: str = Field(max_length=500, description="The strongest case against. Never empty.")
+    # 900, NOT 500, AND THE NUMBER IS MEASURED. Live reads on 2026-08-27 came in at 823 and 685
+    # characters here and were truncated on every single one -- the desk was discarding the tail
+    # of the strongest counter-argument as routine. This field asks for more than the others by
+    # construction (ANALYST_SYSTEM requires it on EVERY read, including a refusal, and requires
+    # it to say what would make the trade worth taking rather than merely why it looks unclean),
+    # so a cap equal to `why` was never the right shape. Raised to clear the observed range with
+    # margin instead of trimming good reasoning in perpetuity. The provider's repair still backs
+    # this up for anything beyond, but a repair firing on every read is a mismatch to fix at the
+    # source, not a mechanism to lean on.
+    why_not: str = Field(max_length=900, description="The strongest case against. Never empty.")
     invalidation: str = Field(max_length=300, description="What would prove this read wrong.")
 
 

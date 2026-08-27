@@ -509,3 +509,22 @@ def test_the_whole_retry_budget_fits_inside_one_m15_bar():
     assert p.timeout_s + p.FALLBACK_TIMEOUT_S <= 900.0
     assert p.FALLBACK_EFFORT in ClaudeCodeAnalyst.EFFORTS
     assert p.FALLBACK_TIMEOUT_S < p.timeout_s
+
+
+def test_the_why_not_cap_clears_what_the_model_actually_writes():
+    """MEASURED ON THE LIVE DESK, 2026-08-27: why_not arrived at 823 and 685 chars and was
+    truncated both times, so the desk was binning the tail of its own strongest counter-argument
+    as a matter of routine. ANALYST_SYSTEM demands more of this field than of the others -- it is
+    mandatory on every read including refusals, and must say what would make the trade worth
+    taking -- so it needs more room than `why`, not the same. Pinned against the observed
+    maximum so a future tightening has to argue with the measurement."""
+    from golddesk.analyst import AnalystRead
+
+    cap = next(m.max_length for m in AnalystRead.model_fields["why_not"].metadata
+               if getattr(m, "max_length", None) is not None)
+    assert cap >= 823, "the largest why_not actually observed live must fit without repair"
+
+    # And it must genuinely validate, not merely declare a bigger number.
+    ok = dict(VALID_READ, why_not="w" * 823)
+    r = ClaudeCodeAnalyst(runner=fake(json.dumps(ok))).read(brief())
+    assert len(r.read.why_not) == 823
