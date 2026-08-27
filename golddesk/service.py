@@ -812,14 +812,52 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     # once at boot from the ledger; None until there is enough of it, which the
     # decomposition reports as UNKNOWN rather than as "familiar".
     history = None
+    cohorts = None
     try:
         from .regime import load_history
         rows = Ledger(cfg.ledger_path).read_all()
         history = load_history(rows) or None
         log.info("regime history: %d resolved trades to compare against",
                  len(history or []))
+
+        # MEASURED COHORTS, FROM THE DESK'S OWN RESOLVED TRADES.
+        #
+        # THIS IS WHAT MADE THE DESK UNABLE TO LEARN. `build_cohorts` existed,
+        # was correct, and was called by adapt.py and acceptance.py -- never by
+        # the thing that builds the LIVE desk. So `LiveDesk.cohorts` was None
+        # forever, and every consumer silently degraded to its no-history path:
+        #
+        #   ev_gate      took the COLD_START_PRIOR branch on EVERY decision, no
+        #                matter how many trades had resolved -- so a mechanism
+        #                with eighty wins was priced exactly like one never
+        #                traded
+        #   _size        adaptive sizing saw cohort_n=0 and could not size to
+        #                measured edge
+        #   _edge_r      no measured edge, so execution advice stayed silent
+        #   evidence_tier could never reach T1 MEASURED, by construction
+        #
+        # Every part worked. Nothing joined them, so the desk re-derived
+        # ignorance at every boot. The same `rows` was already being read one
+        # line above for regime history and then thrown away.
+        #
+        # Refreshed at BOOT rather than continuously: outcomes resolve over
+        # hours, the desk restarts on every logon, watchdog relaunch and deploy,
+        # and a cohort that moves mid-session would make two decisions in the
+        # same hour incomparable. Boot is frequent enough and is a clean seam.
+        from .opportunity import build_cohorts
+        cohorts = build_cohorts(rows) or None
+        if cohorts:
+            top = sorted(cohorts.values(), key=lambda c: -c.n)[:3]
+            log.info("cohorts: %d mechanism(s) with resolved history — %s",
+                     len(cohorts),
+                     ", ".join(f"{c.key} n={c.n} hit {c.hit_rate_shrunk:.0%}"
+                               for c in top))
+        else:
+            log.info("cohorts: NONE resolved yet — every mechanism prices off "
+                     "the cold-start prior until trades resolve")
     except Exception as e:
-        log.info("no regime history yet (%s) — novelty will read UNKNOWN", e)
+        log.info("no regime history or cohorts yet (%s) — novelty will read "
+                 "UNKNOWN and every mechanism stays cold-start", e)
 
     # MACRO. Built here rather than inside LiveDesk so the desk keeps taking a
     # plain callable and stays testable without a network. None means no feed,
@@ -850,6 +888,7 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                     shadow_management=shadow_management,
                     shadow_contextual=shadow_contextual,
                     universe_mode=universe_mode,
+                    cohorts=cohorts,
                     calendar=calendar, regime_history=history,
                     macro_provider=macro_fn,
                     wake_on_bar_close=wake_on_bar_close)

@@ -122,7 +122,8 @@ if (-not $DeskRoot) {
 $WatchdogTaskName = "$TaskName-Watchdog"
 
 if ($Remove) {
-    foreach ($t in @($TaskName, $WatchdogTaskName)) {
+    foreach ($t in @($TaskName, $WatchdogTaskName, "$TaskName-Cycle",
+                     "$TaskName-VantageSpread")) {
         if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
             Unregister-ScheduledTask -TaskName $t -Confirm:$false
             Write-Host "removed scheduled task '$t'"
@@ -287,7 +288,51 @@ if (Test-Path $spreadScript) {
     Write-Host "  [SKIP] $TaskName-VantageSpread : sample_vantage_spread.py not found"
 }
 
+# ---------------------------------------------------------------------------
+# THE LEARNING CYCLE. Everything that turns yesterday's results into tomorrow's
+# behaviour lives in aurum_cycle.py: decay detection over every mechanism,
+# missed-money pricing of what each restriction refused, the management
+# counterfactual, the stop autopsy, the growth re-solve.
+#
+# NOTHING ON THIS BOX EVER RAN IT. The only launcher in the repo was
+# deploy/aurum-cycle.service -- a systemd unit for /opt/aurum, on Linux. On a
+# Windows desk that file is inert, so every self-correction step was written,
+# tested, correct and executed by nobody (III.16: a capability is done when
+# something RUNS it on a schedule and the run leaves an artifact).
+#
+# That is the difference between a desk that CAN learn and one that DOES. The
+# operator asked why it was not improving on its own; this is the answer.
+#
+# 22:10 UTC daily -- after the New York close, before the Asia open, so it reads
+# a settled day and cannot compete with the desk for the MT5 terminal.
+$cycleScript = Join-Path $DeskRoot "aurum_cycle.py"
+if (Test-Path $cycleScript) {
+    $CycleTaskName = "$TaskName-Cycle"
+    $cpy = Join-Path $DeskRoot ".venv\Scripts\python.exe"
+    if (-not (Test-Path $cpy)) { $cpy = "py" }
+    $cycleLog = Join-Path $DeskRoot "logs\cycle.log"
+    $cycleCmd = "/d /s /c `"`"$cpy`" `"$cycleScript`" >> `"$cycleLog`" 2>&1`""
+    $cyAction = New-ScheduledTaskAction -Execute "cmd.exe" -Argument $cycleCmd `
+                                        -WorkingDirectory $DeskRoot
+    $cyTrigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours(22).AddMinutes(10))
+    $cyPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+                                              -LogonType Interactive -RunLevel Limited
+    # StartWhenAvailable matters here specifically: a daily task that fires while
+    # the box is off is otherwise SILENTLY SKIPPED, and a learning cycle that
+    # misses days without saying so is the same defect one level up.
+    $cySettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 45) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $CycleTaskName -Action $cyAction -Trigger $cyTrigger `
+                           -Principal $cyPrincipal -Settings $cySettings -Force | Out-Null
+    $cyTask = Get-ScheduledTask -TaskName $CycleTaskName -ErrorAction SilentlyContinue
+    if (-not $cyTask) { throw "task '$CycleTaskName' did not register" }
+} else {
+    Write-Host "  [SKIP] $TaskName-Cycle : aurum_cycle.py not found"
+}
+
 Write-Host ""
+
 Write-Host "REGISTERED: $TaskName"
 Write-Host "  runs      : $supervisor"
 Write-Host "  desk root : $DeskRoot"
@@ -306,6 +351,15 @@ if ($spTask) {
     Write-Host "  state     : $($spTask.State)"
     Write-Host ""
 }
+Write-Host "REGISTERED: $TaskName-Cycle"
+Write-Host "  runs      : $DeskRoot\aurum_cycle.py"
+Write-Host "  trigger   : daily 22:10 (after NY close, before Asia open)"
+Write-Host "  purpose   : the LEARNING loop -- decay, missed-money, management"
+Write-Host "              counterfactual, stop autopsy, growth re-solve. Nothing"
+Write-Host "              on Windows ever ran it: the only launcher in the repo"
+Write-Host "              was a Linux systemd unit, so every self-correction"
+Write-Host "              step was correct and executed by nobody."
+Write-Host ""
 Write-Host "REGISTERED: $WatchdogTaskName"
 Write-Host "  runs      : $watchdogScript"
 Write-Host "  trigger   : every 5 minutes, indefinitely"
