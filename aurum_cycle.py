@@ -400,6 +400,29 @@ def step_decay(ctx: dict) -> str:
         "is provable it has been paid for.")
 
 
+def step_flows(ctx: dict) -> str:
+    """Refresh who is holding the metal: ETF tonnage and speculative positioning.
+
+    Collected on the CYCLE, not on the decision path -- an analyst read must never wait on, or
+    fail because of, spdrgoldshares.com. The brief reads the cache this leaves behind, and an
+    absent or stale cache renders UNMEASURED inside the block rather than as a zero.
+
+    Both series fail independently and fall back independently: GLD publishes daily, COT weekly
+    with a publication lag, so one being down must not blank the other.
+    """
+    from golddesk.flows import collect
+    from golddesk.runner import FLOWS_CACHE
+
+    st = collect(FLOWS_CACHE)
+    out = st.to_prompt()
+    if st.errors:
+        out += ("\n  FETCH ERRORS: "
+                + "; ".join(f"{k}: {v}" for k, v in sorted(st.errors.items()))
+                + "\n  Cached values were used where available, WITH their age -- a fetch "
+                  "failure must not silently become a fresh-looking number.")
+    return out
+
+
 def step_missed_money(ctx: dict) -> str:
     """What the refusals actually cost -- counting only money that was GETTABLE.
 
@@ -540,6 +563,9 @@ def step_intake(ctx: dict) -> str:
 
 STEPS = (
     ("evidence", step_evidence),
+    # Early: the brief reads the cache this refreshes, so a stale flows file should be
+    # renewed before anything downstream reasons about the day.
+    ("flows", step_flows),
     ("shadow", step_shadow),
     ("intake", step_intake),
     ("channel", step_channel),

@@ -35,6 +35,7 @@ from .costs import CostModel
 from .features import (Bar, StructureState, atr, classify, session_of, swings,
                        visible_swings)
 from .candle_character import block as candle_character_block
+from .flows import load as flows_load
 from .day_state import read as day_state_read
 from .gold_trend import read as gold_trend_read
 from .macro_context import MacroContext
@@ -44,6 +45,10 @@ from .notify import Sink, build_sink
 from .watcher import Watcher
 
 log = logging.getLogger(__name__)
+
+#: Where the flows collector leaves its cache. Read on the decision path, never fetched there:
+#: a decision must not wait on -- or fail because of -- a third-party website.
+FLOWS_CACHE = Path(__file__).resolve().parent.parent / "state" / "flows.json"
 
 
 # --------------------------------------------------------------------------
@@ -192,7 +197,11 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
     # of exactly that failure).
     #
     # Same causal contract as `trend` and `dstate` above: bars[:i + 1], never a peek forward.
-    blocks = (candle_character_block(bars[:i + 1]),)
+    # FLOWS: who is actually holding the metal. Read from the cache the collector maintains --
+    # never fetched on the decision path, because a decision must not wait on, or fail with, a
+    # third-party website. An absent or stale cache renders UNMEASURED inside the block itself.
+    blocks = (candle_character_block(bars[:i + 1]),
+              flows_load(FLOWS_CACHE).to_prompt())
 
     return MarketBrief(
         symbol=symbol, as_of_utc=bars[i].ts, session=session_of(bars[i].ts),
