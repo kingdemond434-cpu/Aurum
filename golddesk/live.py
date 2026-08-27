@@ -96,6 +96,14 @@ HTF = "H4"
 SLOT_MGMT = "management_chooser"
 SLOT_REENTRY = "reentry_policy"
 
+#: Consecutive unanswered wakes before the desk says out loud that it is blind.
+#: THREE, not one: a single timeout is ordinary and alerting on it trains the
+#: operator to ignore the channel. Three consecutive on M15 is ~45 minutes of a
+#: desk that cannot see, which is no longer a blip. Not higher, because the
+#: whole point is to catch an outage in the hour it starts rather than at the
+#: end-of-day cycle.
+BLIND_ALARM_AFTER = 3
+
 
 class Vision(str, Enum):
     """What the analyst is actually shown. Never inferred, always declared.
@@ -211,6 +219,13 @@ class LiveStats:
     exits_managed: int = 0
     hypothesis_vetoes: int = 0
     states_blocked_position_open: int = 0
+    #: Consecutive wakes on which the analyst did not answer; reset by any
+    #: successful read. This is the number that separates "gold is quiet" from
+    #: "the desk is blind", and nothing tracked it. `analyst_errors` counted the
+    #: total and was READ BY NOBODY (III.16 — a counter one caller increments
+    #: and none reports is not measurement, it is bookkeeping).
+    consecutive_blind: int = 0
+    longest_blind_streak: int = 0
 
 
 class LiveDesk:
@@ -630,6 +645,7 @@ class LiveDesk:
         try:
             pr = self.provider.read(brief, imgs)
             self.stats.reads += 1
+            self._analyst_answered()
         except AnalystError as e:
             self._record_blind(bars, i, brief, ts, "read", e)
             return
@@ -770,6 +786,7 @@ class LiveDesk:
         try:
             stamp, uni = self.provider.survey(brief, imgs)
             self.stats.reads += 1
+            self._analyst_answered()
         except AnalystError as e:
             self._record_blind(bars, i, brief, ts, "survey", e)
             return
@@ -1375,18 +1392,43 @@ class LiveDesk:
         without pretending the desk chose to sit it out.
         """
         self.stats.analyst_errors += 1
+        self.stats.consecutive_blind += 1
+        self.stats.longest_blind_streak = max(self.stats.longest_blind_streak,
+                                              self.stats.consecutive_blind)
         log.warning("analyst unavailable at %s (%s): %s", ts, stage, err)
         try:
             self._record(bars, i, brief, DecisionKind.BLIND, "NONE",
                          {"stage": stage, "error_type": type(err).__name__,
                           "error": str(err)[:500],
-                          "vision": self.vision.value},
+                          "vision": self.vision.value,
+                          "consecutive_blind": self.stats.consecutive_blind},
                          f"BLIND: analyst unavailable at {stage} — {type(err).__name__}",
                          "NONE", brief.atr)
         except Exception as e:                        # noqa: BLE001
             # The journal must never be the reason a bar takes the desk down.
             # An unrecorded blind bar is bad; a crashed loop is worse.
             log.warning("blind row not journalled at %s: %s", ts, e)
+        # THE ALARM, sent ONCE per outage rather than per bar. A blind desk and
+        # a quiet market look identical from the outside — silence — which is
+        # how a provider that had been timing out for hours read as discipline.
+        # It is not a per-bar alert: on M15 that would be four messages an hour
+        # for as long as the outage lasts, and an alert channel that cries every
+        # bar is one nobody reads. The recovery notice matters as much as the
+        # alarm: without it the last thing the operator ever heard was that the
+        # desk was down.
+        if self.stats.consecutive_blind == BLIND_ALARM_AFTER:
+            self._notify(
+                f"*ANALYST DOWN* — {BLIND_ALARM_AFTER} consecutive wakes with no "
+                f"read ({stage}: {type(err).__name__}). The desk is BLIND, not "
+                f"quiet: it is not declining trades, it is not seeing them. "
+                f"Every bar from here is journalled BLIND until it answers.")
+
+    def _analyst_answered(self) -> None:
+        """Called on every successful read. Closes an open outage."""
+        if self.stats.consecutive_blind >= BLIND_ALARM_AFTER:
+            self._notify(f"*ANALYST BACK* — reading again after "
+                         f"{self.stats.consecutive_blind} blind wakes.")
+        self.stats.consecutive_blind = 0
 
     def _record(self, bars, i, brief, kind, by, decision, reason, direction,
                 risk_price, suffix: str = ""):

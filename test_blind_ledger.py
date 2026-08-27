@@ -263,3 +263,102 @@ def test_a_broken_journal_does_not_take_the_desk_down(tmp_path, monkeypatch):
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# ------------------------------------------------- the operator is told
+
+class CountingSink(Sink):
+    def __init__(self):
+        self.sent: list[str] = []
+
+    def send(self, text):
+        self.sent.append(text)
+        return True
+
+
+class FlakyProvider(AnalystProvider):
+    """Fails for the first `fail_first` calls, then answers NO_SETUP forever."""
+    name, model = "flaky", "flaky-v1"
+
+    def __init__(self, fail_first: int):
+        self.fail_first = fail_first
+        self.calls = 0
+
+    def read(self, brief, charts=()):
+        from golddesk.analyst import AnalystRead, Setup
+        from golddesk.providers import ProviderRead
+        self.calls += 1
+        if self.calls <= self.fail_first:
+            raise AnalystError("simulated timeout")
+        return ProviderRead(
+            read=AnalystRead(setup=Setup.NO_SETUP, direction="LONG",
+                             mechanism_name="none", read="quiet", why="quiet",
+                             why_not="quiet", invalidation="none", confidence=1,
+                             entry_ref="none", stop_ref="none",
+                             tp1_ref="none", tp2_ref="none"),
+            model=self.model, provider=self.name, latency_ms=1.0)
+
+
+def _drive_with(provider, sink, tmp_path, limit=None):
+    bars = _bars()
+    atrs, sw = atr(bars), swings(bars)
+    desk = LiveDesk(provider, Ledger(tmp_path / "l.jsonl"), sink,
+                    shadow=True, vision=Vision.NUMERIC_ONLY,
+                    thresholds=Thresholds(fallback_min_rr=1.0),
+                    measure_position_constraint=False)
+    tl: list[str] = []
+    stop = limit if limit is not None else len(bars) - 61
+    for i in range(60, stop):
+        if classify(bars, i, sw, atrs) is None:
+            continue
+        desk.on_bar(bars, i, sw, atrs, None,
+                    (bars[i].close - 0.05, bars[i].close + 0.05, 1.0), tl)
+    return desk
+
+
+def test_a_blind_desk_says_so_out_loud(tmp_path):
+    """Silence from a blind desk and silence from a quiet market are the same
+    silence. Before this the operator's only clue was an absence of signals,
+    which is exactly what a well-behaved desk in a dull market also produces."""
+    sink = CountingSink()
+    _drive_with(BlindProvider(), sink, tmp_path)
+    downs = [m for m in sink.sent if "ANALYST DOWN" in m]
+    assert downs, "the desk went blind for the whole run and never said so"
+    assert "BLIND, not" in downs[0] and "quiet" in downs[0]
+
+
+def test_the_alarm_fires_once_per_outage_not_once_per_bar(tmp_path):
+    """An alert channel that cries every bar is one nobody reads. On M15 a
+    per-bar alarm is four messages an hour for the length of the outage."""
+    sink = CountingSink()
+    desk = _drive_with(BlindProvider(), sink, tmp_path)
+    assert desk.stats.analyst_errors > 10, "too short an outage to prove this"
+    assert len([m for m in sink.sent if "ANALYST DOWN" in m]) == 1
+
+
+def test_recovery_is_announced_and_the_streak_resets(tmp_path):
+    """Without this the last thing the operator ever heard was that the desk was
+    down — so a desk that recovered five minutes later still reads as dead."""
+    from golddesk.live import BLIND_ALARM_AFTER
+    sink = CountingSink()
+    desk = _drive_with(FlakyProvider(fail_first=BLIND_ALARM_AFTER + 2), sink, tmp_path)
+    assert len([m for m in sink.sent if "ANALYST DOWN" in m]) == 1
+    backs = [m for m in sink.sent if "ANALYST BACK" in m]
+    assert backs, "the analyst recovered and nobody was told"
+    assert f"{BLIND_ALARM_AFTER + 2} blind wakes" in backs[0]
+    assert desk.stats.consecutive_blind == 0
+
+
+def test_a_short_blip_does_not_alarm(tmp_path):
+    """One timeout is ordinary. Alerting on it trains the operator to ignore the
+    channel, which costs more than the blip."""
+    from golddesk.live import BLIND_ALARM_AFTER
+    sink = CountingSink()
+    desk = _drive_with(FlakyProvider(fail_first=BLIND_ALARM_AFTER - 1), sink, tmp_path)
+    assert desk.stats.longest_blind_streak == BLIND_ALARM_AFTER - 1
+    assert not [m for m in sink.sent if "ANALYST DOWN" in m]
+    # ...but it is still WRITTEN DOWN. Not worth waking the operator is not the
+    # same as not worth recording.
+    rows = [json.loads(ln) for ln in
+            (tmp_path / "l.jsonl").read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len([r for r in rows if r.get("kind") == "BLIND"]) == BLIND_ALARM_AFTER - 1
