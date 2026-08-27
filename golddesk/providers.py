@@ -381,6 +381,14 @@ class ClaudeCodeAnalyst(AnalystProvider):
     #: while giving 2.5x the room -- a call still running at ten minutes is genuinely wedged.
     DEFAULT_TIMEOUT_S = 600.0
 
+    #: The degraded retry. `low` is the floor of EFFORTS, and 240s was the OLD full budget --
+    #: known from production to be enough for many reads, so it is a measured fallback rather
+    #: than a guessed one. 600 + 240 = 840s worst case, inside the 900s M15 bar that bounds the
+    #: whole exchange. Raising either number without re-checking that sum reintroduces the
+    #: backlog the bar bound exists to prevent.
+    FALLBACK_EFFORT = "low"
+    FALLBACK_TIMEOUT_S = 240.0
+
     def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
                  timeout_s: float = DEFAULT_TIMEOUT_S, cwd: Optional[str] = None,
                  billed: Optional[bool] = None, runner: Any = None,
@@ -475,20 +483,23 @@ class ClaudeCodeAnalyst(AnalystProvider):
         s = s.split("\n", 1)[1] if "\n" in s else ""
         return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
 
-    def _argv(self, system: Optional[str] = None) -> list[str]:
+    def _argv(self, system: Optional[str] = None,
+              effort: Optional[str] = None) -> list[str]:
+        """`effort` overrides self.effort for ONE call -- used by the degraded retry below."""
         argv = [self.binary, "-p",
                 "--output-format", "json",
                 "--model", self.model,
                 "--system-prompt", system or ANALYST_SYSTEM,
                 "--allowed-tools", "",
                 "--max-turns", "1"]
-        if self.effort is not None:
-            if self.effort not in self.EFFORTS:
+        chosen = effort if effort is not None else self.effort
+        if chosen is not None:
+            if chosen not in self.EFFORTS:
                 raise AnalystError(
-                    f"effort {self.effort!r} not in {self.EFFORTS} -- the CLI "
+                    f"effort {chosen!r} not in {self.EFFORTS} -- the CLI "
                     f"would reject it too, but failing here names the actual "
                     f"problem instead of an opaque nonzero exit from claude")
-            argv += ["--effort", self.effort]
+            argv += ["--effort", chosen]
         return argv
 
     def _env(self) -> dict:
@@ -505,21 +516,48 @@ class ClaudeCodeAnalyst(AnalystProvider):
             env.pop("ANTHROPIC_AUTH_TOKEN", None)
         return env
 
-    def _invoke(self, prompt: str, system: Optional[str] = None) -> dict:
-        if self._runner is not None:                  # injected for tests
-            return self._runner(self._argv(system), prompt)
+    def _invoke(self, prompt: str, system: Optional[str] = None,
+                effort: Optional[str] = None, timeout_s: Optional[float] = None) -> dict:
         import subprocess
+        budget = self.timeout_s if timeout_s is None else timeout_s
         try:
-            p = subprocess.run(self._argv(system), input=prompt, env=self._env(),
+            # THE INJECTED TRANSPORT IS INSIDE THE TRY ON PURPOSE. It used to sit above it, which
+            # meant the degrade-on-timeout policy below existed only on the subprocess path and
+            # could not be exercised by any test -- retry policy silently coupled to transport.
+            # A test runner that raises TimeoutExpired now travels the same path production does.
+            if self._runner is not None:
+                return self._runner(self._argv(system, effort), prompt)
+            p = subprocess.run(self._argv(system, effort), input=prompt, env=self._env(),
                                cwd=self.cwd, capture_output=True, text=True,
-                               timeout=self.timeout_s)
+                               timeout=budget)
         except FileNotFoundError as e:
             raise AnalystError(
                 f"{self.binary!r} not found. Install Claude Code on this box and "
                 f"log in once interactively, or use provider 'anthropic:' and "
                 f"pay per token.") from e
         except subprocess.TimeoutExpired as e:
-            raise AnalystError(f"claude timed out after {self.timeout_s}s") from e
+            # DEGRADE, DO NOT SURRENDER. A timeout discards the whole read and books a refusal,
+            # so the desk's answer to "this one was slow" was to learn nothing from that bar at
+            # all -- 6 of the last 10 failures on 2026-08-26 were exactly this. A completed
+            # low-effort read is strictly better evidence than no read, so the retry trades
+            # depth of reasoning for an answer that actually arrives, rather than trading the
+            # answer away.
+            #
+            # ONE retry, at the floor effort, on a SHORTER budget. The bound that matters is the
+            # bar: at M15 a read must finish inside 900s or it is still running when the next
+            # bar's read begins, and the backlog compounds. self.timeout_s (600) plus
+            # FALLBACK_TIMEOUT_S (240) is 840s worst case, which fits with margin. Retrying at
+            # the same effort would just spend the budget twice on the thing that already proved
+            # too slow, and a second full-length attempt would breach the bar outright.
+            if effort == self.FALLBACK_EFFORT:
+                raise AnalystError(f"claude timed out after {budget}s at "
+                                   f"{self.FALLBACK_EFFORT} effort -- the floor arm could not "
+                                   f"finish either, so this is latency on the box or the "
+                                   f"venue, not reasoning depth") from e
+            log.warning("claude timed out after %ss; retrying once at %s effort within %ss",
+                        budget, self.FALLBACK_EFFORT, self.FALLBACK_TIMEOUT_S)
+            return self._invoke(prompt, system, effort=self.FALLBACK_EFFORT,
+                                timeout_s=self.FALLBACK_TIMEOUT_S)
         if p.returncode != 0:
             # 300 chars was cutting off every failure at almost exactly the point where the
             # CLI's own JSON error payload names the actual problem -- every "analyst

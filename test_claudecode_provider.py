@@ -452,3 +452,60 @@ def test_universe_usage_folds_cache_creation_into_input_so_budget_sees_it():
     stamp, _ = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(2)))).survey(brief())
     assert stamp.usage["in"] == 910 + 26488 + 0
     assert stamp.usage["out"] == 61
+
+
+def _timeout_runner(fail_efforts, result):
+    """A runner that raises TimeoutExpired unless the call carries an effort NOT in fail_efforts.
+
+    Mirrors what subprocess.run does to _invoke, so the degraded-retry path is exercised
+    end-to-end rather than by reaching into it.
+    """
+    import subprocess
+    seen = []
+
+    def run(argv, prompt):
+        effort = argv[argv.index("--effort") + 1] if "--effort" in argv else None
+        seen.append(effort)
+        if effort in fail_efforts:
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=1)
+        return result
+
+    return run, seen
+
+
+def test_a_slow_read_degrades_to_the_floor_effort_instead_of_being_lost():
+    """MEASURED: 6 of the last 10 failures on 2026-08-26 were "claude timed out after 240.0s",
+    each one discarding the whole bar. A completed low-effort read is strictly better evidence
+    than no read at all."""
+    run, seen = _timeout_runner({None}, envelope(json.dumps(VALID_READ)))
+    r = ClaudeCodeAnalyst(runner=run).read(brief())
+    assert r.read.direction == "LONG"
+    assert seen == [None, "low"], "expected one full-effort attempt then one low-effort retry"
+
+
+def test_the_degraded_retry_happens_once_and_then_gives_up():
+    """Retrying forever would spend the whole bar on a call that has already proved too slow,
+    and the second failure is a different finding -- latency on the box, not reasoning depth."""
+    run, seen = _timeout_runner({None, "low"}, envelope(json.dumps(VALID_READ)))
+    with pytest.raises(AnalystError, match="could not finish either"):
+        ClaudeCodeAnalyst(runner=run).read(brief())
+    assert seen == [None, "low"]
+
+
+def test_an_explicit_effort_still_degrades_to_the_floor():
+    """An operator-set effort is a starting point, not a floor to die on."""
+    run, seen = _timeout_runner({"high"}, envelope(json.dumps(VALID_READ)))
+    r = ClaudeCodeAnalyst(runner=run, effort="high").read(brief())
+    assert r.read.direction == "LONG"
+    assert seen == ["high", "low"]
+
+
+def test_the_whole_retry_budget_fits_inside_one_m15_bar():
+    """THE BOUND THAT ACTUALLY MATTERS. At M15 a read must finish inside 900s or it is still
+    running when the next bar's read begins, and the backlog compounds -- which is exactly the
+    ~2h20m processing lag observed live on 2026-08-26. Pinned as arithmetic so raising either
+    timeout without re-checking the sum fails here rather than in production."""
+    p = ClaudeCodeAnalyst()
+    assert p.timeout_s + p.FALLBACK_TIMEOUT_S <= 900.0
+    assert p.FALLBACK_EFFORT in ClaudeCodeAnalyst.EFFORTS
+    assert p.FALLBACK_TIMEOUT_S < p.timeout_s
