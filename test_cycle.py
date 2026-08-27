@@ -412,3 +412,37 @@ def test_the_real_run_still_refuses_to_repeat_itself(tmp_path, monkeypatch):
     before = (tmp_path / "cycle_state.json").read_text(encoding='utf-8')
     C.run(dry=False)
     assert (tmp_path / "cycle_state.json").read_text(encoding='utf-8') == before
+
+
+def test_the_measurement_scripts_the_desk_owns_are_actually_run():
+    """BUILT, TESTED, CORRECT, AND SCHEDULED BY NOTHING -- the failure class this repo keeps
+    hitting. missed_money.py and mgmt_counterfactual.py both shipped with a `__main__` block
+    pointed at backtest fixtures, so the LIVE ledger was never their subject and neither ever
+    ran on real evidence.
+
+    They matter more than most: refusals are the majority of what this analyst produces and
+    missed_money is the only thing that grades them, while management is roughly half of
+    realised R and mgmt_counterfactual is the only thing that prices the alternative arms.
+
+    Order is asserted, not incidental: `levers` ranks where the next unit of effort should go,
+    and it cannot do that honestly while the cost of refusals and the value of the management
+    arms are both still invisible."""
+    import aurum_cycle
+
+    names = [n for n, _ in aurum_cycle.STEPS]
+    assert "missed_money" in names, "refusals graded by nothing"
+    assert "mgmt_counterfactual" in names, "management arms priced by nothing"
+    assert names.index("decay") < names.index("missed_money") < names.index("levers")
+    assert names.index("mgmt_counterfactual") < names.index("levers")
+
+
+def test_the_new_measurement_steps_refuse_honestly_with_no_ledger():
+    """An absent ledger must read UNMEASURED, never as a clean zero. 'no missed money' and
+    'nobody has looked' are opposite findings and the desk must not confuse them -- which is
+    exactly the state it is in today, with two ledger rows."""
+    import aurum_cycle
+
+    steps = dict(aurum_cycle.STEPS)
+    for name in ("missed_money", "mgmt_counterfactual"):
+        _, text = aurum_cycle.run_step(name, steps[name], {})
+        assert "UNMEASURED" in text, f"{name} reported absence as a result"

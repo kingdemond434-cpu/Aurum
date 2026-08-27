@@ -400,6 +400,48 @@ def step_decay(ctx: dict) -> str:
         "is provable it has been paid for.")
 
 
+def step_missed_money(ctx: dict) -> str:
+    """What the refusals actually cost -- counting only money that was GETTABLE.
+
+    A refusal's forward path says what price did next; it does NOT say the desk could have
+    participated. missed_money.py exists precisely to separate those, because conflating them
+    inflates every "this gate cost you R" number in one direction -- upward -- which is the
+    direction that argues for removing gates. It was written, tested, and run by nothing: its
+    `__main__` block defaults to `backtest_out/ledger-A-test*.jsonl`, so the LIVE ledger was
+    never its subject. Wired here because a desk that grades only what it took cannot see its
+    false negatives, and refusals are the majority of what this analyst produces.
+    """
+    import missed_money
+
+    if not LEDGER.exists():
+        return "no ledger yet -- UNMEASURED, not zero missed money."
+    rows = missed_money.load([LEDGER])
+    if not rows:
+        return ("ledger present but no rows this run -- UNMEASURED. A refusal that has not "
+                "resolved forward yet is pending, not free.")
+    return missed_money.report(rows)
+
+
+def step_mgmt_counterfactual(ctx: dict) -> str:
+    """What the OTHER management policies would have produced on the identical path.
+
+    Management is roughly half of realised R, and this desk runs `heuristic` while shadowing
+    the alternatives -- but shadowing only records what each policy would have CHOSEN. What
+    those choices would have PRODUCED needs the excursion path, which the ledger persists, and
+    that half was computed by a script nothing scheduled. No market re-simulation is involved:
+    the path is what happened, and only the desk's response to it changes.
+    """
+    import mgmt_counterfactual
+
+    if not LEDGER.exists():
+        return "no ledger yet -- UNMEASURED, not a verdict that heuristic is best."
+    rows = mgmt_counterfactual.load([LEDGER])
+    if not rows:
+        return ("no management traces carrying a persisted path yet -- UNMEASURED. The arms "
+                "cannot be compared until closed positions carry their excursions.")
+    return mgmt_counterfactual.report(rows)
+
+
 def step_levers(ctx: dict) -> str:
     """Where does the next unit of effort buy the most growth?"""
     from golddesk.levers import analyse
@@ -506,6 +548,12 @@ STEPS = (
     ("regime", step_regime),
     ("census", step_census),
     ("decay", step_decay),
+    # AFTER decay, BEFORE levers, and the position is load-bearing. `levers` asks where the
+    # next unit of effort buys the most growth, and it cannot rank honestly while the cost of
+    # the desk's REFUSALS and the value of its management arms are both invisible -- the two
+    # numbers most likely to move that ranking. Both scripts existed and were run by nothing.
+    ("missed_money", step_missed_money),
+    ("mgmt_counterfactual", step_mgmt_counterfactual),
     ("levers", step_levers),
     ("mining", step_mining),
     ("entries", step_entries),
