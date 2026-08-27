@@ -84,7 +84,7 @@ param(
     # frequency. --wake-every-bar does raise frequency, and its cost is recorded in 43dd2b8.
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
                              "--numeric-only", "--expect-broker", "Fusion",
-                             "--wake-every-bar", "--universe"),
+                             "--wake-every-bar", "--universe", "--effort", "high"),
     [switch] $Remove
 )
 

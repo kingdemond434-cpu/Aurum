@@ -49,7 +49,7 @@ param(
     [string]   $DeskRoot,
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
                              "--numeric-only", "--expect-broker", "Fusion",
-                             "--wake-every-bar", "--universe"),
+                             "--wake-every-bar", "--universe", "--effort", "high"),
     # Set by Install-AurumStartup.ps1's scheduled task action. See that script's comment on why
     # -DeskArgs cannot travel through a raw command line as an array: it collided with the array
     # construction operator (",") only meaning something to PowerShell's own language parser, not
