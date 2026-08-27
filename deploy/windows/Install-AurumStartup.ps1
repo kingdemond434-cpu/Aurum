@@ -123,7 +123,8 @@ $WatchdogTaskName = "$TaskName-Watchdog"
 
 if ($Remove) {
     foreach ($t in @($TaskName, $WatchdogTaskName, "$TaskName-Cycle",
-                     "$TaskName-Update", "$TaskName-VantageSpread")) {
+                     "$TaskName-Update", "$TaskName-SelfHeal",
+                     "$TaskName-VantageSpread")) {
         if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
             Unregister-ScheduledTask -TaskName $t -Confirm:$false
             Write-Host "removed scheduled task '$t'"
@@ -402,6 +403,57 @@ if (Test-Path $updScript) {
 
 Write-Host ""
 
+# ---------------------------------------------------------------------------
+# SELF-HEAL. Audits the desk's own wiring every 15 minutes, fixes what is
+# MECHANICAL, and escalates what is not.
+#
+# The split is the whole design and it is enforced by an allowlist in
+# remediate.py, not by judgement at 3am. A missing cohort set or a stalled
+# ledger has one deterministic, bounded, reversible, rate-limited remedy -- a
+# restart -- and it is applied without asking. A design fault like "tp1 is
+# computed and compared to nothing" is fixed by WRITING CODE, and a process that
+# writes and deploys its own code into a live trading desk unattended can
+# introduce a losing bug, widen a risk limit, or reach the ruin rail. Those are
+# reported immediately with the diagnosis attached, so the human loop is FAST
+# rather than absent.
+#
+# A fault that survives its own remedy three times stops being treated as
+# mechanical and escalates -- that cap is what keeps a self-healer from becoming
+# a crash loop.
+$healScript = Join-Path $DeskRoot "self_heal.py"
+if (Test-Path $healScript) {
+    $HealTaskName = "$TaskName-SelfHeal"
+    $hpy = Join-Path $DeskRoot ".venv\Scripts\python.exe"
+    if (-not (Test-Path $hpy)) { $hpy = "py" }
+    $healLog = Join-Path $DeskRoot "logs\self_heal.log"
+    $healCmd = "/d /s /c `"`"$hpy`" `"$healScript`" >> `"$healLog`" 2>&1`""
+    $hAction = New-ScheduledTaskAction -Execute "cmd.exe" -Argument $healCmd `
+                                       -WorkingDirectory $DeskRoot
+    $hTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+                                         -RepetitionInterval (New-TimeSpan -Minutes 15) `
+                                         -RepetitionDuration (New-TimeSpan -Days 3650)
+    $hPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+                                             -LogonType Interactive -RunLevel Limited
+    $hSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $HealTaskName -Action $hAction -Trigger $hTrigger `
+                           -Principal $hPrincipal -Settings $hSettings -Force | Out-Null
+    $hTask = Get-ScheduledTask -TaskName $HealTaskName -ErrorAction SilentlyContinue
+    if (-not $hTask) { throw "task '$HealTaskName' did not register" }
+} else {
+    Write-Host "  [SKIP] $TaskName-SelfHeal : self_heal.py not found"
+}
+
+Write-Host ""
+
+Write-Host "REGISTERED: $TaskName-SelfHeal"
+Write-Host "  runs      : $DeskRoot\self_heal.py"
+Write-Host "  trigger   : every 15 minutes, indefinitely"
+Write-Host "  purpose   : audit the desk's own WIRING, fix what is mechanical"
+Write-Host "              (allowlisted, rate-limited, reversible), escalate design"
+Write-Host "              faults with their diagnosis instead of fixing quietly."
+Write-Host ""
 Write-Host "REGISTERED: $TaskName-Update"
 Write-Host "  runs      : $DeskRoot\deploy\windows\Update-AurumDesk.ps1"
 Write-Host "  trigger   : every 30 minutes, indefinitely"
