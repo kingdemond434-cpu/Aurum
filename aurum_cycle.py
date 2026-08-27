@@ -443,6 +443,37 @@ def step_flows(ctx: dict) -> str:
     return out
 
 
+def step_stop_autopsy(ctx: dict) -> str:
+    """Was the thesis wrong, or was the stop in the way?
+
+    A stopped-out trade writes -1.0R and nothing else, and that one number
+    cannot separate "stop trading this mechanism" from "give it more room" --
+    two fixes that point in opposite directions. The SIGNAL row already carries
+    the forward excursion the idea achieved INDEPENDENT of the stop; this joins
+    it to the close. Reports only.
+    """
+    from golddesk.stop_autopsy import autopsy, render
+    items = autopsy(ctx.get("rows") or [])
+    ctx["stop_autopsy"] = items
+    return render(items)
+
+
+def step_stop_autopsy(ctx: dict) -> str:
+    """Was the thesis wrong, or was the stop simply in the way?
+
+    A stopped-out trade writes -1.0R and nothing else, and that one number
+    cannot separate "stop trading this mechanism" from "give it more room" --
+    two fixes pointing in opposite directions. The SIGNAL row already carries
+    the excursion the IDEA achieved, resolved forward from the decision moment
+    and independent of where the stop sat; this joins it to the close. Reports
+    only: it cannot move a stop or refuse anything.
+    """
+    from golddesk.stop_autopsy import autopsy, render
+    items = autopsy(ctx.get("rows") or [])
+    ctx["stop_autopsy"] = items
+    return render(items)
+
+
 def step_missed_money(ctx: dict) -> str:
     """What the refusals actually cost -- counting only money that was GETTABLE.
 
@@ -598,6 +629,8 @@ STEPS = (
     # next unit of effort buys the most growth, and it cannot rank honestly while the cost of
     # the desk's REFUSALS and the value of its management arms are both invisible -- the two
     # numbers most likely to move that ranking. Both scripts existed and were run by nothing.
+    ("stop_autopsy", step_stop_autopsy),
+    ("stop_autopsy", step_stop_autopsy),
     ("missed_money", step_missed_money),
     ("mgmt_counterfactual", step_mgmt_counterfactual),
     ("levers", step_levers),

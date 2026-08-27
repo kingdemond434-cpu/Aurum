@@ -160,6 +160,11 @@ class OpenTrade:
     opened_idx: int
     observer: TradeObserver
     partials: list[tuple[float, float]] = field(default_factory=list)
+    #: Set once the TP1 partial has been banked, so it fires exactly once per
+    #: trade. Distinct from `partials` because the risk-free partial in
+    #: management.options() also appends there, and re-banking at TP1 on every
+    #: subsequent tick would suffocate the runner.
+    tp1_banked: bool = False
     notified_lock: bool = False
     mgmt_log: list[dict] = field(default_factory=list)
     # carried from the entry so the close row is self-describing and the
@@ -558,6 +563,36 @@ class LiveDesk:
             self._close(ts, pos.r_at(t.signal.tp2), "TARGET",
                         self._last_state, Resolution.TICK_OBSERVED, t=t)
             return "EXIT_TARGET"
+
+        # TP1 PARTIAL BANK.
+        #
+        # `tp1` is computed by the compiler under the comment "partial bank",
+        # journalled on the SIGNAL row, and printed on the message the operator
+        # acts on -- and NOTHING in this package ever compared it to price. It
+        # was decoration. `grep -rn "\.tp1" golddesk/` found four sites: compute,
+        # journal, render, and the universe mirror. Zero comparisons.
+        #
+        # The cost is not theoretical. 2026-08-27: a short reached +1.88R with
+        # TP1 at +1.78R, price traded THROUGH it, nothing banked, a trail then
+        # locked +0.29R, and the pullback took that. 15% of MFE captured on a
+        # call that was right.
+        #
+        # THE MECHANISM of the leak is that the risk-free partial in
+        # management.options() is offered ONLY while `guaranteed_now < 0`. A
+        # trail that reaches risk-free permanently removes the partial from the
+        # option set, after which the entire position rides one stop.
+        #
+        # Deterministic here rather than an option for the chooser, exactly like
+        # the tp2 exit immediately above: reaching a NAMED OBJECTIVE is a price
+        # event, not a policy preference -- and an option the chooser may
+        # decline is precisely how this got lost. Invariants still bind: the
+        # bank goes through apply_option, so I3 (locked profit cannot fall) and
+        # I4 (a runner must survive) are enforced exactly as for any partial.
+        if (not t.tp1_banked and t.signal.tp1 is not None
+                and ((exit_px >= t.signal.tp1) if long else (exit_px <= t.signal.tp1))):
+            t.tp1_banked = True          # set BEFORE applying: a rejected bank
+                                         # must not retry on every subsequent tick
+            self._bank_tp1(t, price, ts)
 
         wake = t.observer.observe(price, ts, heartbeat=self.obs_heartbeat,
                                   bar_closed=bar_closed)
@@ -1428,6 +1463,76 @@ class LiveDesk:
         if brief.day_state is not None:
             out["prior_ny_session_state"] = brief.day_state.value
         return out
+
+    def _bank_tp1(self, t: OpenTrade, price: float, ts: datetime) -> None:
+        """Bank part of the position at the objective the operator was shown.
+
+        Routed through apply_option so the same invariants bind as for any other
+        partial -- I3 (locked profit may not fall) and I4 (a runner must
+        survive). A REJECTION is a legitimate outcome and is logged rather than
+        forced: if banking here would leave less than the minimum runner, the
+        honest answer is to leave the position alone, not to override the
+        invariant that says so.
+        """
+        from .management import (Action, ManagementOption, apply_option)
+        from .partial_policy import tp1_fraction
+        pos = t.position
+        # HOW MUCH, from live conditions rather than a constant. A fixed half
+        # treats a young aligned trend in quiet tape exactly like an exhausted
+        # one in an extreme one, and those want opposite treatment. Live
+        # structure where it exists, entry context for the higher-timeframe
+        # reading, which is not recomputed on the tick path.
+        st = self._last_state
+        ectx = t.entry_context or {}
+        plan = tp1_fraction(
+            trend_maturity=(getattr(st, "trend_maturity", None)
+                            or ectx.get("trend_maturity") or "MID"),
+            volatility_state=(getattr(st, "volatility_state", None)
+                              or ectx.get("volatility_state") or "NORMAL"),
+            htf_alignment=ectx.get("htf_alignment") or "NEUTRAL",
+            with_trend=((pos.direction == "LONG"
+                         and getattr(st, "trend_direction", None) == "UP")
+                        or (pos.direction == "SHORT"
+                            and getattr(st, "trend_direction", None) == "DOWN")),
+            rr_tp1=t.signal.rr_tp1, rr_tp2=t.signal.rr_tp2)
+        frac = plan.fraction
+        exc = Excursion(t.observer.mfe_r, t.observer.mae_r, t.t_mfe, t.t_mae,
+                        pos.r_at(price), 0)
+        opt = ManagementOption(
+            "TP1", Action.PARTIAL, None, frac, None,
+            f"TP1 {t.signal.tp1:.2f} reached at {price:.2f} — bank "
+            f"{frac:.0%} of the runner ({plan.why})")
+        # Default ManagementPolicy: min_runner_fraction is what protects the
+        # runner, and it belongs to the invariant layer rather than to whichever
+        # chooser happens to be active.
+        dec = apply_option(pos, opt, exc)
+        if dec.rejected_reason:
+            log.info("TP1 bank declined at %s: %s", ts, dec.rejected_reason)
+            return
+        t.position = dec.position_after
+        t.observer.stop = dec.position_after.current_stop
+        t.partials.append((frac, price))
+        self.stats.partials += 1
+        t.mgmt_log.append({"ts": ts.isoformat(), "action": "PARTIAL",
+                           "source": "tp1", "at": round(price, 2),
+                           "fraction": frac,
+                           # The REASONS travel with the decision, so a later
+                           # analysis can ask whether banking more in EXHAUSTED
+                           # actually beat banking less -- per mechanism, from
+                           # evidence rather than from partial_policy's opinion.
+                           "fraction_why": plan.why,
+                           "partial_policy": plan.version,
+                           "banked_r": round(dec.banked_now_r, 4),
+                           "locked_r": round(dec.position_after.locked_r, 4)})
+        self._notify(
+            f"*TP1 BANK* {pos.direction} {t.signal.setup.value}\n"
+            f"TP1 `{t.signal.tp1:.2f}` reached — banked "
+            f"`{frac:.0%}` at `{price:.2f}` "
+            f"(`{dec.banked_now_r:+.2f}R`)\n"
+            f"runner `{dec.position_after.remaining_fraction:.0%}` stays on for "
+            f"TP2 `{t.signal.tp2:.2f}`, SL `{dec.position_after.current_stop:.2f}`\n"
+            f"locked `{dec.position_after.locked_r:+.2f}R`\n"
+            f"_size from live conditions: {plan.why}_")
 
     def _record_blind(self, bars, i, brief, ts, stage: str, err: Exception) -> None:
         """Journal a bar the analyst never answered on.
