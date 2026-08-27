@@ -62,6 +62,27 @@ class LevelKind(str, Enum):
     PRIOR_DAY_LOW = "PRIOR_DAY_LOW"
     DISPLACEMENT_OPEN = "DISPLACEMENT_OPEN"
     RECLAIM = "RECLAIM"
+    # ---- PROJECTIONS. Everything above is somewhere price has ALREADY BEEN.
+    #
+    # That was a structural bias nobody chose, and it cost real trades. In a
+    # trend making new lows there is BY CONSTRUCTION no confirmed level beneath
+    # price: the stop must sit above a swing high two-plus ATR away and the
+    # target has nothing to reference, so R:R computes under the bar and the
+    # expectancy gate refuses. The refusal is arithmetically correct; the INPUTS
+    # are what is wrong. The consequence is not caution -- it is that this desk
+    # could only ever express mean reversion between existing levels, and the
+    # harder a market trended the more certainly it was rejected.
+    #
+    # Observed 2026-08-27: six straight hours of a clean one-way London
+    # sell-off, every bar refused, the analyst agreeing with the trade each time
+    # and naming this exact cause in its own words -- "the nearest downside
+    # objective is untabled, so the target would have to be invented", "the
+    # reward is unmapped", "the table has no level below L10 to run to".
+    #
+    # A projection is NOT structure and is never allowed to pretend otherwise;
+    # see `Level.projected` for the rule that keeps it honest.
+    ATR_PROJECTION = "ATR_PROJECTION"
+    MEASURED_MOVE = "MEASURED_MOVE"
 
 
 @dataclass(frozen=True)
@@ -73,6 +94,22 @@ class Level:
     timeframe: str           # "H4", "M15", ...
     bars_ago: int            # how long ago it was confirmed
     confirmed: bool          # False => not usable, shown for context only
+    #: True when this price was DERIVED rather than observed -- an ATR extension
+    #: or a measured move, not a place the market traded and turned.
+    #
+    # THE RULE, enforced in compile_signal and not merely documented here: a
+    # projected level may be cited as tp1_ref or tp2_ref, and NEVER as entry_ref
+    # or stop_ref.
+    #
+    # The asymmetry is the entire safety argument. A stop answers "where is this
+    # thesis wrong", which only real structure can say; a stop at a computed
+    # price is a stop nobody defends, and noise that never touched the idea will
+    # take it. An entry is the same kind of claim. A TARGET answers "where do I
+    # take money off" -- a choice about the trade rather than an assertion about
+    # the market -- and projecting one is ordinary practice. So projections
+    # widen what the desk may AIM at without weakening what it RISKS on, which
+    # is precisely the half that needed widening.
+    projected: bool = False
 
 
 @dataclass(frozen=True)
@@ -117,6 +154,20 @@ class MarketBrief:
     # vacuous. Required whenever a live entry is possible.
     trigger_price: Optional[float] = None
     trigger_utc: Optional[datetime] = None
+    #: Close of the bar the analyst actually read. THE ANTI-CHASE FALLBACK.
+    #
+    # When there is no structural trigger, the old gate refused every MARKET
+    # entry outright -- "drift is unmeasurable". That threw away real trades on
+    # a missing measurement rather than on their merits: two SWING_REVERSAL
+    # proposals at confidence 3, fully specified, died on it in one morning
+    # (2026-08-27 06:00 and 07:00). Absence read as a FAILURE is the same defect
+    # as absence read as a pass; it just fails in the safe-looking direction.
+    #
+    # There is a real origin available and it is arguably the better one: the
+    # analyst formed its view on THIS BAR'S CLOSE, so how far the live quote has
+    # run since then is exactly "am I chasing?" -- measured against the moment
+    # the judgement was actually made, not against a trigger that may not exist.
+    bar_close: Optional[float] = None
     timeline: Sequence[str] = field(default_factory=tuple)   # rolling memory
     notes: Sequence[str] = field(default_factory=tuple)
     # Ported from the quant desk (golddesk/gold_trend.py), measured on 22
@@ -585,6 +636,16 @@ def compile_signal(
         return refuse(f"tp2_ref {read.tp2_ref!r} is not a level in this brief")
     if not stop_lvl.confirmed or not tp2_lvl.confirmed:
         return refuse("refs point at an unconfirmed level")
+    # A PROJECTION MAY BE AIMED AT, NEVER RISKED ON. See Level.projected.
+    # A stop answers "where is this thesis wrong", and only real structure can
+    # answer it -- a stop at a derived price is a stop nobody defends, and noise
+    # that never touched the idea will take it out. Refused, not downgraded:
+    # silently moving the stop to the nearest real level would be the compiler
+    # inventing a trade the analyst did not propose.
+    if stop_lvl.projected:
+        return refuse(
+            f"stop_ref {read.stop_ref!r} is a {stop_lvl.kind.value} — a projection "
+            f"is a target, never a stop. Risk sits at structure the market made.")
 
     long = read.direction == "LONG"
 
@@ -615,6 +676,10 @@ def compile_signal(
         entry_lvl = brief.level(read.entry_ref)
         if entry_lvl is None or not entry_lvl.confirmed:
             return refuse(f"entry_ref {read.entry_ref!r} unusable")
+        if entry_lvl.projected:
+            return refuse(
+                f"entry_ref {read.entry_ref!r} is a {entry_lvl.kind.value} — a "
+                f"projection is a target, never an entry. Enter at structure or MARKET.")
         entry = entry_lvl.price
 
     # Stop sits beyond the level by an ATR buffer — the compiler decides how far.
@@ -671,12 +736,26 @@ def compile_signal(
     # Measuring from a MARKET entry gives drift 0 by construction, which made
     # the old gate unreachable for exactly the entries most likely to be chases.
     live = brief.mid
-    if brief.trigger_price is None:
-        if read.entry_ref == "MARKET":
-            return refuse("MARKET entry with no trigger_price — drift is unmeasurable")
-        origin = entry
-    else:
+    if brief.trigger_price is not None:
         origin = brief.trigger_price
+    elif read.entry_ref != "MARKET":
+        origin = entry
+    elif brief.bar_close is not None:
+        # NO TRIGGER, MARKET ENTRY. This used to refuse outright, and that cost
+        # real trades — two confidence-3 SWING_REVERSALs in one morning, both
+        # fully specified, neither judged on its merits. "Drift is unmeasurable"
+        # was true of the TRIGGER and false of the decision: the analyst formed
+        # this view on the close of the bar it was shown, so drift from that
+        # close is measurable, meaningful, and arguably the better origin —
+        # it asks "has price run since the judgement was made", which is the
+        # actual question anti-chase exists to ask.
+        origin = brief.bar_close
+    else:
+        # Genuinely nothing to measure from. Still refuse — but this is now the
+        # narrow case of a brief built without a bar reference, not the ordinary
+        # one of a setup that simply had no reclaim.
+        return refuse("MARKET entry with no trigger_price and no bar_close — "
+                      "drift is unmeasurable")
     drift_r = (live - origin) / risk if long else (origin - live) / risk
     if drift_r > thresholds.max_entry_drift_r:
         return refuse(

@@ -132,6 +132,32 @@ class MT5BarSource:
 # build_brief — real, no seam
 # --------------------------------------------------------------------------
 
+def _prior_day_bars(bars: Sequence[Bar], i: int) -> list[Bar]:
+    """Every bar of the most recent calendar day STRICTLY BEFORE bars[i]'s day.
+
+    CAUSAL, like every other input to a brief: it walks backwards from i and can
+    never see a bar the desk has not reached. Returns [] rather than guessing
+    when the window holds only one day -- an empty prior day is a real answer,
+    and inventing yesterday's range from today's bars would put a fabricated
+    level in front of the analyst wearing a confirmed label.
+    """
+    if i <= 0 or i >= len(bars):
+        return []
+    today = bars[i].ts.date()
+    prior_date = None
+    out: list[Bar] = []
+    for b in reversed(bars[:i]):
+        d = b.ts.date()
+        if d == today:
+            continue
+        if prior_date is None:
+            prior_date = d
+        if d != prior_date:
+            break
+        out.append(b)
+    return list(reversed(out))
+
+
 def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                 sw: Sequence, bid: float, ask: float, tick_age_s: float,
                 htf: Optional[StructureState] = None,
@@ -160,7 +186,49 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                         round(min(b.low for b in day), 2), timeframe, 0, True)); n += 1
     if st.trigger_price is not None:
         levels.append(Level(f"L{n}", LevelKind.RECLAIM, round(st.trigger_price, 2),
-                            timeframe, 0, True))
+                            timeframe, 0, True)); n += 1
+
+    # PRIOR-DAY EXTREMES. LevelKind has carried PRIOR_DAY_HIGH and PRIOR_DAY_LOW
+    # since the enum was written and NOTHING EVER BUILT THEM -- two named,
+    # confirmed, entirely ordinary reference points that the analyst could see
+    # in the vocabulary and never in the table. They matter most in exactly the
+    # case that was failing: price making a new session low still has
+    # yesterday's low beneath it, so the trade that had "no level below L10 to
+    # run to" usually did have one, a day older.
+    #
+    # Real observed structure, so NOT projected: these may carry a stop.
+    prior = _prior_day_bars(bars, i)
+    if prior:
+        levels.append(Level(f"L{n}", LevelKind.PRIOR_DAY_HIGH,
+                            round(max(b.high for b in prior), 2), timeframe,
+                            i - len(prior), True)); n += 1
+        levels.append(Level(f"L{n}", LevelKind.PRIOR_DAY_LOW,
+                            round(min(b.low for b in prior), 2), timeframe,
+                            i - len(prior), True)); n += 1
+
+    # ATR PROJECTIONS, past the session extremes only.
+    #
+    # Deliberately anchored BEYOND the extremes rather than around spot: inside
+    # the range there are already real levels to aim at, and adding derived ones
+    # there would compete with structure for no gain. Past the extreme is where
+    # the table is empty and where a trending market spends its day.
+    #
+    # Multiples are 1x and 2x ATR from the extreme. Not tuned -- deliberately
+    # round, because a fitted multiple would be this desk choosing its own
+    # target distribution and calling it measurement.
+    #
+    # projected=True, so compile_signal will refuse them as a stop or an entry.
+    atr = st.atr if getattr(st, "atr", None) else 0.0
+    if atr > 0:
+        sess_hi = max(b.high for b in day)
+        sess_lo = min(b.low for b in day)
+        for mult in (1.0, 2.0):
+            levels.append(Level(f"L{n}", LevelKind.ATR_PROJECTION,
+                                round(sess_lo - mult * atr, 2), timeframe, 0,
+                                True, projected=True)); n += 1
+            levels.append(Level(f"L{n}", LevelKind.ATR_PROJECTION,
+                                round(sess_hi + mult * atr, 2), timeframe, 0,
+                                True, projected=True)); n += 1
 
     if htf is None:
         align = "NEUTRAL"
@@ -209,6 +277,7 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
         tick_age_s=tick_age_s, atr=round(st.atr, 2), context=ctx, levels=levels,
         trigger_price=None if st.trigger_price is None else round(st.trigger_price, 2),
         trigger_utc=bars[i].ts, timeline=tuple(timeline), trend=trend,
+        bar_close=round(bars[i].close, 2),
         day_state=dstate, macro=macro, blocks=blocks)
 
 
