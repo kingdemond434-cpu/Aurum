@@ -478,3 +478,39 @@ def test_the_healer_runs_all_four_audits():
     block = src[i:i + 250]
     for name in ("cap_findings", "ah_findings", "th_findings"):
         assert name in block, f"{name} is computed but never reaches remediation"
+
+
+# --------------------- the quant checkout is found, not assumed
+
+def test_the_quant_root_is_searched_not_hardcoded():
+    """It was BASE.parent/"quant" — C:\\quant on the box — and the real checkout
+    is at C:\\opt\\quant. The remedy pointed at a directory that does not exist and
+    logged "transport cannot run" forever: a fixer that cannot fix, saying so in
+    a log nobody was reading."""
+    import self_heal as SH
+    cands = [str(c).replace("\\", "/") for c in SH._QUANT_CANDIDATES]
+    assert any("opt/quant" in c for c in cands), cands
+    assert len(cands) > 1, "a single hardcoded path is what this replaced"
+
+
+def test_an_env_var_beats_the_search():
+    """A search is a guess; an operator with a fifth location must not have to
+    edit the list."""
+    import self_heal as SH
+    import os
+    tmp = Path(SH.BASE)
+    os.environ["AURUM_QUANT_ROOT"] = str(tmp)
+    try:
+        assert SH._quant_root() == tmp
+    finally:
+        del os.environ["AURUM_QUANT_ROOT"]
+
+
+def test_a_stray_folder_named_quant_is_not_the_checkout(tmp_path, monkeypatch):
+    """The marker is the DESK, not the directory name."""
+    import self_heal as SH
+    (tmp_path / "quant").mkdir()
+    monkeypatch.setattr(SH, "_QUANT_CANDIDATES", (tmp_path / "quant",))
+    assert SH._quant_root() is None
+    (tmp_path / "quant" / "desks" / "mt5").mkdir(parents=True)
+    assert SH._quant_root() == tmp_path / "quant"

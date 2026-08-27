@@ -175,6 +175,34 @@ def _enable_task(name: str) -> bool:
         return False
 
 
+#: Where the quant checkout might live. ORDERED, and searched rather than
+#: assumed, because this was hardcoded to BASE.parent/"quant" -- C:\quant on the
+#: box -- and the real checkout is at C:\opt\quant. The remedy pointed at a
+#: directory that does not exist and reported "transport cannot run" forever,
+#: which is a fixer that cannot fix and says so in a log nobody was reading.
+#:
+#: An explicit env var wins, because a search is a guess and an operator with a
+#: fifth location should not have to edit this list.
+_QUANT_CANDIDATES = (
+    Path("C:/opt/quant"),
+    Path("C:/quant"),
+    BASE.parent / "quant",
+    Path("/opt/quant"),
+)
+
+
+def _quant_root():
+    env = os.environ.get("AURUM_QUANT_ROOT")
+    if env and Path(env).exists():
+        return Path(env)
+    for c in _QUANT_CANDIDATES:
+        # The marker is the DESK, not the directory name: a stray folder called
+        # "quant" must not be mistaken for the checkout.
+        if (c / "desks" / "mt5").exists():
+            return c
+    return None
+
+
 def _sync_quant() -> bool:
     """Run the quant->Aurum findings transport out of band.
 
@@ -186,9 +214,10 @@ def _sync_quant() -> bool:
     script = BASE / "deploy" / "windows" / "Sync-QuantFindings.ps1"
     if not script.exists():
         return False
-    quant = BASE.parent / "quant"
-    if not quant.exists():
-        log.warning("no quant checkout at %s — transport cannot run", quant)
+    quant = _quant_root()
+    if quant is None:
+        log.warning("no quant checkout found in %s — transport cannot run. Set "
+                    "AURUM_QUANT_ROOT to point at it.", [str(c) for c in _QUANT_CANDIDATES])
         return False
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy",
