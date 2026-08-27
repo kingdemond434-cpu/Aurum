@@ -1017,6 +1017,35 @@ class LiveDesk:
         alloc, risk_r, sizing_binds = self._size(sig, mech)
         plan = self._execution(brief, sig, edge_r)
 
+        # EVIDENCE TIER, ON THE FIRST LINE. Every caveat below was already in
+        # this message -- conf 2/5, "no measured edge yet for this mechanism",
+        # RISK estimation HIGH, and a why_not saying in plain words "filed NOVEL
+        # and expected to be shadowed rather than sized". It was scattered
+        # across five places, none of them the first line, and the first line is
+        # what gets read on a phone. An operator took one such experiment with
+        # real money on 2026-08-27. The message was not WRONG; it was UNRANKED,
+        # and an unranked caveat is one the reader has to assemble for
+        # themselves at the moment they are least inclined to.
+        #
+        # NOT A GATE. Nothing here refuses a trade, moves a threshold, or
+        # changes what reaches the ledger. Firing rate is unchanged.
+        from .tiers import evidence_tier
+        _stat = (self.cohorts or {}).get(mech)
+        tier = evidence_tier(
+            setup=sig.setup.value, mechanism_name=mech,
+            confidence=sig.confidence,
+            sweep_state=brief.context.sweep_state,
+            reclaim_state=brief.context.reclaim_state,
+            displacement_state=brief.context.displacement_state,
+            htf_alignment=brief.context.htf_alignment,
+            with_trend=((sig.direction == "LONG"
+                         and brief.context.trend_direction == "UP")
+                        or (sig.direction == "SHORT"
+                            and brief.context.trend_direction == "DOWN")),
+            cohort_n=(_stat.n if _stat else 0),
+            cohort_ev_r=(_stat.expected_r(sig.rr_tp2, sig.cost_r)
+                         if _stat and _stat.n else None))
+
         pos = Position(sig.direction, sig.entry, sig.stop, sig.stop, sig.risk,
                        1.0, 0.0, bars[i].ts, sig.setup.value)
         obs = TradeObserver(direction=sig.direction, entry=sig.entry, stop=sig.stop,
@@ -1044,6 +1073,13 @@ class LiveDesk:
                       "management_authority": ("operator" if self._management_override
                                                else "durable-binding"),
                       "edge_r": edge_r,
+                      # The tier the operator was shown, on the row itself. A
+                      # ranking visible on a phone and absent from the ledger is
+                      # one no later analysis can group by -- and "did T4
+                      # experiments actually resolve worse than T2 signals" is
+                      # the question this ranking exists to make answerable.
+                      "evidence_tier": {"rank": tier.rank, "label": tier.label,
+                                        "why": tier.why},
                       "uncertainty": unc.to_dict(),
                       "sizing": {"risk_r": risk_r, "wanted_r": alloc.risk_r,
                                  "basis": alloc.basis, "capped_by": alloc.capped_by,
@@ -1077,6 +1113,7 @@ class LiveDesk:
             size_line = (f"\n`SIZE   ` {verb} {alloc.risk_r:.2f}R"
                          + ("" if sizing_binds else " (advisory — risking 1R)"))
         self._notify(
+            f"{tier.banner}\n"
             f"*ENTRY {sig.direction} {brief.symbol}*\n"
             f"`entry  {sig.entry:.2f}`\n`SL     {sig.stop:.2f}`  ({sig.risk:.2f} risk)\n"
             f"`TP1    {sig.tp1:.2f}`\n`TP2    {sig.tp2:.2f}`  ({sig.rr_tp2:.2f}R net)"
