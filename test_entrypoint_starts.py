@@ -30,6 +30,7 @@ in a way that every other green test actively disguises.
 from __future__ import annotations
 
 import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -112,3 +113,36 @@ def test_no_function_call_repeats_a_keyword_argument() -> None:
             for name in {n for n in kw if kw.count(n) > 1}:
                 offenders.append(f"{path.name}:{node.lineno}: keyword '{name}' passed twice")
     assert not offenders, "\n".join(offenders)
+
+
+def test_the_installed_task_launches_with_the_same_args_the_supervisor_defaults_to():
+    """THE INSTALLED TASK IS THE ONE THAT ACTUALLY RUNS, AND IT HELD A STALE ARG LIST.
+
+    Install-AurumStartup.ps1 joins its own -DeskArgs into the scheduled task's action string,
+    and Start-AurumDesk.ps1 treats a non-empty -DeskArgsJoined as an OVERRIDE of its own
+    default. So the installer's copy wins on every boot and the supervisor's default is dead
+    text -- two lists that must agree, with no mechanism making them.
+
+    They diverged for five days: 43dd2b8 added --wake-every-bar and --universe to the
+    supervisor only, so the live desk kept launching without them and reported it truthfully in
+    a banner nobody was reading ("opportunity set : single read"). Nothing failed, because a
+    missing capture flag is not an error -- it is less capture, silently, forever.
+
+    Compared as SETS: order is irrelevant to argparse and pinning it would make this test fail
+    on a harmless reordering, which trains people to edit the test rather than read it.
+    """
+    def desk_args(script: str) -> set[str]:
+        src = (_ROOT / "deploy" / "windows" / script).read_text(encoding="utf-8")
+        m = re.search(r"\[string\[\]\]\s*\$DeskArgs\s*=\s*@\((.*?)\)", src, re.S)
+        assert m, f"could not find the -DeskArgs default in {script}"
+        return set(re.findall(r'"([^"]+)"', m.group(1)))
+
+    installer = desk_args("Install-AurumStartup.ps1")
+    supervisor = desk_args("Start-AurumDesk.ps1")
+    assert installer == supervisor, (
+        "the installed task and the supervisor default disagree; the INSTALLER wins at boot.\n"
+        f"  only in Install-AurumStartup.ps1: {sorted(installer - supervisor)}\n"
+        f"  only in Start-AurumDesk.ps1:      {sorted(supervisor - installer)}")
+    # Named explicitly, so deleting a capture flag from both files at once is still a visible
+    # act rather than something a set-equality check would wave through.
+    assert {"--wake-every-bar", "--universe"} <= installer

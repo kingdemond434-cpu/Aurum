@@ -66,8 +66,25 @@
 param(
     [string] $DeskRoot,
     [string] $TaskName = "AurumSignalDesk",
+    # MUST STAY IDENTICAL TO Start-AurumDesk.ps1's -DeskArgs DEFAULT, and it silently did not.
+    # This list is joined into the scheduled task's action string, and Start-AurumDesk.ps1 treats
+    # a non-empty -DeskArgsJoined as an OVERRIDE of its own default -- so whatever is written
+    # here is what the desk actually runs on every boot, and the other file's default is dead
+    # text the moment the task exists.
+    #
+    # It drifted: 43dd2b8 added --wake-every-bar and --universe to Start-AurumDesk.ps1 and not
+    # here, so the installed task kept launching without them. The desk's own startup banner
+    # reported it truthfully ("opportunity set : single read") and nothing else did, because a
+    # missing capture flag is not an error -- it is just less capture, forever, quietly. Caught
+    # 2026-08-27 when the operator asked why breadth was not what the commit said it was.
+    #
+    # --universe is the one that costs nothing to keep: the brief (levels, macro, context) is
+    # the expensive half of a read and is sent whether the model answers with one proposition or
+    # twelve, so enumerating the set raises capture per unit of quota rather than raising call
+    # frequency. --wake-every-bar does raise frequency, and its cost is recorded in 43dd2b8.
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
-                             "--numeric-only", "--expect-broker", "Fusion"),
+                             "--numeric-only", "--expect-broker", "Fusion",
+                             "--wake-every-bar", "--universe"),
     [switch] $Remove
 )
 
