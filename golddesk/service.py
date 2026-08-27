@@ -51,7 +51,7 @@ from typing import Any, Optional, Sequence
 from .features import Bar, atr, classify, swings, visible_swings
 from .feed import FeedConfig, FeedError, LiveFeed, RealMt5Client
 from .ledger import Ledger
-from .live import ENTRY_TF, HTF, LiveDesk, Vision
+from .live import ENTRY_TF, HTF, LiveDesk, Vision, _downsample_path
 from .management import BrokerLimits
 from .notify import build_sink
 from .runner import build_brief
@@ -216,8 +216,36 @@ class DeskService:
             "opened_idx": t.opened_idx,
             "mechanism_name": t.mechanism_name,
             "entry_context": t.entry_context,
+            # THE WHOLE OBSERVER, not two of its fields.
+            #
+            # This wrote mfe_r/mae_r/ticks and rehydrate() read back only the
+            # first two, so `ticks` reset to 0 on every restart -- which is
+            # literally the "0 observations" printed on an exit message. Worse,
+            # `path`, `t_mfe` and `t_mae` were never written at all: the full
+            # excursion path and both time-to-extreme stamps were destroyed by
+            # any restart, and this desk restarts on every logon, every
+            # watchdog relaunch and every deploy.
+            #
+            # That is not a cosmetic loss. The path IS the forward evidence --
+            # time-to-MFE, time-to-MAE, whether +0.5R came before -1R, how much
+            # of MFE was captured. A desk cannot learn whether a 16-point
+            # structural stop beats a tight one from a record that resets to
+            # zero every few hours. Telemetry only: nothing here gates a trade.
             "observer": {"mfe_r": t.observer.mfe_r, "mae_r": t.observer.mae_r,
-                         "ticks": t.observer.ticks},
+                         "ticks": t.observer.ticks,
+                         "t_mfe": (t.observer.t_mfe.isoformat()
+                                   if t.observer.t_mfe else None),
+                         "t_mae": (t.observer.t_mae.isoformat()
+                                   if t.observer.t_mae else None),
+                         "last_price": t.observer.last_price,
+                         "last_ts": (t.observer.last_ts.isoformat()
+                                     if t.observer.last_ts else None),
+                         "velocity_r_per_min": t.observer.velocity_r_per_min,
+                         # Bounded the same way the ledger bounds it, so a
+                         # long tick-driven trade cannot grow the checkpoint
+                         # without limit. Both extremes are pinned by
+                         # _downsample_path, so the turning points survive.
+                         "path": _downsample_path(t.observer.path)},
             "mgmt_log": t.mgmt_log}
         # DELIVERY HEALTH GOES IN THE CHECKPOINT. The message is this desk's
         # only product, so "is the channel working" belongs beside "is there a
@@ -236,8 +264,17 @@ class DeskService:
         ledger on each call, so a flapping connection inflated open risk without
         opening a single trade.
 
-        Excursion history before the restart is restored from the checkpoint;
-        the tick-by-tick path is genuinely lost and is not fabricated.
+        The FULL excursion record is restored: both extremes, both time-to-
+        extreme stamps, the observation count and the (bounded) tick-by-tick
+        path. This docstring used to say "the tick-by-tick path is genuinely
+        lost and is not fabricated" -- accurate when written, and the reason
+        the loss went unquestioned for so long. It described a deliberate
+        choice, but checkpoint() was not even persisting `ticks` back, so an
+        exit could report "0 observations" on a trade that had run for hours,
+        and time-to-MFE/MAE vanished on every logon, watchdog relaunch and
+        deploy. Nothing is fabricated now either: an unparseable point is
+        DROPPED rather than coerced, and a checkpoint from an older build
+        restores exactly as it used to.
         """
         if self._rehydrated:
             return self.desk.open is not None
@@ -270,6 +307,35 @@ class DeskService:
             ob = raw.get("observer") or {}
             obs.mfe_r = ob.get("mfe_r", 0.0)
             obs.mae_r = ob.get("mae_r", 0.0)
+            # RESTORE THE REST. `ticks` was being WRITTEN by checkpoint() and
+            # never read here, so it came back 0 on every restart -- the "0
+            # observations" on the exit message. Each field below is restored
+            # defensively: a checkpoint written by an older build has none of
+            # them, and a missing field must degrade to the old behaviour
+            # rather than raise and lose the whole position.
+            obs.ticks = int(ob.get("ticks") or 0)
+            obs.velocity_r_per_min = float(ob.get("velocity_r_per_min") or 0.0)
+            lp = ob.get("last_price")
+            obs.last_price = float(lp) if lp is not None else None
+            for attr in ("t_mfe", "t_mae", "last_ts"):
+                raw_ts = ob.get(attr)
+                if raw_ts:
+                    try:
+                        setattr(obs, attr, datetime.fromisoformat(raw_ts))
+                    except ValueError:
+                        log.warning("checkpoint %s unparseable (%r) — left unset "
+                                    "rather than guessed", attr, raw_ts)
+            # The path is stored as [iso, r] pairs. Anything unparseable is
+            # DROPPED rather than coerced: a fabricated point in an excursion
+            # path is worse than a shorter one.
+            restored = []
+            for pt in (ob.get("path") or []):
+                try:
+                    ts_s, r = pt
+                    restored.append((datetime.fromisoformat(ts_s), float(r)))
+                except (TypeError, ValueError):
+                    continue
+            obs.path = restored
             self.desk.open = OpenTrade(
                 pos, sig, raw.get("opened_idx", 0), obs,
                 entry_context=raw.get("entry_context") or {},
