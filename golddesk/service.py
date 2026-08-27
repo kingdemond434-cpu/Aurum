@@ -883,6 +883,24 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
         log.info("macro feed DISABLED -- briefs render MACRO CONTEXT: UNMEASURED, "
                  "which the analyst is told to treat as absent, not neutral")
 
+    # CROSS-MARKET FROM THE EXECUTION TERMINAL. The macro leg above goes to
+    # Yahoo, and on 2026-08-27 Yahoo returned "possibly delisted" for DX-Y.NYB,
+    # ^GSPC and ^VIX at the same moment -- three of the most quoted series in
+    # the world do not delist on one afternoon, so that was the API. Every brief
+    # that day read MACRO CONTEXT: UNMEASURED while this process held an
+    # authenticated connection to a broker quoting silver, the dollar and
+    # indices on the SAME CLOCK as its own bars.
+    #
+    # This does not replace drivers_free: real yields and breakevens need a rate
+    # curve no broker quotes. It means the analyst is not left with NOTHING when
+    # the web feed fails.
+    def crossmarket_fn():
+        from .crossmarket_mt5 import collect
+        client = getattr(feed, "client", None)
+        if client is None:
+            return None
+        return collect(client, gold_price=getattr(desk, "last_bid", None)).render()
+
     desk = LiveDesk(build_provider(provider_spec, effort=provider_effort)
                     if provider_effort is not None else build_provider(provider_spec),
                     Ledger(cfg.ledger_path),
@@ -892,6 +910,7 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                     shadow_contextual=shadow_contextual,
                     universe_mode=universe_mode,
                     cohorts=cohorts,
+                    crossmarket_provider=crossmarket_fn,
                     calendar=calendar, regime_history=history,
                     macro_provider=macro_fn,
                     wake_on_bar_close=wake_on_bar_close)

@@ -259,6 +259,7 @@ class LiveDesk:
                  measure_position_constraint: bool = True,
                  concurrency_ceiling: Optional[int] = None,
                  universe_mode: bool = False,
+                 crossmarket_provider=None,
                  calendar=None,
                  regime_history=None,
                  entry_urgency: float = 0.5,
@@ -364,6 +365,15 @@ class LiveDesk:
         # wraps a single read into a one-candidate universe — so switching arms
         # never changes which providers are available.
         self.universe_mode = universe_mode
+        # CROSS-MARKET, read from the terminal that is already connected.
+        # Injected as a callable for the same reason macro_provider is: the desk
+        # stays testable with no MetaTrader5 installed, and build_brief stays
+        # pure. Refreshed on the SAME cadence as macro -- an hourly change
+        # figure does not move between two M15 bars, and pulling four symbols on
+        # every wake would put four network round trips in front of a decision.
+        self.crossmarket_provider = crossmarket_provider
+        self._crossmarket: Optional[str] = None
+        self._crossmarket_at = None
         # Event proximity. None means the calendar is not wired, which the
         # uncertainty decomposition reports as UNKNOWN rather than as "no event"
         # — those are different claims and only one of them is true.
@@ -669,8 +679,10 @@ class LiveDesk:
         self.last_bid, self.last_ask = bid, ask
         self.last_spread = max(0.0, ask - bid)
         self._refresh_macro(ts)
+        self._refresh_crossmarket(ts)
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             macro=self._macro,
+                            crossmarket=self._crossmarket,
                             timeframe=ENTRY_TF)
         # THE CAUSAL SNAPSHOT OF THIS DECISION MOMENT, built before anything
         # decides. It is what makes the model league real rather than
@@ -761,6 +773,29 @@ class LiveDesk:
             return
 
         self._enter(bars, i, brief, res, pr, len(imgs))
+
+    def _refresh_crossmarket(self, now) -> None:
+        """Pull cross-market context if due. NEVER raises, for the same reason
+        _refresh_macro does not: losing a context block is a degradation, and a
+        desk that stops trading because one symbol read failed has converted a
+        missing input into an outage.
+
+        On failure the PREVIOUS block is kept and the timestamp is still
+        stamped, so a broken read is retried on the cadence rather than on every
+        wake -- and the analyst sees a stale block that says so, rather than a
+        silently absent one.
+        """
+        if self.crossmarket_provider is None:
+            return
+        if (self._crossmarket_at is not None
+                and now - self._crossmarket_at < self.macro_refresh):
+            return
+        self._crossmarket_at = now
+        try:
+            self._crossmarket = self.crossmarket_provider()
+        except Exception as e:                        # noqa: BLE001
+            log.warning("cross-market read failed (%s) — keeping the previous "
+                        "block rather than dropping the section", e)
 
     # -- macro ------------------------------------------------------------
     def _refresh_macro(self, now) -> None:

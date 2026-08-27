@@ -163,7 +163,8 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                 htf: Optional[StructureState] = None,
                 timeline: Sequence[str] = (), symbol: str = "XAUUSD",
                 timeframe: str = "D1",
-                macro: Optional[MacroContext] = None) -> MarketBrief:
+                macro: Optional[MacroContext] = None,
+                crossmarket: Optional[str] = None) -> MarketBrief:
     """Assemble the analyst brief from deterministic state. Levels get stable ids.
 
     `macro` is optional and defaults to None, which renders as UNMEASURED
@@ -268,8 +269,22 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
     # FLOWS: who is actually holding the metal. Read from the cache the collector maintains --
     # never fetched on the decision path, because a decision must not wait on, or fail with, a
     # third-party website. An absent or stale cache renders UNMEASURED inside the block itself.
-    blocks = (candle_character_block(bars[:i + 1]),
-              flows_load(FLOWS_CACHE).to_prompt())
+    # CROSS-MARKET, read from the execution terminal rather than a web feed.
+    #
+    # drivers_free fetches DXY/S&P/VIX from Yahoo, and on 2026-08-27 Yahoo
+    # returned "possibly delisted" for all three at once -- three of the most
+    # quoted series in the world do not delist on the same afternoon, so that
+    # was the API. Every brief that day carried MACRO CONTEXT: UNMEASURED while
+    # the desk held an authenticated connection to a broker quoting silver, the
+    # dollar and indices on the SAME CLOCK as its own bars.
+    #
+    # Passed in rather than fetched here: build_brief is pure and must stay
+    # testable with no terminal, and a decision must never block on I/O.
+    blocks = [candle_character_block(bars[:i + 1]),
+              flows_load(FLOWS_CACHE).to_prompt()]
+    if crossmarket:
+        blocks.append(crossmarket)
+    blocks = tuple(blocks)
 
     return MarketBrief(
         symbol=symbol, as_of_utc=bars[i].ts, session=session_of(bars[i].ts),

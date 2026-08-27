@@ -126,6 +126,32 @@ def _rotate_logs() -> bool:
     return freed > 0
 
 
+def _sync_quant() -> bool:
+    """Run the quant->Aurum findings transport out of band.
+
+    Idempotent on (statement, measured_on): running it early or twice appends
+    nothing. It CANNOT fix quant having produced no export -- that is the other
+    repository's schedule, and the attempt cap turns a persistent failure here
+    into an escalation naming exactly that.
+    """
+    script = BASE / "deploy" / "windows" / "Sync-QuantFindings.ps1"
+    if not script.exists():
+        return False
+    quant = BASE.parent / "quant"
+    if not quant.exists():
+        log.warning("no quant checkout at %s — transport cannot run", quant)
+        return False
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy",
+                            "Bypass", "-File", str(script),
+                            "-QuantRoot", str(quant), "-AurumRoot", str(BASE)],
+                           capture_output=True, timeout=300)
+        return r.returncode == 0
+    except Exception as e:                             # noqa: BLE001
+        log.warning("quant sync failed: %s", e)
+        return False
+
+
 def _load_attempts() -> dict:
     """Attempt history OUTLIVES the process, or the cooldown is a fiction: a
     task that starts fresh every 15 minutes would have no memory of the restart
@@ -153,6 +179,7 @@ def main(argv=None) -> int:
 
     from golddesk.ledger import Ledger
     from golddesk.opportunity import build_cohorts
+    from golddesk import capture as cap
     from golddesk.remediate import Remediator, plan, render
     from golddesk.self_audit import audit, render as audit_render
 
@@ -170,11 +197,21 @@ def main(argv=None) -> int:
     findings = audit(rows, cohorts, base=BASE)
     print(audit_render(findings))
 
+    # THE SECOND AXIS. self_audit asks "is the desk WIRED"; this asks "is it
+    # still TAKING WHAT IS THERE". A desk can pass every wiring check and be
+    # worth nothing because it refuses everything, banks 15% of the moves it
+    # calls right, or stopped receiving the quant desk's survivors -- and none
+    # of those raises an error or looks like anything but a quiet week.
+    cap_findings = cap.audit(rows, base=BASE)
+    print(cap.render(cap_findings))
+    findings = list(findings) + list(cap_findings)
+
     remedies, escalations = plan(findings, restart_desk=_restart_desk,
                                  refresh_flows=_refresh_flows,
                                  sample_spread=_sample_spread,
                                  refresh_macro=_refresh_macro,
-                                 rotate_logs=_rotate_logs)
+                                 rotate_logs=_rotate_logs,
+                                 sync_quant=_sync_quant)
     if args.dry_run:
         for r in remedies:
             print(f"  WOULD FIX  {r.fault}: {r.action} — {r.why}")

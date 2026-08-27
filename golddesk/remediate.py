@@ -120,7 +120,8 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
          refresh_flows: Optional[Callable[[], bool]] = None,
          sample_spread: Optional[Callable[[], bool]] = None,
          refresh_macro: Optional[Callable[[], bool]] = None,
-         rotate_logs: Optional[Callable[[], bool]] = None) -> tuple[list[Remedy], list]:
+         rotate_logs: Optional[Callable[[], bool]] = None,
+         sync_quant: Optional[Callable[[], bool]] = None) -> tuple[list[Remedy], list]:
     """Split audit findings into what can be fixed and what must escalate.
 
     Returns (remedies, escalations). A finding that maps to no remedy is NOT
@@ -193,6 +194,31 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
                 f.check, "delete rotated logs",
                 "rotated logs only — never the ledger, a checkpoint or an archive",
                 rotate_logs))
+
+        elif f.check == "quant inbox" and sync_quant is not None:
+            # MECHANICAL. The transport is a deduped file copy, idempotent on
+            # (statement, measured_on) -- running it out of band appends only
+            # what is new and is a no-op otherwise. It cannot fix quant's side
+            # having produced nothing, and the attempt cap escalates that.
+            remedies.append(Remedy(
+                f.check, "run the quant findings transport",
+                "an idempotent deduped copy; a no-op when nothing is new, and "
+                "powerless if quant's own export never ran",
+                sync_quant))
+
+        elif f.check in ("capture", "signal rate", "dominant gate", "survivors"):
+            # NEVER MECHANICAL, and this is the important refusal in this file.
+            #
+            # "Capture is 15%" is answered by changing how positions are managed.
+            # "The signal rate halved" is answered by understanding WHY before
+            # touching anything. Both are judgement, and a process that adjusts
+            # its own thresholds toward a rate it likes is not self-healing --
+            # it is a desk optimising its own scorecard, which is how a gate
+            # gets loosened until it stops protecting anything.
+            #
+            # Timidity is a defect here and so is acting on four trades. These
+            # escalate with the numbers attached and a human decides.
+            escalate.append(f)
 
         elif f.check == "flows" and refresh_flows is not None:
             remedies.append(Remedy(f.check, "refetch the flows cache",

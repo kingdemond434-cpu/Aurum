@@ -306,3 +306,32 @@ def test_no_remedy_is_offered_without_its_action():
                     restart_desk=_Spy())
     assert not rem
     assert len(esc) == 3
+
+
+# ------------------------- the capture axis routes correctly too
+
+@pytest.mark.parametrize("check,expect_fix", [
+    ("quant inbox", True),      # a deduped idempotent file copy
+    ("capture", False),         # answered by changing management: judgement
+    ("signal rate", False),     # answered by understanding WHY first
+    ("dominant gate", False),
+    ("survivors", False),       # answered on the quant side entirely
+])
+def test_capture_faults_route_correctly(check, expect_fix):
+    rem, esc = plan([_broken(check)], restart_desk=_Spy(), sync_quant=_Spy())
+    assert bool(rem) is expect_fix, check
+    assert bool(esc) is (not expect_fix), check
+
+
+def test_capture_and_rate_can_never_be_auto_tuned():
+    """THE MOST IMPORTANT REFUSAL IN THE FILE. "Capture is 15%" is answered by
+    changing how positions are managed; "the rate halved" by understanding why.
+    A process that adjusts its own thresholds toward a rate it likes is not
+    self-healing — it is a desk optimising its own scorecard, which is how a
+    gate gets loosened until it protects nothing."""
+    spy = _Spy()
+    rem, esc = plan([_broken("capture"), _broken("signal rate")],
+                    restart_desk=spy, sync_quant=_Spy())
+    Remediator().run(rem, now=NOW)
+    assert spy.calls == 0
+    assert {f.check for f in esc} == {"capture", "signal rate"}
