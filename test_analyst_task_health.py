@@ -220,3 +220,34 @@ def test_the_report_names_the_case_it_cannot_cover():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+def test_all_unreadable_does_not_report_every_watchdog_running():
+    """UNMEASURED IS NOT A PASS, and the header is where that lie would live.
+
+    Every finding coming back unreadable — no schtasks, a permissions problem,
+    the wrong OS — printed "every watchdog is running": absence read as a clean
+    answer, about the one component whose entire job is noticing absence.
+    """
+    def boom(name):
+        raise OSError("schtasks not found")
+    text = th_render(th_audit(boom, now=NOW))
+    assert "every watchdog is running" not in text
+    assert "NOTHING COULD BE READ" in text
+    assert "not the same as fine" in text
+
+
+def test_a_partial_read_says_how_many_were_unreadable():
+    name = "AurumSignalDesk-Cycle"
+    def read(n):
+        if n == name:
+            raise OSError("access denied")
+        return TaskInfo(n, True, True, NOW, 0)
+    text = th_render(th_audit(read, now=NOW))
+    assert "1 UNREADABLE" in text
+    assert "every watchdog is running" not in text
+
+
+def test_a_genuine_all_clear_still_says_so():
+    """The honest pass must survive the fix, or the check becomes noise."""
+    assert "every watchdog is running" in th_render(th_audit(_reader(), now=NOW))

@@ -124,9 +124,22 @@ def audit(read: Callable[[str], TaskInfo],
 
 def render(findings: Sequence[Finding]) -> str:
     bad = [f for f in findings if not f.ok]
-    head = (f"TASK HEALTH ({TASK_HEALTH_VERSION}) — "
-            + ("every watchdog is running" if not bad
-               else f"{len(bad)} WATCHDOG FAULT(S)"))
+    # UNMEASURED IS NOT A PASS, and the header is where that lie would live.
+    # Every finding coming back unreadable -- no schtasks, a permissions problem,
+    # the wrong OS -- printed "every watchdog is running", which is absence read
+    # as a clean answer about the one thing that is supposed to notice absence.
+    unknown = [f for f in findings if f.ok and "UNMEASURED" in f.detail]
+    if findings and len(unknown) == len(findings):
+        head = (f"TASK HEALTH ({TASK_HEALTH_VERSION}) — NOTHING COULD BE READ. "
+                f"Whether any watchdog is running is UNKNOWN, which is not the "
+                f"same as fine.")
+    elif bad:
+        head = f"TASK HEALTH ({TASK_HEALTH_VERSION}) — {len(bad)} WATCHDOG FAULT(S)"
+    elif unknown:
+        head = (f"TASK HEALTH ({TASK_HEALTH_VERSION}) — "
+                f"{len(findings) - len(unknown)} running, {len(unknown)} UNREADABLE")
+    else:
+        head = f"TASK HEALTH ({TASK_HEALTH_VERSION}) — every watchdog is running"
     out = [head] + [f.line for f in findings]
     if bad:
         out += ["",
