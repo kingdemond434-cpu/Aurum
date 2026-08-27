@@ -54,6 +54,26 @@ EXPECTED: dict[str, tuple[timedelta, str]] = {
 #: ordinary busy patch does not fire it and a genuinely stopped task does.
 STALE_MULTIPLE = 3
 
+#: Scheduler results that are NOT failures. These are Windows status codes, not
+#: program exit codes, and reading them as errors is how a watchdog cries wolf:
+#:
+#:   267009  0x00041301  the task is currently RUNNING
+#:   267011  0x00041303  the task has NOT YET RUN -- the normal state of a daily
+#:                       task registered an hour ago, and reported as a hard
+#:                       failure on the live box the first night this shipped
+#:   267012  0x00041304  no more runs are scheduled
+#:   267014  0x00041306  the last run was terminated by the user
+BENIGN_RESULTS = frozenset({0, 267009, 267011, 267012, 267014})
+
+#: Per-task exit codes that mean "ran fine, nothing to do". A task's own
+#: vocabulary, kept here rather than in the generic set so one script's
+#: convention cannot silently excuse another's real failure.
+BENIGN_PER_TASK: dict[str, frozenset] = {
+    # 3 = sampled the venue, archive still too thin to write a profile. That is
+    # the expected state for the first hours and a successful run.
+    "AurumSignalDesk-VantageSpread": frozenset({3}),
+}
+
 
 @dataclass(frozen=True)
 class TaskInfo:
@@ -104,10 +124,16 @@ def audit(read: Callable[[str], TaskInfo],
                                f"DISABLED — {why} is registered and switched "
                                f"off.", fixable=True))
             continue
-        if info.last_result not in (None, 0, 267009):    # 267009 = still running
+        benign = BENIGN_RESULTS | BENIGN_PER_TASK.get(name, frozenset())
+        if info.last_result is not None and info.last_result not in benign:
             out.append(Finding(name, False,
                                f"last run exited {info.last_result} — {why} is "
                                f"firing and FAILING, which no restart fixes."))
+            continue
+        if info.last_result == 267011:
+            out.append(Finding(name, True,
+                               f"registered and enabled, HAS NOT RUN YET — normal "
+                               f"for a task whose first fire is still ahead"))
             continue
         if info.last_run is not None:
             age = now - info.last_run

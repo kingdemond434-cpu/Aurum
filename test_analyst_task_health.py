@@ -251,3 +251,63 @@ def test_a_partial_read_says_how_many_were_unreadable():
 def test_a_genuine_all_clear_still_says_so():
     """The honest pass must survive the fix, or the check becomes noise."""
     assert "every watchdog is running" in th_render(th_audit(_reader(), now=NOW))
+
+
+# ------------------- scheduler status codes are not exit codes
+
+def test_a_task_that_has_not_run_yet_is_not_a_failure():
+    """267011 = 0x00041303 = HAS NOT YET RUN. The normal state of a daily task
+    registered an hour ago — and reported as a hard failure on the live box the
+    first night this shipped, alongside a real one, which is exactly how a
+    watchdog teaches an operator to skim past it."""
+    name = "AurumSignalDesk-Cycle"
+    f = _by(th_audit(_reader({name: TaskInfo(name, True, True, None, 267011)}),
+                     now=NOW), name)
+    assert f.ok
+    assert "HAS NOT RUN YET" in f.detail
+
+
+@pytest.mark.parametrize("code,why", [
+    (267009, "currently running"),
+    (267011, "has not yet run"),
+    (267012, "no more runs scheduled"),
+    (267014, "terminated by the user"),
+])
+def test_scheduler_status_codes_are_not_read_as_failures(code, why):
+    name = "AurumSignalDesk"
+    assert _by(th_audit(_reader({name: TaskInfo(name, True, True, NOW, code)}),
+                        now=NOW), name).ok, why
+
+
+def test_the_spread_samplers_thin_archive_code_is_not_a_failure():
+    """The sampler exits 3 when it attached and sampled but the archive is still
+    too thin to write a profile. That is the expected state for the first hours
+    and a SUCCESSFUL run — it was exiting 1, so every early run looked like a
+    crash."""
+    name = "AurumSignalDesk-VantageSpread"
+    assert _by(th_audit(_reader({name: TaskInfo(name, True, True, NOW, 3)}),
+                        now=NOW), name).ok
+
+
+def test_one_tasks_vocabulary_does_not_excuse_anothers_failure():
+    """3 is benign for the sampler and must stay a fault everywhere else."""
+    name = "AurumSignalDesk-Update"
+    assert not _by(th_audit(_reader({name: TaskInfo(name, True, True, NOW, 3)}),
+                            now=NOW), name).ok
+
+
+def test_a_real_failure_is_still_caught():
+    """The fix must not turn the check into a rubber stamp."""
+    name = "AurumSignalDesk-Update"
+    f = _by(th_audit(_reader({name: TaskInfo(name, True, True, NOW, 1)}),
+                     now=NOW), name)
+    assert not f.ok and "FAILING" in f.detail
+
+
+def test_the_sampler_actually_returns_the_documented_codes():
+    """A convention the watchdog trusts and the script does not honour is worse
+    than no convention."""
+    src = (Path(__file__).parent / "sample_vantage_spread.py").read_text(encoding="utf-8")
+    assert "return 3" in src
+    i = src.index("NOT WRITTEN.")
+    assert "return 3" in src[i:i + 1200], "the thin-archive path still returns 1"

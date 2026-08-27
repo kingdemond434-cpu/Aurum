@@ -189,7 +189,18 @@ def main(argv: list[str] | None = None) -> int:
         print("\n  NOT WRITTEN. No session yet has the 100 samples venue.calibrate requires.\n"
               "  That is UNMEASURED, not a spread of zero -- keep sampling; the archive is\n"
               "  cumulative and every run brings the thin sessions closer.")
-        return 1
+        # EXIT 3, NOT 1. This run SUCCEEDED: it attached, sampled, and appended
+        # to the archive, which is the whole job. Not writing a profile yet is
+        # the expected state for the first hours, so returning a failure code
+        # made every early run look like a crash -- and the task-health watchdog
+        # duly reported "firing and FAILING, which no restart fixes" on a task
+        # that was working exactly as designed. A watchdog that cries wolf is
+        # one the operator learns to ignore.
+        #
+        #   0  profile written
+        #   3  sampled, archive still thin  (success, nothing to write)
+        #   1  genuine failure -- no terminal, wrong broker, crash
+        return 3
     print(f"\n  written to {PROFILE} -- the path golddesk/service.py loads")
     return 0
 
