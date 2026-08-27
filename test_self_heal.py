@@ -240,3 +240,69 @@ def test_the_healer_is_actually_scheduled():
     assert "self_heal.py" in src and "-SelfHeal" in src
     block = src[src.index("foreach ($t in @($TaskName"):][:500]
     assert "-SelfHeal" in block, "the uninstaller would leave it firing"
+
+
+# ------------------------------- the expanded allowlist, split correctly
+
+@pytest.mark.parametrize("check,expect_fix", [
+    ("cohorts", True),
+    ("ledger growth", True),
+    ("checkpoint", True),
+    ("spread profile", True),
+    ("macro", True),
+    ("disk", True),
+    # These need NEW CODE or a human decision. No allowlisted action touches
+    # them, and pretending otherwise is the dangerous version.
+    ("tp1 banking", False),
+    ("excursion", False),
+    ("ledger integrity", False),
+    ("notifications", False),
+])
+def test_each_fault_routes_to_the_right_side_of_the_line(check, expect_fix):
+    rem, esc = plan([_broken(check)], restart_desk=_Spy(),
+                    sample_spread=_Spy(), refresh_macro=_Spy(),
+                    rotate_logs=_Spy(), refresh_flows=_Spy())
+    assert bool(rem) is expect_fix, check
+    assert bool(esc) is (not expect_fix), check
+
+
+def test_a_torn_ledger_is_never_auto_repaired():
+    """THE ONE THAT MATTERS MOST. The ledger is the only record of what this
+    desk predicted and what happened. A remedy that edits it unattended can
+    destroy the evidence the whole desk exists to produce."""
+    rem, esc = plan([_broken("ledger integrity")], restart_desk=_Spy(),
+                    sample_spread=_Spy(), refresh_macro=_Spy(), rotate_logs=_Spy())
+    assert not rem
+    assert [f.check for f in esc] == ["ledger integrity"]
+
+
+def test_a_spread_sampler_that_declines_is_not_a_failure():
+    """It refuses unless the attached terminal is the execution venue, and that
+    refusal is the sampler working correctly."""
+    rem, _ = plan([_broken("spread profile")], restart_desk=_Spy(),
+                  sample_spread=_Spy(ok=False))
+    out = Remediator().run(rem, now=NOW)
+    assert not out[0].taken
+    assert "declined by the action" in out[0].detail
+
+
+def test_the_disk_remedy_can_only_reach_rotated_logs():
+    """A disk remedy that can reach evidence eventually destroys it, which is
+    worse than the full disk it was fixing."""
+    import self_heal
+    for pat in self_heal.ROTATABLE:
+        assert pat.endswith((".1", ".2", ".old", ".tmp.*")), pat
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    i = src.index("def _rotate_logs")
+    block = src[i:i + 700]
+    assert "ledger" not in block
+    assert "service_state" not in block
+    assert 'BASE / "logs"' in block
+
+
+def test_no_remedy_is_offered_without_its_action():
+    """plan() must not promise a fix it was given no way to perform."""
+    rem, esc = plan([_broken("spread profile"), _broken("macro"), _broken("disk")],
+                    restart_desk=_Spy())
+    assert not rem
+    assert len(esc) == 3

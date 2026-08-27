@@ -70,6 +70,62 @@ def _refresh_flows() -> bool:
         return False
 
 
+def _sample_spread() -> bool:
+    """Run the venue spread sampler. It refuses if the attached terminal is not
+    the execution venue, and that refusal is CORRECT -- recorded as not-taken."""
+    script = BASE / "sample_vantage_spread.py"
+    if not script.exists():
+        return False
+    try:
+        r = subprocess.run([sys.executable, str(script), "--seconds", "90",
+                            "--statistic", "conservative"],
+                           capture_output=True, timeout=300, cwd=str(BASE))
+        return r.returncode == 0
+    except Exception as e:                             # noqa: BLE001
+        log.warning("spread sampler failed: %s", e)
+        return False
+
+
+def _refresh_macro() -> bool:
+    """Re-pull the free driver set. A blocked or rate-limited public feed often
+    clears on retry; if it does not, the attempt cap escalates it."""
+    try:
+        import os
+        from golddesk.drivers_free import build_drivers
+        d = build_drivers(os.environ.get("FRED_API_KEY"))
+        return any(p.observed for p in d.values())
+    except Exception as e:                             # noqa: BLE001
+        log.warning("macro refresh failed: %s", e)
+        return False
+
+
+#: Log files the disk remedy may delete. ROTATED LOGS ONLY.
+#:
+#: The ledger, every checkpoint and every tick archive are absent from this list
+#: DELIBERATELY and must stay absent. A disk remedy that can reach evidence is
+#: one that eventually destroys the only record of what the desk predicted --
+#: worse than the full disk it was fixing.
+ROTATABLE = ("*.log.1", "*.log.2", "*.log.old", "_desk_stdout.tmp.*",
+             "_desk_stderr.tmp.*")
+
+
+def _rotate_logs() -> bool:
+    logs = BASE / "logs"
+    if not logs.exists():
+        return False
+    freed = 0
+    for pat in ROTATABLE:
+        for f in logs.glob(pat):
+            try:
+                freed += f.stat().st_size
+                f.unlink()
+            except Exception:                          # noqa: BLE001
+                continue
+    if freed:
+        log.info("freed %.1fMB of rotated logs", freed / (1024 * 1024))
+    return freed > 0
+
+
 def _load_attempts() -> dict:
     """Attempt history OUTLIVES the process, or the cooldown is a fiction: a
     task that starts fresh every 15 minutes would have no memory of the restart
@@ -111,11 +167,14 @@ def main(argv=None) -> int:
     # is not possible from another process, and guessing would make the check
     # about this script rather than about the desk.
     cohorts = build_cohorts(rows) or None
-    findings = audit(rows, cohorts)
+    findings = audit(rows, cohorts, base=BASE)
     print(audit_render(findings))
 
     remedies, escalations = plan(findings, restart_desk=_restart_desk,
-                                 refresh_flows=_refresh_flows)
+                                 refresh_flows=_refresh_flows,
+                                 sample_spread=_sample_spread,
+                                 refresh_macro=_refresh_macro,
+                                 rotate_logs=_rotate_logs)
     if args.dry_run:
         for r in remedies:
             print(f"  WOULD FIX  {r.fault}: {r.action} — {r.why}")

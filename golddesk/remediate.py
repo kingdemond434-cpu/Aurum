@@ -117,7 +117,10 @@ class Remediator:
 # --------------------------------------------------------------------------
 
 def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
-         refresh_flows: Optional[Callable[[], bool]] = None) -> tuple[list[Remedy], list]:
+         refresh_flows: Optional[Callable[[], bool]] = None,
+         sample_spread: Optional[Callable[[], bool]] = None,
+         refresh_macro: Optional[Callable[[], bool]] = None,
+         rotate_logs: Optional[Callable[[], bool]] = None) -> tuple[list[Remedy], list]:
     """Split audit findings into what can be fixed and what must escalate.
 
     Returns (remedies, escalations). A finding that maps to no remedy is NOT
@@ -152,6 +155,44 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
                 "a desk that has stopped writing decisions is either wedged or "
                 "the venue is shut; a restart is harmless in the second case",
                 restart_desk))
+
+        elif f.check == "checkpoint":
+            # MECHANICAL. A checkpoint that stopped moving means the loop is
+            # wedged; a restart is the only remedy available without reading
+            # code, and it is the same one the watchdog would eventually apply.
+            remedies.append(Remedy(
+                f.check, "restart the desk",
+                "a desk that has stopped persisting state loses everything since "
+                "the last write if it crashes",
+                restart_desk))
+
+        elif f.check == "spread profile" and sample_spread is not None:
+            # MECHANICAL, and it may legitimately DECLINE: the sampler refuses
+            # unless the attached terminal is the execution venue. A decline is
+            # recorded as not-taken rather than as a failure, because refusing
+            # to measure the wrong venue is the sampler working correctly.
+            remedies.append(Remedy(
+                f.check, "sample the execution venue's spread",
+                "the sampler builds the profile from live quotes and refuses if "
+                "the attached terminal is not the execution venue",
+                sample_spread))
+
+        elif f.check == "macro" and refresh_macro is not None:
+            remedies.append(Remedy(
+                f.check, "refetch the macro drivers",
+                "a blocked or rate-limited public feed usually clears on retry; "
+                "if it does not, the attempt cap turns this into an escalation",
+                refresh_macro))
+
+        elif f.check == "disk" and rotate_logs is not None:
+            # MECHANICAL and NARROW. Deletes ROTATED LOGS ONLY -- never the
+            # ledger, never a checkpoint, never tick archives. A disk remedy
+            # that can reach evidence is a disk remedy that eventually destroys
+            # it, which is worse than a full disk.
+            remedies.append(Remedy(
+                f.check, "delete rotated logs",
+                "rotated logs only — never the ledger, a checkpoint or an archive",
+                rotate_logs))
 
         elif f.check == "flows" and refresh_flows is not None:
             remedies.append(Remedy(f.check, "refetch the flows cache",

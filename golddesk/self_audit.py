@@ -40,8 +40,10 @@ every part looks fine on its own.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, Sequence
 
 SELF_AUDIT_VERSION = "audit-2026-08-28-a"
@@ -195,15 +197,176 @@ def check_ledger_is_growing(rows: Sequence[dict],
     return Finding("ledger growth", True, f"newest row {age_h:.1f}h old")
 
 
+# --------------------------------------------------------------------------
+# System checks. These read the FILESYSTEM rather than the ledger, and each one
+# corresponds to a fault observed on the live box on 2026-08-27.
+# --------------------------------------------------------------------------
+
+def check_spread_profile(base: Path) -> Finding:
+    """Expectancy must be priced against the venue that fills the order.
+
+    OBSERVED LIVE: "NO SPREAD PROFILE -- costs will be taken from the FEED,
+    which is not your execution venue." The desk reads Fusion and the operator
+    fills on Vantage, so every R:R figure was optimistic by whatever Vantage
+    charges over Fusion. It matters least on wide stops and most on the tight
+    ones, which is the wrong way round for a fault to hide.
+    """
+    prof = base / "config" / "spread_profile.json"
+    if not prof.exists():
+        return Finding("spread profile", False,
+                       "absent — every expectancy figure is priced against the "
+                       "FEED's spread, not the venue that actually fills you")
+    try:
+        d = json.loads(prof.read_text(encoding="utf-8"))
+    except Exception as e:                             # noqa: BLE001
+        return Finding("spread profile", False, f"unreadable ({e})")
+    if not d.get("by_session"):
+        return Finding("spread profile", False,
+                       "present but NO session was calibrated — a profile with "
+                       "no measured session prices nothing")
+    return Finding("spread profile", True,
+                   f"{len(d['by_session'])} session(s) measured on "
+                   f"{d.get('calibrated_from', 'unknown venue')}")
+
+
+def check_notifications_deliver(base: Path) -> Finding:
+    """A desk whose messages do not arrive has no product.
+
+    The message IS this desk's entire output. Silence from a broken channel and
+    silence from a quiet market are indistinguishable to the operator, which is
+    the same shape as the BLIND defect one level out.
+    """
+    st = base / "state" / "service_state.json"
+    if not st.exists():
+        return Finding("notifications", True, "no checkpoint yet")
+    try:
+        d = json.loads(st.read_text(encoding="utf-8"))
+    except Exception as e:                             # noqa: BLE001
+        return Finding("notifications", True, f"checkpoint unreadable ({e})")
+    h = d.get("notification_health") or {}
+    sent, failed = h.get("sent"), h.get("failed")
+    if sent is None and failed is None:
+        return Finding("notifications", True,
+                       "this sink does not track delivery — health is UNKNOWN, "
+                       "which is not the same as healthy")
+    total = (sent or 0) + (failed or 0)
+    if total and (failed or 0) / total > 0.5:
+        return Finding("notifications", False,
+                       f"{failed} of {total} sends FAILED — the desk is deciding "
+                       f"into a void and its silence looks like a quiet market")
+    return Finding("notifications", True, f"{sent or 0} delivered, {failed or 0} failed")
+
+
+def check_checkpoint_is_fresh(base: Path, now: Optional[datetime] = None,
+                              stale_hours: float = 6.0) -> Finding:
+    """A checkpoint that has stopped moving means an open position nobody is
+    persisting -- a crash from here loses the position's whole excursion."""
+    now = now or datetime.now(timezone.utc)
+    st = base / "state" / "service_state.json"
+    if not st.exists():
+        return Finding("checkpoint", True, "none yet")
+    age_h = (now.timestamp() - st.stat().st_mtime) / 3600.0
+    if age_h > stale_hours:
+        return Finding("checkpoint", False,
+                       f"last written {age_h:.1f}h ago — the desk is not "
+                       f"persisting state, so a crash loses everything since")
+    return Finding("checkpoint", True, f"written {age_h:.1f}h ago")
+
+
+def check_ledger_integrity(base: Path) -> Finding:
+    """Torn lines and duplicate decision ids, counted rather than repaired.
+
+    NEVER auto-repaired. The ledger is the only record of what this desk
+    predicted and what happened; a process that edits it unattended can destroy
+    the evidence it exists to protect. Counting is the whole job here.
+    """
+    led = base / "state" / "ledger.jsonl"
+    if not led.exists():
+        return Finding("ledger integrity", True, "no ledger yet")
+    torn, ids, dupes = 0, set(), 0
+    for line in led.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            r = json.loads(line)
+        except Exception:                              # noqa: BLE001
+            torn += 1
+            continue
+        did = r.get("decision_id")
+        if did:
+            if did in ids:
+                dupes += 1
+            ids.add(did)
+    if torn or dupes:
+        return Finding("ledger integrity", False,
+                       f"{torn} torn line(s), {dupes} duplicate decision_id(s). "
+                       f"NOT auto-repaired: this file is the only record of what "
+                       f"the desk predicted, and editing evidence unattended is "
+                       f"how it gets destroyed.")
+    return Finding("ledger integrity", True, f"{len(ids)} unique decision(s), no tears")
+
+
+def check_disk_headroom(base: Path, min_free_mb: float = 500.0) -> Finding:
+    """A full disk stops the ledger silently -- writes fail, the desk continues."""
+    try:
+        import shutil
+        free_mb = shutil.disk_usage(base).free / (1024 * 1024)
+    except Exception as e:                             # noqa: BLE001
+        return Finding("disk", True, f"UNMEASURED ({e})")
+    if free_mb < min_free_mb:
+        return Finding("disk", False,
+                       f"{free_mb:.0f}MB free — below {min_free_mb:.0f}MB. Ledger "
+                       f"writes fail silently on a full disk and the desk keeps "
+                       f"deciding as if they succeeded.")
+    return Finding("disk", True, f"{free_mb:.0f}MB free")
+
+
+def check_macro_is_measured(rows: Sequence[dict]) -> Finding:
+    """Gold's entire bid is macro. Briefs reading UNMEASURED are briefs the
+    analyst took blind to DXY, real yields and risk.
+
+    OBSERVED LIVE: yfinance returned "possibly delisted" for DX-Y.NYB, ^GSPC and
+    ^VIX simultaneously -- the Yahoo API, not three delistings -- so every brief
+    carried no macro at all.
+    """
+    recent = [r for r in rows if r.get("brief_render")][-20:]
+    if not recent:
+        return Finding("macro", True, "no briefs yet")
+    blind = sum(1 for r in recent if "UNMEASURED" in str(r.get("brief_render")))
+    if blind == len(recent):
+        return Finding("macro", False,
+                       f"all {len(recent)} recent briefs carried MACRO UNMEASURED "
+                       f"— the analyst is reading gold with no DXY, no real "
+                       f"yield and no risk proxy")
+    return Finding("macro", True, f"{len(recent) - blind}/{len(recent)} briefs carried macro")
+
+
 def audit(rows: Sequence[dict], cohorts: Optional[dict] = None,
-          now: Optional[datetime] = None) -> list[Finding]:
-    return [
+          now: Optional[datetime] = None,
+          base: Optional[Path] = None) -> list[Finding]:
+    """Ledger checks always; filesystem checks when a base path is supplied.
+
+    `base` is optional so the ledger half stays trivially testable without a
+    filesystem, and so a caller with no checkout (a backtest, a notebook) gets
+    the checks it can actually answer rather than a spray of UNMEASURED.
+    """
+    out = [
         check_cohorts_are_loaded(rows, cohorts),
         check_tp1_is_acted_on(rows),
         check_excursion_survives(rows),
         check_blind_bars_are_journalled(rows),
         check_ledger_is_growing(rows, now),
+        check_macro_is_measured(rows),
     ]
+    if base is not None:
+        out += [
+            check_spread_profile(base),
+            check_notifications_deliver(base),
+            check_checkpoint_is_fresh(base, now),
+            check_ledger_integrity(base),
+            check_disk_headroom(base),
+        ]
+    return out
 
 
 def render(findings: Sequence[Finding]) -> str:

@@ -187,3 +187,155 @@ def test_the_audit_runs_at_boot():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# ==================================================================
+# System checks — each corresponds to a fault observed on the live box
+# ==================================================================
+
+def _base(tmp_path):
+    (tmp_path / "state").mkdir(exist_ok=True)
+    (tmp_path / "config").mkdir(exist_ok=True)
+    return tmp_path
+
+
+def _sys(tmp_path, rows=(), cohorts=None, now=NOW):
+    return audit(list(rows), cohorts, now=now, base=_base(tmp_path))
+
+
+# ------------------------------------------------------- spread profile
+
+def test_a_missing_spread_profile_is_a_fault(tmp_path):
+    """OBSERVED LIVE all day: every expectancy figure priced against Fusion's
+    feed while the operator fills on Vantage."""
+    f = _by(_sys(tmp_path), "spread profile")
+    assert not f.ok
+    assert "not the venue that actually fills you" in f.detail
+
+
+def test_a_profile_with_no_measured_session_is_still_a_fault(tmp_path):
+    """calibrate() refuses to characterise a session under 100 quotes, so a
+    profile can exist and measure nothing — which prices nothing."""
+    import json
+    b = _base(tmp_path)
+    (b / "config" / "spread_profile.json").write_text(
+        json.dumps({"by_session": {}, "calibrated_from": "Vantage"}))
+    f = _by(_sys(tmp_path), "spread profile")
+    assert not f.ok
+    assert "NO session was calibrated" in f.detail
+
+
+def test_a_calibrated_profile_passes_and_names_the_venue(tmp_path):
+    import json
+    b = _base(tmp_path)
+    (b / "config" / "spread_profile.json").write_text(
+        json.dumps({"by_session": {"LONDON": 0.28}, "calibrated_from": "Vantage-Live"}))
+    f = _by(_sys(tmp_path), "spread profile")
+    assert f.ok and "Vantage-Live" in f.detail
+
+
+# --------------------------------------------------------- notifications
+
+def test_mostly_failing_sends_is_a_fault(tmp_path):
+    """The message IS this desk's entire product. Silence from a broken channel
+    and silence from a quiet market look identical to the operator."""
+    import json
+    b = _base(tmp_path)
+    (b / "state" / "service_state.json").write_text(
+        json.dumps({"notification_health": {"sent": 2, "failed": 30}}))
+    f = _by(_sys(tmp_path), "notifications")
+    assert not f.ok
+    assert "deciding into a void" in f.detail
+
+
+def test_a_sink_that_tracks_nothing_reads_UNKNOWN_not_healthy(tmp_path):
+    import json
+    b = _base(tmp_path)
+    (b / "state" / "service_state.json").write_text(json.dumps({"notification_health": {}}))
+    f = _by(_sys(tmp_path), "notifications")
+    assert f.ok
+    assert "UNKNOWN" in f.detail and "not the same as healthy" in f.detail
+
+
+# ------------------------------------------------------------ checkpoint
+
+def test_a_stale_checkpoint_is_a_fault(tmp_path):
+    import json, os, time
+    b = _base(tmp_path)
+    p = b / "state" / "service_state.json"
+    p.write_text(json.dumps({}))
+    old = time.time() - 60 * 60 * 24
+    os.utime(p, (old, old))
+    f = _by(audit([], None, now=datetime.now(UTC), base=b), "checkpoint")
+    assert not f.ok
+    assert "not persisting state" in f.detail
+
+
+# ------------------------------------------------------ ledger integrity
+
+def test_torn_lines_and_duplicate_ids_are_counted(tmp_path):
+    b = _base(tmp_path)
+    (b / "state" / "ledger.jsonl").write_text(
+        '{"decision_id": "a"}\n{"decision_id": "a"}\n{not json\n')
+    f = _by(_sys(tmp_path), "ledger integrity")
+    assert not f.ok
+    assert "1 torn line(s), 1 duplicate" in f.detail
+
+
+def test_the_ledger_is_never_auto_repaired(tmp_path):
+    """It is the only record of what this desk predicted. A process that edits
+    evidence unattended is how the evidence gets destroyed."""
+    b = _base(tmp_path)
+    (b / "state" / "ledger.jsonl").write_text('{"decision_id": "a"}\n{bad\n')
+    before = (b / "state" / "ledger.jsonl").read_text()
+    f = _by(_sys(tmp_path), "ledger integrity")
+    assert not f.ok
+    assert "NOT auto-repaired" in f.detail
+    assert (b / "state" / "ledger.jsonl").read_text() == before
+
+
+def test_a_clean_ledger_passes(tmp_path):
+    b = _base(tmp_path)
+    (b / "state" / "ledger.jsonl").write_text(
+        '{"decision_id": "a"}\n{"decision_id": "b"}\n')
+    assert _by(_sys(tmp_path), "ledger integrity").ok
+
+
+# ----------------------------------------------------------------- disk
+
+def test_low_disk_is_a_fault(tmp_path, monkeypatch):
+    import shutil
+    from collections import namedtuple
+    U = namedtuple("U", "total used free")
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: U(1, 1, 10 * 1024 * 1024))
+    f = _by(_sys(tmp_path), "disk")
+    assert not f.ok
+    assert "fail silently" in f.detail
+
+
+# ---------------------------------------------------------------- macro
+
+def test_briefs_all_reading_UNMEASURED_is_a_fault():
+    """OBSERVED LIVE: yfinance returned 'possibly delisted' for DX-Y.NYB, ^GSPC
+    and ^VIX at once — the Yahoo API, not three delistings."""
+    rows = [{"brief_render": "MACRO CONTEXT: UNMEASURED", "ts": NOW.isoformat()}
+            for _ in range(5)]
+    f = _by(audit(rows, {"m": 1}, now=NOW), "macro")
+    assert not f.ok
+    assert "no DXY" in f.detail
+
+
+def test_briefs_carrying_macro_pass():
+    rows = [{"brief_render": "DXY -0.4%  REAL YIELD 1.9%", "ts": NOW.isoformat()}
+            for _ in range(5)]
+    assert _by(audit(rows, {"m": 1}, now=NOW), "macro").ok
+
+
+# ------------------------------------------------- the base is optional
+
+def test_ledger_checks_run_without_a_filesystem():
+    """So the ledger half stays trivially testable, and a caller with no
+    checkout gets the checks it can answer rather than a spray of UNMEASURED."""
+    names = {f.check for f in audit([], None, now=NOW)}
+    assert "cohorts" in names
+    assert "spread profile" not in names
