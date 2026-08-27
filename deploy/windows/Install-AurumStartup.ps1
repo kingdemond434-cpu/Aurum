@@ -245,6 +245,48 @@ Register-ScheduledTask -TaskName $WatchdogTaskName -Action $wdAction -Trigger $w
 $wdTask = Get-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
 if (-not $wdTask) { throw "task '$WatchdogTaskName' did not register" }
 
+# ---- THE EXECUTION VENUE'S SPREAD, MEASURED RATHER THAN ASSERTED --------------------------
+#
+# The desk reads prices from Fusion and the operator executes on Vantage, so every expectancy
+# figure was being priced against a spread that is never paid -- the exact warning run_desk.py
+# prints at every launch. calibrate_spread.py cannot close it here: it measures from the
+# ledger, and the ledger holds the FEED's quotes, so it would produce a precise per-session
+# number for the wrong broker.
+#
+# Sampled every 20 minutes rather than once: gold's ASIA book and its OVERLAP book are
+# different markets and rollover is different again, and venue.calibrate refuses any session
+# with fewer than 100 samples rather than reporting a median of twenty. The archive is
+# cumulative, so the profile converges instead of re-guessing from the last two minutes.
+#
+# CONSERVATIVE (p75) while the archive is thin, deliberately: being slightly pessimistic about
+# cost is a far cheaper error than being optimistic, because optimism shows up as trades that
+# looked positive and were not.
+$spreadScript = Join-Path $DeskRoot "sample_vantage_spread.py"
+if (Test-Path $spreadScript) {
+    $SpreadTaskName = "$TaskName-VantageSpread"
+    $py = Join-Path $DeskRoot ".venv\Scripts\python.exe"
+    if (-not (Test-Path $py)) { $py = "py" }
+    $spreadLog = Join-Path $DeskRoot "logs\vantage_spread.log"
+    $spreadCmd = "/d /s /c `"`"$py`" `"$spreadScript`" --seconds 90 --statistic conservative " +
+                 ">> `"$spreadLog`" 2>&1`""
+    $spAction = New-ScheduledTaskAction -Execute "cmd.exe" -Argument $spreadCmd `
+                                        -WorkingDirectory $DeskRoot
+    $spTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+                                          -RepetitionInterval (New-TimeSpan -Minutes 20) `
+                                          -RepetitionDuration (New-TimeSpan -Days 3650)
+    $spPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+                                              -LogonType Interactive -RunLevel Limited
+    $spSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $SpreadTaskName -Action $spAction -Trigger $spTrigger `
+                           -Principal $spPrincipal -Settings $spSettings -Force | Out-Null
+    $spTask = Get-ScheduledTask -TaskName $SpreadTaskName -ErrorAction SilentlyContinue
+    if (-not $spTask) { throw "task '$SpreadTaskName' did not register" }
+} else {
+    Write-Host "  [SKIP] $TaskName-VantageSpread : sample_vantage_spread.py not found"
+}
+
 Write-Host ""
 Write-Host "REGISTERED: $TaskName"
 Write-Host "  runs      : $supervisor"
@@ -253,6 +295,17 @@ Write-Host "  args      : $($DeskArgs -join ' ')"
 Write-Host "  trigger   : at logon of $env:USERDOMAIN\$env:USERNAME"
 Write-Host "  state     : $($task.State)"
 Write-Host ""
+if ($spTask) {
+    Write-Host "REGISTERED: $SpreadTaskName"
+    Write-Host "  runs      : $spreadScript"
+    Write-Host "  trigger   : every 20 minutes, indefinitely"
+    Write-Host "  purpose   : measure the EXECUTION venue's (Vantage) per-session spread, so"
+    Write-Host "              expectancy stops being priced against Fusion's feed -- a cost"
+    Write-Host "              this account never pays. Archive is cumulative; the profile"
+    Write-Host "              converges. Refuses if the terminal is not Vantage."
+    Write-Host "  state     : $($spTask.State)"
+    Write-Host ""
+}
 Write-Host "REGISTERED: $WatchdogTaskName"
 Write-Host "  runs      : $watchdogScript"
 Write-Host "  trigger   : every 5 minutes, indefinitely"

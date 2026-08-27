@@ -104,7 +104,12 @@ def quotes_from_ledger(rows: list[dict]) -> Iterator[tuple[datetime, float, floa
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--ledger", default="state/ledger.jsonl")
-    ap.add_argument("--out", default="state/spread_profile.json",
+    # config/, NOT state/. This defaulted to state/spread_profile.json while
+    # golddesk/service.py loads config/spread_profile.json, so the help text below -- "where
+    # the desk loads the profile from" -- was false, and a calibration run reported success
+    # while writing a file the desk would never open. Found 2026-08-27. The two now agree;
+    # they are checked against each other by test_calibrate_spread.py.
+    ap.add_argument("--out", default="config/spread_profile.json",
                     help="where the desk loads the profile from")
     ap.add_argument("--venue", default="",
                     help="venue label stored with the profile; defaults to the "

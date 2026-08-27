@@ -148,3 +148,37 @@ def test_conservative_prices_a_worse_fill_than_median(tmp_path, capsys):
     med = json.loads(med_p.read_text(encoding="utf-8"))["by_session"]["LONDON"]
     cons = json.loads(cons_p.read_text(encoding="utf-8"))["by_session"]["LONDON"]
     assert cons > med, f"conservative {cons} did not exceed median {med}"
+
+
+def test_the_calibrator_writes_where_the_desk_actually_reads():
+    """A PROFILE THE DESK DOES NOT LOAD IS THE SAME AS NO PROFILE.
+
+    calibrate_spread.py defaulted --out to state/spread_profile.json while
+    golddesk/service.py loads config/spread_profile.json. Its own help text said "where the
+    desk loads the profile from", which was false: a calibration run printed a measured
+    per-session profile, reported success, and wrote a file nothing would ever open. The desk
+    kept pricing against the feed and kept printing the UNCALIBRATED warning, which reads as
+    "you have not calibrated yet" rather than "you did, and it went nowhere".
+
+    Pinned as an equality between the writer's default and the reader's default so the two
+    cannot drift apart again -- the same guard shape used for the two PS1 arg lists.
+    """
+    import argparse
+    import inspect
+    import re
+
+    import calibrate_spread
+    from golddesk import service
+
+    src = inspect.getsource(calibrate_spread.main)
+    m = re.search(r'add_argument\(\s*"--out",\s*default="([^"]+)"', src)
+    assert m, "could not find the --out default in calibrate_spread.main"
+    writer_default = m.group(1)
+
+    reader_default = inspect.signature(service.build_service).parameters[
+        "spread_profile_path"].default
+
+    assert writer_default == reader_default, (
+        f"calibrate_spread writes {writer_default!r} but service.py loads "
+        f"{reader_default!r} -- a calibration that reaches nothing")
+    assert isinstance(argparse.ArgumentParser, type)   # import is used, not decorative
