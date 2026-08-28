@@ -5,17 +5,17 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 19 login failure(s) earlier in the window, but the analyst has answered 40 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 19 login failure(s) earlier in the window, but the analyst has answered 46 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "44/84 wakes (52%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "44/90 wakes (49%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 228s of 600s budget (38%) over 40 reads",
+          "detail": "median 211s of 600s budget (35%) over 46 reads",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 125 recent / 0 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 131 recent / 0 prior decisions, under 40 either side",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/108 (26%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/114 (25%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "21 sleeve(s) accruing, published 0.2h ago",
+          "detail": "18 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -77,7 +77,7 @@
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.14R while refusals reached +0.55R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.14R while refusals reached +0.54R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -118,7 +118,7 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "detail": "last run exited -65536 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
           "ok": false
         },
         {
@@ -184,22 +184,22 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.1h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "241 unique decision(s), no tears",
+          "detail": "247 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38773MB free",
+          "detail": "38761MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 12 min ago, after a boot 142.5h ago",
+          "detail": "wrote 9 min ago, after a boot 142.7h ago",
           "ok": true
         }
       ],
@@ -215,12 +215,12 @@
       "why": {}
     },
     "REFUSAL_COMPILER": {
-      "count": 62,
-      "last": "2026-08-28T18:15:00.247278+00:00"
+      "count": 66,
+      "last": "2026-08-28T18:30:00.764742+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 46,
-      "last": "2026-08-28T18:15:00.247278+00:00"
+      "count": 48,
+      "last": "2026-08-28T18:30:00.764742+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T18:45:36.093720+00:00",
-  "last_row_utc": "2026-08-28T18:15:00.247278+00:00",
-  "ledger_rows": 258,
+  "generated_utc": "2026-08-28T19:00:00.748525+00:00",
+  "last_row_utc": "2026-08-28T18:30:00.764742+00:00",
+  "ledger_rows": 264,
   "total_faults": 9
 }
