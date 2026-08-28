@@ -5,12 +5,12 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 32 login failure(s) earlier in the window, but the analyst has answered 35 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 31 login failure(s) earlier in the window, but the analyst has answered 35 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "45/80 wakes (56%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "detail": "46/81 wakes (57%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.5h ago",
+          "detail": "21 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "detail": "last run exited 2 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
           "ok": false
         },
         {
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "104 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "106 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "224 unique decision(s), no tears",
+          "detail": "226 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38989MB free",
+          "detail": "38983MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 15 min ago, after a boot 140.2h ago",
+          "detail": "wrote 14 min ago, after a boot 140.5h ago",
           "ok": true
         }
       ],
@@ -208,11 +208,20 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 104,
-      "error": "claude exited 3221226505: ASSERTION FAILED: MemoryExhaustion: Crash intentionally because memory is exhausted.\nfailureMode != AllocationFailureMode::Assert\n/webkit/Source/JavaScriptCore/heap/LocalAllocator.cpp(164) : void *JSC::LocalAllocator::allocateSlowCase(JSC::Heap &, size_t, GCDeferralContext *, AllocationFailureMode)\n",
-      "last": "2026-08-28T16:00:00.448935+00:00",
+      "count": 106,
+      "error": "claude exited 1: {\"is_error\":true,\"duration_api_ms\":0,\"num_turns\":1,\"stop_reason\":\"stop_sequence\",\"session_id\":\"cc4e713c-d3f5-4599-95dd-4e16b99a7100\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\"",
+      "last": "2026-08-28T16:15:00.608536+00:00",
       "stage": "survey",
-      "why": {}
+      "why": {
+        "duration_api_ms": 0,
+        "input_tokens": 0,
+        "is_error": true,
+        "output_tokens": 0,
+        "reading": "the API was never called -- this is a LOCAL failure (input, login or binary), not a limit or an outage",
+        "result": "You've hit your session limit \u00b7 resets 8:10pm (Europe/Berlin)",
+        "stop_reason": "stop_sequence",
+        "subtype": "success"
+      }
     },
     "REFUSAL_COMPILER": {
       "count": 58,
@@ -236,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T16:30:00.499553+00:00",
-  "last_row_utc": "2026-08-28T16:00:00.448935+00:00",
-  "ledger_rows": 241,
+  "generated_utc": "2026-08-28T16:45:00.267476+00:00",
+  "last_row_utc": "2026-08-28T16:15:00.608536+00:00",
+  "ledger_rows": 243,
   "total_faults": 11
 }
