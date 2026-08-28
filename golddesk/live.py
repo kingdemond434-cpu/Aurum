@@ -1298,6 +1298,15 @@ class LiveDesk:
                      {"direction": sig.direction, "entry": sig.entry, "stop": sig.stop,
                       "tp1": sig.tp1, "tp2": sig.tp2, "rr_tp2": sig.rr_tp2,
                       "cost_r": sig.cost_r, "analyst_read": pr.read.model_dump(),
+                      # WAS THE STOP SIZED FOR THE VOLATILITY IT WILL MEET?
+                      # Recorded, not acted on. Stops are placed off a TRAILING
+                      # ATR, which lags a volatility expansion by construction --
+                      # so the stop is narrowest, relative to what price is
+                      # actually doing, exactly when trends travel furthest. That
+                      # is a hypothesis about 2026-08-28, not a finding, and the
+                      # two numbers here are what let it be settled later instead
+                      # of widening a stop on the strength of one afternoon.
+                      "stop_regime": self._stop_regime(bars, i, brief, sig),
                       "vision": self.vision.value, "charts_sent": n_charts,
                       "management_policy": self.active_chooser().name,
                       # WHO will manage this position, and on whose authority.
@@ -1687,6 +1696,28 @@ class LiveDesk:
         if brief.day_state is not None:
             out["prior_ny_session_state"] = brief.day_state.value
         return out
+
+    def _stop_regime(self, bars, i, brief, sig) -> dict:
+        """The stop's distance measured two ways: trailing ATR, and this bar.
+
+        NEVER the reason a signal fails to record. This is measurement attached
+        to a decision, and measurement that can take down the decision it
+        describes is worse than no measurement.
+        """
+        try:
+            from .candle_character import measure as _character
+            from .stop_regime import measure as _regime
+            bar = bars[i]
+            rng = float(bar.high) - float(bar.low)
+            rvm = None
+            try:
+                rvm = (_character(bars[max(0, i - 40):i + 1]) or {}).get("range_vs_mean")
+            except Exception:                         # noqa: BLE001
+                rvm = None
+            return _regime(abs(sig.entry - sig.stop), brief.atr, rng, rvm)
+        except Exception as e:                        # noqa: BLE001
+            log.debug("stop regime not recorded: %s", e)
+            return {}
 
     def _bank_tp1(self, t: OpenTrade, price: float, ts: datetime) -> None:
         """Bank part of the position at the objective the operator was shown.

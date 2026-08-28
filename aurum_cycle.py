@@ -459,6 +459,19 @@ def step_stop_autopsy(ctx: dict) -> str:
     return render(items)
 
 
+def step_stop_regime(ctx: dict) -> str:
+    """Were the stops too tight for the volatility the trades actually met?
+
+    Reports a COMPARISON and refuses to draw a conclusion from a thin sample.
+    "Give gold more room" is the fix that feels right, is trivial, and is
+    exactly what an overfit looks like from the inside.
+    """
+    from golddesk.stop_regime import assess
+    v = assess(ctx.get("rows") or [])
+    ctx["stop_regime"] = v
+    return v.render()
+
+
 def step_cohorts(ctx: dict) -> str:
     """What comparable setups actually did, per mechanism, with intervals.
 
@@ -637,6 +650,7 @@ STEPS = (
     # the desk is taking the right trades -- a question that cannot be answered
     # before the mechanisms have measured histories to compare against.
     ("cohorts", step_cohorts),
+    ("stop_regime", step_stop_regime),
     ("missed_money", step_missed_money),
     ("mgmt_counterfactual", step_mgmt_counterfactual),
     ("levers", step_levers),
