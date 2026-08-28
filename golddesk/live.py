@@ -262,6 +262,10 @@ class LiveStats:
     states: int = 0
     wakes: int = 0
     reads: int = 0
+    #: Reads served by the rule-based fallback because the analyst was
+    #: unreachable. Counted SEPARATELY from `reads` on purpose -- folding them
+    #: in would make the desk look busiest exactly while its analyst was dead.
+    fallback_reads: int = 0
     analyst_errors: int = 0
     entries: int = 0
     exits: int = 0
@@ -441,6 +445,12 @@ class LiveDesk:
         #: the two fire on different rules -- this one on the FIRST failure,
         #: since an expired login is known immediately and cannot self-clear.
         self._login_alarm_sent = False
+        #: One degraded-mode alert per outage, and one recovery notice.
+        self._degraded_notified = False
+        #: The rule-based reader, built on first use. A desk whose analyst
+        #: cannot be reached currently produces NOTHING, and nothing is the one
+        #: output that is certainly worthless -- see _fallback_read.
+        self._fallback: Optional[AnalystProvider] = None
         # Event proximity. None means the calendar is not wired, which the
         # uncertainty decomposition reports as UNKNOWN rather than as "no event"
         # — those are different claims and only one of them is true.
@@ -784,8 +794,14 @@ class LiveDesk:
             self.stats.reads += 1
             self._analyst_answered()
         except AnalystError as e:
-            self._record_blind(bars, i, brief, ts, "read", e)
-            return
+            # DEGRADE BEFORE GOING DARK. BLIND is the only output certain to be
+            # worthless; a rule-based read is weaker evidence and vastly better
+            # than none. None means the fallback is off or failed too, and then
+            # this books BLIND exactly as it always did.
+            pr = self._fallback_read(brief, "read", e)
+            if pr is None:
+                self._record_blind(bars, i, brief, ts, "read", e)
+                return
 
         if pr.read.setup is Setup.NO_SETUP:
             self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL, "MODEL",
@@ -948,8 +964,16 @@ class LiveDesk:
             self.stats.reads += 1
             self._analyst_answered()
         except AnalystError as e:
-            self._record_blind(bars, i, brief, ts, "survey", e)
-            return
+            # Same degrade as the single-read path. DeterministicProvider
+            # inherits AnalystProvider.survey, which wraps its read into a
+            # one-candidate universe and SAYS SO -- so universe mode returns one
+            # honest candidate rather than silently reporting a full enumeration.
+            fb = self._fallback_read(brief, "survey", e)
+            if fb is None:
+                self._record_blind(bars, i, brief, ts, "survey", e)
+                return
+            from .universe import as_universe
+            stamp, uni = fb, as_universe(fb.read)
 
         cands = compile_universe(brief, uni, self.thresholds, self.cost_model,
                                  self.cohorts, shadow=self.shadow)
@@ -1727,13 +1751,74 @@ class LiveDesk:
                 f"quiet: it is not declining trades, it is not seeing them. "
                 f"Every bar from here is journalled BLIND until it answers.")
 
+    #: Whether an unreachable analyst falls back to the rule-based reader.
+    #:
+    #: ON, because BLIND is the one output guaranteed to be worth nothing. When
+    #: the CLI's login expires the desk currently books BLIND on every bar and
+    #: the operator -- who places every trade by hand on this advisory desk --
+    #: gets silence, which is indistinguishable from a quiet market. A
+    #: rule-based read is worse evidence than a model read and enormously better
+    #: than none.
+    #:
+    #: WHAT KEEPS IT HONEST. The read is stamped provider="deterministic",
+    #: model="rules-v1", degraded=True with the reason, so it never enters the
+    #: analyst's cohort, never counts as an answered wake in analyst_health, and
+    #: is separable in every later analysis. The operator is told once when the
+    #: desk drops to it and once when the analyst returns. It is a FALLBACK, not
+    #: a substitution: the moment the analyst answers, this stops being used.
+    fallback_when_blind: bool = True
+
+    def _fallback_read(self, brief, stage: str,
+                       err: Exception) -> Optional[ProviderRead]:
+        """A rule-based read when the analyst cannot be reached, or None.
+
+        Returns None -- and the caller books BLIND exactly as before -- when the
+        fallback is disabled or itself fails. A fallback that quietly failed
+        would turn an outage into a different outage with no record of either.
+        """
+        if not self.fallback_when_blind:
+            return None
+        try:
+            if self._fallback is None:
+                from .providers import DeterministicProvider
+                self._fallback = DeterministicProvider()
+            pr = self._fallback.read(brief)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("fallback reader failed at %s too: %s", stage, e)
+            return None
+        usage = dict(pr.usage)
+        # THE LABEL IS THE WHOLE SAFETY ARGUMENT. Without it a degraded read is
+        # byte-identical to a model read in every downstream count, and the desk
+        # would look healthiest exactly while its analyst was dead.
+        usage.update({"degraded": True,
+                      "degraded_from": getattr(self.provider, "name", "?"),
+                      "degraded_stage": stage,
+                      "degraded_because": str(err)[:300]})
+        self.stats.fallback_reads += 1
+        if not self._degraded_notified:
+            self._degraded_notified = True
+            self._notify(
+                "*DESK ON THE RULE-BASED ARM* — the analyst is unreachable "
+                f"({type(err).__name__} at {stage}), so signals are coming from "
+                "the desk's own rules instead of a model read.\n\n"
+                "These are WEAKER reads: no context, no macro, no judgement — "
+                "structure only. They are labelled `deterministic/rules-v1` in "
+                "the ledger and are kept out of the analyst's evidence.\n\n"
+                "Better than silence, which is what you were getting. You will "
+                "be told the moment the analyst answers again.")
+        return ProviderRead(pr.read, pr.provider, pr.model, pr.latency_ms, usage)
+
     def _analyst_answered(self) -> None:
         """Called on every successful read. Closes an open outage."""
-        if self.stats.consecutive_blind >= BLIND_ALARM_AFTER or self._login_alarm_sent:
+        if (self.stats.consecutive_blind >= BLIND_ALARM_AFTER
+                or self._login_alarm_sent or self._degraded_notified):
             self._notify(f"*ANALYST BACK* — reading again after "
-                         f"{self.stats.consecutive_blind} blind wakes.")
+                         f"{self.stats.consecutive_blind} blind wakes"
+                         + (f" and {self.stats.fallback_reads} rule-based read(s)"
+                            if self._degraded_notified else "") + ".")
         self.stats.consecutive_blind = 0
         self._login_alarm_sent = False
+        self._degraded_notified = False
 
     def _record(self, bars, i, brief, kind, by, decision, reason, direction,
                 risk_price, suffix: str = ""):

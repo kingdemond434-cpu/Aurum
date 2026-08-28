@@ -106,6 +106,12 @@ def _drive(tmp_path, universe_mode=False):
                     thresholds=Thresholds(fallback_min_rr=1.0),
                     universe_mode=universe_mode,
                     measure_position_constraint=False)
+    # THE FALLBACK IS OFF HERE ON PURPOSE. Since 2026-08-28 an unreachable
+    # analyst degrades to the rule-based reader rather than going dark, so BLIND
+    # is now the SECOND-line outcome: it happens when the fallback is disabled
+    # or fails too. This file is the law for that outcome, so it turns the
+    # fallback off to reach it. test_fallback_arm.py owns the other branch.
+    desk.fallback_when_blind = False
     tl: list[str] = []
     for i in range(60, len(bars) - 61):
         st = classify(bars, i, sw, atrs)
@@ -247,6 +253,12 @@ def test_a_broken_journal_does_not_take_the_desk_down(tmp_path, monkeypatch):
                     shadow=True, vision=Vision.NUMERIC_ONLY,
                     thresholds=Thresholds(fallback_min_rr=1.0),
                     measure_position_constraint=False)
+    # THE FALLBACK IS OFF HERE ON PURPOSE. Since 2026-08-28 an unreachable
+    # analyst degrades to the rule-based reader rather than going dark, so BLIND
+    # is now the SECOND-line outcome: it happens when the fallback is disabled
+    # or fails too. This file is the law for that outcome, so it turns the
+    # fallback off to reach it. test_fallback_arm.py owns the other branch.
+    desk.fallback_when_blind = False
 
     def boom(*a, **k):
         raise RuntimeError("ledger on fire")
@@ -306,6 +318,12 @@ def _drive_with(provider, sink, tmp_path, limit=None):
                     shadow=True, vision=Vision.NUMERIC_ONLY,
                     thresholds=Thresholds(fallback_min_rr=1.0),
                     measure_position_constraint=False)
+    # THE FALLBACK IS OFF HERE ON PURPOSE. Since 2026-08-28 an unreachable
+    # analyst degrades to the rule-based reader rather than going dark, so BLIND
+    # is now the SECOND-line outcome: it happens when the fallback is disabled
+    # or fails too. This file is the law for that outcome, so it turns the
+    # fallback off to reach it. test_fallback_arm.py owns the other branch.
+    desk.fallback_when_blind = False
     tl: list[str] = []
     stop = limit if limit is not None else len(bars) - 61
     for i in range(60, stop):

@@ -86,6 +86,19 @@ def _recent(rows: Sequence[dict], now: datetime, hours: float) -> list[dict]:
     return [r for r in rows if (_ts(r) or now) >= cut]
 
 
+def _is_degraded(row: dict) -> bool:
+    """Was this decision served by the rule-based fallback rather than a model?
+
+    Read off the stamp the desk writes (usage.degraded) rather than inferred
+    from the provider name, so a future fallback of any kind is covered by the
+    same flag instead of needing a new name added here.
+    """
+    dec = row.get("decision") or {}
+    if (dec.get("usage") or {}).get("degraded"):
+        return True
+    return bool(dec.get("degraded"))
+
+
 def _stamps(rows: Sequence[dict]) -> list[dict]:
     """Decision rows carrying a provider stamp -- the analyst actually ran."""
     out = []
@@ -106,9 +119,26 @@ def check_answer_rate(rows: Sequence[dict], now: Optional[datetime] = None,
     now = now or datetime.now(timezone.utc)
     rec = _recent(rows, now, hours)
     answered = [r for r in rec if str(r.get("kind", "")) in
-                ("SIGNAL", "REFUSAL_MODEL", "REFUSAL_COMPILER", "REFUSAL_ROUTER")]
+                ("SIGNAL", "REFUSAL_MODEL", "REFUSAL_COMPILER", "REFUSAL_ROUTER")
+                and not _is_degraded(r)]
+    # A DEGRADED ROW IS NOT AN ANSWER. When the analyst is unreachable the desk
+    # falls back to its rule-based reader, which produces SIGNAL and REFUSAL
+    # rows like any other -- so without this exclusion the fallback would MASK
+    # the very outage it exists to survive, and this check would report a
+    # perfectly healthy analyst while nothing had reached one for hours. That is
+    # WS-005 with extra steps: a mechanism that makes absence look like an
+    # answer.
+    degraded = [r for r in rec if _is_degraded(r)]
     blind = [r for r in rec if r.get("kind") == "BLIND"]
-    total = len(answered) + len(blind)
+    total = len(answered) + len(blind) + len(degraded)
+    if degraded and total >= MIN_WAKES:
+        frac = (len(blind) + len(degraded)) / total
+        return Finding("analyst answering", False,
+                       f"{len(degraded)} of {total} wakes in {hours:.0f}h were "
+                       f"served by the RULE-BASED FALLBACK and {len(blind)} got "
+                       f"nothing — {frac:.0%} of decisions did not come from the "
+                       f"analyst. The desk is still producing signals, which is "
+                       f"why this does not look like an outage anywhere else.")
     if total < MIN_WAKES:
         return Finding("analyst answering", True,
                        f"UNMEASURED — {total} wake(s) in {hours:.0f}h, under {MIN_WAKES}")
