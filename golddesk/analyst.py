@@ -270,6 +270,54 @@ class Setup(str, Enum):
     strength of good prose."""
 
 
+#: What must be TRUE of measured structure for a named setup to be that setup.
+#:
+#: WHY THE DETERMINISTIC LAYER OWNS THIS. A setup label is not a description, it
+#: is a CLAIM ABOUT STATE, and it decides which cohort the outcome joins. The
+#: model may assert TREND_CONTINUATION in fluent prose while the measured trend
+#: is NONE -- and nothing checked, so the result would pool into a
+#: trend-continuation cohort that the trade was never an instance of. Every
+#: expectancy figure computed from that cohort is then about a mixture nobody
+#: chose.
+#:
+#: The desk got lucky once and it is worth recording why that is not enough. A
+#: live read on 2026-08-28 said, unprompted: "TRENDDIRECTION is NONE and
+#: TRENDHEALTH WEAK, so there is no measured trend to continue ... which is why
+#: this is NOVEL not TRENDCONTINUATION". The analyst reasoned correctly. Nothing
+#: in the desk REQUIRED it to, and a label enforced only by the model's good
+#: judgement is a label that will eventually be wrong quietly.
+#:
+#: DELIBERATELY NARROW. Only contradictions that are unambiguous from measured
+#: state are listed. A precondition that is arguable would refuse good trades on
+#: a definitional quibble, which is the timidity this desk exists to avoid.
+#: Anything not covered here passes, and NOVEL always passes -- it is the honest
+#: label for "a mechanism the desk has not named", and it routes to shadow by
+#: construction (tiers.py T4).
+def setup_contradiction(setup: "Setup", direction: str,
+                        ctx: Any) -> Optional[str]:
+    """The measured reason this label cannot be true, or None.
+
+    Pure and state-only: takes the structure context rather than a brief, so it
+    is trivially testable and cannot reach for anything the analyst saw.
+    """
+    trend = getattr(ctx, "trend_direction", None)
+    health = getattr(ctx, "trend_health", None)
+    if setup is Setup.TREND_CONTINUATION:
+        if trend == "NONE":
+            return ("TREND_CONTINUATION with TREND_DIRECTION NONE — there is no "
+                    "measured trend to continue")
+        want = "UP" if direction == "LONG" else "DOWN"
+        if trend is not None and trend != want:
+            return (f"TREND_CONTINUATION {direction} with TREND_DIRECTION "
+                    f"{trend} — that is a reversal, not a continuation")
+    if setup is Setup.SWING_REVERSAL:
+        same = "UP" if direction == "LONG" else "DOWN"
+        if trend == same and health == "STRONG":
+            return (f"SWING_REVERSAL {direction} with a STRONG {trend} trend "
+                    f"already running that way — nothing is being reversed")
+    return None
+
+
 class AnalystRead(BaseModel):
     """The model's entire output surface. No price fields exist here by design."""
     model_config = {"extra": "forbid"}
@@ -676,6 +724,23 @@ def compile_signal(
 
     if brief.tick_age_s > thresholds.max_tick_age_s:
         return refuse(f"stale tick ({brief.tick_age_s:.0f}s) — quote not trusted")
+
+    # THE LABEL IS A CLAIM ABOUT STATE, AND CODE OWNS IT.
+    #
+    # DOWNGRADED, NOT REFUSED, and the difference from the trigger_ref check
+    # above is deliberate. Entering at market before a breakout is a DIFFERENT
+    # TRADE and there is no honest way to keep it. A mislabelled setup is the
+    # SAME trade wearing the wrong name: the entry, stop and targets are
+    # unchanged and only the cohort it would join is wrong. Refusing it would
+    # throw away a real proposition over a naming error, which is the timidity
+    # this desk exists to avoid -- so it becomes NOVEL, which is the honest
+    # label for "a mechanism the desk has not named" and routes to SHADOW by
+    # construction (tiers.py T4). The idea still generates evidence; it just
+    # cannot borrow a named mechanism's history to do it.
+    _contradiction = setup_contradiction(read.setup, read.direction, brief.context)
+    if _contradiction is not None:
+        read = read.model_copy(update={"setup": Setup.NOVEL})
+        log.info("setup relabelled NOVEL: %s", _contradiction)
 
     # MULTI-TIMEFRAME VETO. Ruled here rather than in the prompt because a prompt is advice and
     # this is a refusal: a model that reads "H4 is opposed" can still weigh it to zero, and an
