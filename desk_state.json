@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -154,12 +154,12 @@
         },
         {
           "check": "excursion",
-          "detail": "2 of 7 closed trades carry ZERO observations and zero excursion. The observer is not being fed, or its state is lost on restart \u2014 every stop-placement question is unanswerable from this data.",
+          "detail": "1 of 6 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
           "ok": false
         },
         {
           "check": "blind bars",
-          "detail": "92 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "93 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "177 unique decision(s), no tears",
+          "detail": "178 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "39294MB free",
+          "detail": "39278MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 14 min ago, after a boot 135.2h ago",
+          "detail": "wrote 9 min ago, after a boot 135.5h ago",
           "ok": true
         }
       ],
@@ -208,14 +208,11 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 92,
-      "error": "claude cannot authenticate: Failed to authenticate: OAuth session expired and could not be refreshed. THIS IS NOT A FLAG, A RATE LIMIT OR AN OUTAGE, and no retry will clear it -- the desk stays blind until somebody logs in. On the box, as the user the scheduled task runs as, run `claude` once interactively and complete the browser login; reads resume on the next wake with no restart needed.",
-      "last": "2026-08-28T11:00:02.866485+00:00",
+      "count": 93,
+      "error": "claude returned text that is not a valid AnalystUniverse: 1 validation error for AnalystUniverse\nsurvey\n  String should have at most 800 characters [type=string_too_long, input_value='Looked at both direction... the short cohort only.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_too_long; got '{\"candidates\":[{\"setup\":\"SWING_REVERSAL\",\"direction\":\"SH",
+      "last": "2026-08-28T11:15:26.837896+00:00",
       "stage": "survey",
-      "why": {
-        "needs_login": true,
-        "reading": "the LOGIN has expired. No retry, restart or flag change clears this -- run `claude` once interactively on the box, as the task's user"
-      }
+      "why": {}
     },
     "REFUSAL_COMPILER": {
       "count": 43,
@@ -238,8 +235,9 @@
       "last": "2026-08-27T13:45:00.478992+00:00"
     }
   },
-  "generated_utc": "2026-08-28T11:30:55.056145+00:00",
-  "last_row_utc": "2026-08-28T11:00:02.866485+00:00",
-  "ledger_rows": 184,
+  "deployed_commit": "f59e074215ce",
+  "generated_utc": "2026-08-28T11:45:11.519384+00:00",
+  "last_row_utc": "2026-08-28T11:15:26.837896+00:00",
+  "ledger_rows": 185,
   "total_faults": 10
 }
