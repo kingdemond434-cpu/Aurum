@@ -145,9 +145,26 @@ def deployed_commit(base: Path, runner=None) -> str:
         return "unknown"
 
 
+def running_commit(base: Path) -> str:
+    """The commit the DESK PROCESS is running, from its own state file.
+
+    Written by the desk at checkpoint time from a value captured at import, so
+    it describes the running process rather than the working tree. "unknown"
+    when the state file predates the field or cannot be read -- which is
+    UNMEASURED, and the drift check below must not read it as agreement.
+    """
+    try:
+        d = json.loads((base / "state" / "service_state.json")
+                       .read_text(encoding="utf-8"))
+        return str(d.get("running_commit") or "unknown")[:12]
+    except Exception:                                  # noqa: BLE001
+        return "unknown"
+
+
 def build_state(rows: Sequence[dict], audits: dict[str, Sequence[Any]],
                 now: Optional[datetime] = None,
-                commit: Optional[str] = None) -> dict:
+                commit: Optional[str] = None,
+                process_commit: Optional[str] = None) -> dict:
     """The artifact. Pure -- no git, no filesystem, so it is trivially testable."""
     now = now or datetime.now(timezone.utc)
     by_kind: dict[str, dict] = {}
@@ -202,6 +219,17 @@ def build_state(rows: Sequence[dict], audits: dict[str, Sequence[Any]],
         # WHICH CODE PRODUCED THIS. Without it, a fault this artifact reports
         # cannot be told apart from a fault whose fix simply has not deployed.
         "deployed_commit": commit or "unknown",
+        # THE COMMIT THE DESK IS ACTUALLY EXECUTING, which is a different fact
+        # from the one above and was being confused with it. `git pull` updates
+        # the tree; it does not reload a long-running process. On 2026-08-28 the
+        # artifact reported a deployed_commit that contained the rule-based
+        # fallback while the desk -- up since before it existed -- went on
+        # booking BLIND on every wake. The fix was present, installed, and not
+        # running, and nothing could see the difference.
+        "process_commit": process_commit or "unknown",
+        "code_drift": (bool(commit and process_commit
+                            and "unknown" not in (commit, process_commit)
+                            and commit[:12] != process_commit[:12])),
         # THE STALENESS CLOCK. The MT5 desk's artifact went 35 hours stale while
         # every number in it kept being read as current; a reader has to be able
         # to date what they are looking at without trusting that it was fresh.

@@ -119,10 +119,50 @@ class ServiceConfig:
     halt_path: Path = Path("state/HALTED")
 
 
+def running_commit() -> str:
+    """The commit this PROCESS is executing, captured once at import.
+
+    WHY IT IS NOT THE SAME AS THE COMMIT ON DISK, which is the whole point. A
+    `git pull` updates the working tree; it does not reload a long-running
+    Python process. So the desk can be executing code from hours ago while the
+    repository sits at HEAD, and every report that reads HEAD says the fix is
+    deployed.
+
+    That happened on 2026-08-28: the artifact reported deployed_commit
+    f59e074 -- correctly, of the DISK -- while the desk process had been up
+    since before the rule-based fallback existed and was still booking BLIND on
+    every wake, which the fallback was written to prevent. The fix was present,
+    installed, and not running, and nothing could see the difference.
+
+    Captured at IMPORT rather than read on demand: read on demand it would
+    return the disk's value and answer the wrong question entirely.
+    """
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent.parent),
+                            "rev-parse", "HEAD"],
+                           capture_output=True, timeout=15)
+        return (r.stdout.decode("utf-8", "replace").strip()[:12]
+                if r.returncode == 0 else "unknown")
+    except Exception:                                  # noqa: BLE001
+        # A desk running outside a checkout is a legitimate deployment. Unknown
+        # is the honest answer and the drift check treats it as UNMEASURED
+        # rather than as agreement.
+        return "unknown"
+
+
+#: Snapshotted once, at import, for the reason in running_commit's docstring.
+RUNNING_COMMIT = running_commit()
+
+
 @dataclass
 class ServiceState:
     """Everything needed to resume mid-trade after a restart."""
     version: str = SERVICE_VERSION
+    #: The commit the PROCESS is running. Compared against the commit on DISK by
+    #: state_publish, so "the fix is deployed" and "the fix is running" stop
+    #: being the same sentence.
+    running_commit: str = RUNNING_COMMIT
     last_bar_ts: Optional[str] = None
     open_trade: Optional[dict] = None
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

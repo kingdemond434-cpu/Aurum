@@ -248,6 +248,19 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
             # configuration question. Restarting hides both for one cycle.
             escalate.append(f)
 
+        elif f.check == "running code":
+            # MECHANICAL, AND THE SIMPLEST REMEDY IN THE WHOLE ALLOWLIST. The
+            # desk is executing code from before the last pull, so every fix
+            # since is installed and not running. Bouncing the task is exactly
+            # what makes installed code run, and it is already the healer's one
+            # process-control verb -- no new authority, no new failure mode.
+            remedies.append(Remedy(
+                f.check, "restart the desk so it runs the code that is installed",
+                "A `git pull` updates the tree and does not reload a running "
+                "process, so 'the fix is deployed' and 'the fix is running' had "
+                "become the same sentence while meaning different things.",
+                restart_desk))
+
         elif f.check == "AurumSignalDesk-Update" and run_update is not None:
             # MECHANICAL, AND THE ONE THAT UNBLOCKS EVERY OTHER FIX.
             #

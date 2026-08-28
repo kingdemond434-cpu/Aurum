@@ -489,7 +489,10 @@ def main(argv=None) -> int:
     # is not possible from another process, and guessing would make the check
     # about this script rather than about the desk.
     cohorts = build_cohorts(rows) or None
-    findings = audit(rows, cohorts, base=BASE)
+    from golddesk.state_publish import deployed_commit, running_commit
+    _disk, _proc = deployed_commit(BASE), running_commit(BASE)
+    findings = audit(rows, cohorts, base=BASE,
+                     disk_commit=_disk, process_commit=_proc)
     print(audit_render(findings))
 
     # THE SECOND AXIS. self_audit asks "is the desk WIRED"; this asks "is it
@@ -539,7 +542,7 @@ def main(argv=None) -> int:
     # difference between a desk that is watched and one that is asked about.
     try:
         from golddesk.state_publish import (build_state, deployed_commit,
-                                            publish)
+                                            publish, running_commit)
         # THE REASON TRAVELS WITH THE FAULT. _why_the_task_failed already reads
         # the failing task's own log, but only into stdout -- so the single most
         # useful line on the box stayed on the box, and the artifact carried
@@ -561,7 +564,8 @@ def main(argv=None) -> int:
                                    "analyst": ah_findings,
                                    "read_quality": rq_findings,
                                    "tasks": th_published},
-                            commit=deployed_commit(BASE))
+                            commit=deployed_commit(BASE),
+                            process_commit=running_commit(BASE))
         _, how = publish(BASE, state, push=not args.dry_run)
         log.info("desk state: %s", how)
         _report_publish_health(how, args.dry_run)

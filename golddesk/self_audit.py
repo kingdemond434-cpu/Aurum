@@ -64,6 +64,10 @@ class Finding:
     check: str
     ok: bool
     detail: str
+    #: True when a bounded, allowlisted action fixes this. Most wiring faults are
+    #: design faults and stay False -- they need code, and a healer that pretends
+    #: otherwise loops on something it cannot mend.
+    fixable: bool = False
 
     @property
     def line(self) -> str:
@@ -193,6 +197,38 @@ def check_excursion_survives(rows: Sequence[dict]) -> Finding:
     return Finding("excursion", True,
                    f"all {len(since)} closed trades since the observer started "
                    f"recording carry excursion{tail}")
+
+
+def check_running_code_is_current(disk: str, process: str) -> Finding:
+    """Is the desk EXECUTING the code that is installed?
+
+    THE GAP THIS CLOSES. `git pull` updates the working tree; it does not reload
+    a long-running Python process. So every report that reads HEAD says the fix
+    is deployed while the desk goes on running whatever it started with, and the
+    two sentences "the fix is deployed" and "the fix is running" -- which are
+    not the same claim -- were collapsed into one.
+
+    OBSERVED 2026-08-28: the artifact reported a deployed commit that contained
+    the rule-based fallback, while the desk, up since before that fallback
+    existed, kept booking BLIND on every wake. The fix was present, installed,
+    and not running, and nothing anywhere could see the difference.
+
+    Mechanical, and the remedy is the one the healer already has: bounce the
+    task. Deliberately NOT a comparison against "latest on the remote" -- that
+    is the updater's job, and a check that fires whenever origin moves would be
+    red most of the time and read as furniture within a week.
+    """
+    if "unknown" in (disk, process) or not disk or not process:
+        return Finding("running code", True,
+                       f"UNMEASURED — disk {disk or '?'}, process {process or '?'}. "
+                       f"Not the same as agreement.")
+    if disk[:12] != process[:12]:
+        return Finding("running code", False,
+                       f"the desk is RUNNING {process[:12]} while {disk[:12]} is "
+                       f"installed. Every fix in between is present on disk and "
+                       f"not executing — a restart is the only thing that makes "
+                       f"installed code run.", fixable=True)
+    return Finding("running code", True, f"process and disk agree at {disk[:12]}")
 
 
 def check_blind_bars_are_journalled(rows: Sequence[dict]) -> Finding:
@@ -433,7 +469,9 @@ def check_desk_started_after_boot(base: Path,
 
 def audit(rows: Sequence[dict], cohorts: Optional[dict] = None,
           now: Optional[datetime] = None,
-          base: Optional[Path] = None) -> list[Finding]:
+          base: Optional[Path] = None,
+          disk_commit: Optional[str] = None,
+          process_commit: Optional[str] = None) -> list[Finding]:
     """Ledger checks always; filesystem checks when a base path is supplied.
 
     `base` is optional so the ledger half stays trivially testable without a
@@ -441,6 +479,8 @@ def audit(rows: Sequence[dict], cohorts: Optional[dict] = None,
     the checks it can actually answer rather than a spray of UNMEASURED.
     """
     out = [
+        check_running_code_is_current(disk_commit or "unknown",
+                                      process_commit or "unknown"),
         check_cohorts_are_loaded(rows, cohorts),
         check_tp1_is_acted_on(rows),
         check_excursion_survives(rows),
