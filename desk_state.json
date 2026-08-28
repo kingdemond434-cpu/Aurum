@@ -5,17 +5,17 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "THE LOGIN HAS EXPIRED \u2014 49 blind wake(s) since 2026-08-28 01:00Z carry the CLI's own 'OAuth session expired' message. No retry, restart, flag change or watchdog clears this: run `claude` once interactively on the box, as the user the scheduled task runs as, and complete the browser login. Reads resume on the next wake.",
-          "ok": false
+          "detail": "RECOVERED \u2014 49 login failure(s) earlier in the window, but the analyst has answered 7 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "59/62 wakes (95%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
-          "ok": false
+          "detail": "56/63 wakes (89%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "UNMEASURED \u2014 3 stamped read(s), under 10",
+          "detail": "UNMEASURED \u2014 7 stamped read(s), under 10",
           "ok": true
         },
         {
@@ -24,29 +24,29 @@
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 0
     },
     "capture": {
       "axis": "capture",
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 88 recent / 0 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 92 recent / 0 prior decisions, under 40 either side",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/80 (35%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/83 (34%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
           "check": "capture",
-          "detail": "UNMEASURED \u2014 4 trade(s) with positive MFE, under 5",
+          "detail": "80% of MFE kept over 5 winners",
           "ok": true
         },
         {
           "check": "quant inbox",
-          "detail": "last updated 180h ago and the chain runs daily. A link is broken, which is not the same as quant having found nothing.",
+          "detail": "no new findings for 181h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.2h ago",
+          "detail": "18 sleeve(s) accruing, published 0.5h ago",
           "ok": true
         }
       ],
@@ -67,17 +67,17 @@
       "checks": [
         {
           "check": "calibration",
-          "detail": "UNMEASURED \u2014 8 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
+          "detail": "UNMEASURED \u2014 9 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
           "ok": true
         },
         {
           "check": "edge",
-          "detail": "UNMEASURED \u2014 8 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
+          "detail": "UNMEASURED \u2014 9 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
           "ok": true
         },
         {
           "check": "selection",
-          "detail": "UNMEASURED \u2014 8 taken and 80 refused with a resolved path; needs 10 and 30",
+          "detail": "UNMEASURED \u2014 9 taken and 83 refused with a resolved path; needs 10 and 30",
           "ok": true
         }
       ],
@@ -103,12 +103,12 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.",
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
           "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.",
+          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
           "ok": false
         },
         {
@@ -118,8 +118,8 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
@@ -137,14 +137,14 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 2
     },
     "wiring": {
       "axis": "wiring",
       "checks": [
         {
           "check": "cohorts",
-          "detail": "8 mechanism(s) loaded from 8 resolved trades",
+          "detail": "9 mechanism(s) loaded from 9 resolved trades",
           "ok": true
         },
         {
@@ -154,17 +154,17 @@
         },
         {
           "check": "excursion",
-          "detail": "1 of 7 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
+          "detail": "1 of 8 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
           "ok": false
         },
         {
           "check": "blind bars",
-          "detail": "93 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "94 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.4h old",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "5 delivered, 1 failed",
+          "detail": "6 delivered, 2 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.0h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "181 unique decision(s), no tears",
+          "detail": "186 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "39267MB free",
+          "detail": "39230MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 11 min ago, after a boot 135.7h ago",
+          "detail": "wrote 0 min ago, after a boot 136.2h ago",
           "ok": true
         }
       ],
@@ -208,19 +208,19 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 93,
-      "error": "claude returned text that is not a valid AnalystUniverse: 1 validation error for AnalystUniverse\nsurvey\n  String should have at most 800 characters [type=string_too_long, input_value='Looked at both direction... the short cohort only.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_too_long; got '{\"candidates\":[{\"setup\":\"SWING_REVERSAL\",\"direction\":\"SH",
-      "last": "2026-08-28T11:15:26.837896+00:00",
+      "count": 94,
+      "error": "claude exited 3221226505: ",
+      "last": "2026-08-28T12:00:00.814403+00:00",
       "stage": "survey",
       "why": {}
     },
     "REFUSAL_COMPILER": {
-      "count": 44,
-      "last": "2026-08-28T11:30:01.324743+00:00"
+      "count": 46,
+      "last": "2026-08-28T11:45:00.908611+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 36,
-      "last": "2026-08-28T11:30:01.324743+00:00"
+      "count": 37,
+      "last": "2026-08-28T11:45:00.908611+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -231,13 +231,13 @@
       "last": null
     },
     "SIGNAL": {
-      "count": 8,
-      "last": "2026-08-28T11:30:01.324743+00:00"
+      "count": 9,
+      "last": "2026-08-28T11:45:00.908611+00:00"
     }
   },
-  "deployed_commit": "f59e074215ce",
-  "generated_utc": "2026-08-28T12:00:00.807832+00:00",
-  "last_row_utc": "2026-08-28T11:48:30.986944+00:00",
-  "ledger_rows": 189,
-  "total_faults": 10
+  "deployed_commit": "97a7ecdf450e",
+  "generated_utc": "2026-08-28T12:30:38.219716+00:00",
+  "last_row_utc": "2026-08-28T12:00:00.814403+00:00",
+  "ledger_rows": 195,
+  "total_faults": 7
 }
