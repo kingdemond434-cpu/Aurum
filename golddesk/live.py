@@ -198,12 +198,35 @@ class Resolution(str, Enum):
                            This is the only genuinely uncertain category and it
                            must never be averaged into the others silently.
       MANAGED_EXIT         closed by a management decision at a known price.
+      UNOBSERVED           the exit price is known and the PATH is not. The
+                           observer recorded zero observations, so mfe/mae are
+                           absent rather than zero and nothing about ordering
+                           was seen. See _close: this is forced, never chosen.
     """
     TICK_OBSERVED = "TICK_OBSERVED"
     M1_OBSERVED = "M1_OBSERVED"
     BAR_UNAMBIGUOUS = "BAR_UNAMBIGUOUS"
     BAR_ASSUMED_STOP_FIRST = "BAR_ASSUMED_STOP_FIRST"
     MANAGED_EXIT = "MANAGED_EXIT"
+    #: THE ONE THAT MUST NOT ENTER STATISTICS.
+    #:
+    #: OBSERVED LIVE 2026-08-28, on a real Telegram exit message:
+    #:
+    #:     SHADOW EXIT LONG NOVEL — STOP
+    #:     realised -1.02R net
+    #:     MFE +0.00R · MAE +0.00R · capture 0% of MFE
+    #:     resolution TICK_OBSERVED · 0 observations
+    #:
+    #: Those cannot all be true. A position that travelled from entry to a full
+    #: stop has an MAE of about -1R by definition, and TICK_OBSERVED asserts the
+    #: ordering was seen in a tick stream that recorded nothing. The exit price
+    #: is real -- the stop is a price event -- but the PATH is unknown, and the
+    #: row was reporting it as measured and zero.
+    #:
+    #: A zero MAE on a stop-out is not a small error. It says the trade never
+    #: went against the operator, which is the exact input every stop-placement
+    #: and management question reads.
+    UNOBSERVED = "UNOBSERVED"
 
     @property
     def is_assumption(self) -> bool:
@@ -679,7 +702,28 @@ class LiveDesk:
                 and ((exit_px >= t.signal.tp1) if long else (exit_px <= t.signal.tp1))):
             t.tp1_banked = True          # set BEFORE applying: a rejected bank
                                          # must not retry on every subsequent tick
-            self._bank_tp1(t, price, ts)
+            # FILL AT THE OBJECTIVE, NOT AT WHEREVER PRICE IS WHEN WE NOTICE.
+            #
+            # This passed `price`, the live quote at the moment the tick loop
+            # got around to checking. Observed live 2026-08-28:
+            #
+            #     SHADOW TP1 BANK SHORT
+            #     TP1 4600.48 reached — banked 25% at 4594.12 (+0.61R)
+            #
+            # For a short, 4594.12 is SIX POINTS BETTER than the objective. A
+            # resting take-profit limit fills AT the limit; it does not wait and
+            # then fill further in your favour. The desk was crediting itself
+            # with favourable slippage on every partial, systematically, and the
+            # error is largest exactly when price is moving fastest -- so the
+            # mechanisms it flatters most are the volatile ones.
+            #
+            # t.signal.tp1 is the number the operator was SHOWN and the number a
+            # real resting order carries. Execution cost is charged separately
+            # by the cost model, so this is the honest fill, not an optimistic
+            # one. If price gapped clean through, a limit still fills at the
+            # limit -- being conservative here costs nothing real and protects
+            # every downstream expectancy figure.
+            self._bank_tp1(t, t.signal.tp1, ts)
 
         wake = t.observer.observe(price, ts, heartbeat=self.obs_heartbeat,
                                   bar_closed=bar_closed)
@@ -1460,6 +1504,23 @@ class LiveDesk:
         t = t or self.open
         if t is None:
             return
+        # A RESOLUTION MAY NOT CLAIM WHAT THE OBSERVER DID NOT SEE.
+        #
+        # The stop and target paths stamp TICK_OBSERVED unconditionally, which
+        # asserts the ordering was seen in a tick stream. When the observer
+        # recorded ZERO observations that assertion is false, and the row went
+        # out saying "MFE +0.00R - MAE +0.00R - resolution TICK_OBSERVED - 0
+        # observations" -- an impossible combination on a full stop-out, since a
+        # position that reached its stop had an MAE of roughly -1R by
+        # definition.
+        #
+        # The EXIT PRICE is still real: a stop is a price event and realised_r
+        # is sound. What is unknown is the PATH, so the label is downgraded and
+        # the row is marked as evidence that must not be learned from. Forced
+        # here rather than at each call site, because every future exit path
+        # would otherwise have to remember.
+        if t.observer.ticks == 0 and resolution is not Resolution.MANAGED_EXIT:
+            resolution = Resolution.UNOBSERVED
         # NET of execution cost. Position.r_at() is pure price movement over the
         # risk unit, so everything downstream of it was gross. The compiler
         # already priced the round trip once, on mid, at compile time — that is
@@ -1535,6 +1596,13 @@ class LiveDesk:
             # management, and MFE alone cannot tell them apart.
             "t_mfe": round(t.t_mfe, 1), "t_mae": round(t.t_mae, 1),
             "observations": t.observer.ticks,
+            # QUARANTINE FLAG. False means the exit price is trustworthy and the
+            # PATH is not, so this row must not reach cohort statistics, the
+            # management counterfactual, or any promotion decision. Written
+            # explicitly rather than inferred downstream from observations==0,
+            # because every consumer would have to remember the same rule and
+            # one of them would not.
+            "evidence_valid": resolution is not Resolution.UNOBSERVED,
             # The excursion PATH, downsampled. Without it a management
             # counterfactual is impossible: the shadow log records what each
             # policy would have CHOSEN, and only the path says what that choice

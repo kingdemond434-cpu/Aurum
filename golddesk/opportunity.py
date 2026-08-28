@@ -77,6 +77,24 @@ def resolved_outcomes(rows: Sequence[dict]) -> list[dict]:
     for r in rows:
         kind = r.get("kind")
         dec = r.get("decision") or {}
+        # QUARANTINE. A row whose PATH was never observed carries mfe_r and
+        # mae_r of exactly zero -- not because the trade never moved, but
+        # because nothing watched it. Observed live 2026-08-28 on a full
+        # stop-out: "MFE +0.00R - MAE +0.00R - resolution TICK_OBSERVED - 0
+        # observations", which is impossible, since a position that reached its
+        # stop had an MAE of roughly -1R by definition.
+        #
+        # Left in, those rows do not merely add noise -- they bias every
+        # excursion statistic toward zero, and they do it hardest on losers,
+        # which is where stop placement is actually decided. A mechanism would
+        # look like it never went against you before stopping out.
+        #
+        # This is the ONE reader for cohorts, hypothesis discovery and
+        # hypothesis confirmation, so filtering here covers all three. The exit
+        # PRICE is sound and stays in the ledger; what is refused is letting an
+        # unobserved path teach the desk anything.
+        if r.get("evidence_valid") is False:
+            continue
         if kind == "TRADE_CLOSED" and r.get("realised_r") is not None:
             out.append({
                 "t0": r.get("entry_t0") or r.get("ts"),
