@@ -5,17 +5,17 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 39 login failure(s) earlier in the window, but the analyst has answered 25 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 35 login failure(s) earlier in the window, but the analyst has answered 35 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "47/72 wakes (65%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "44/79 wakes (56%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 211s of 600s budget (35%) over 25 reads",
+          "detail": "median 228s of 600s budget (38%) over 35 reads",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 110 recent / 0 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 120 recent / 0 prior decisions, under 40 either side",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/94 (30%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/103 (27%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.5h ago",
+          "detail": "18 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -67,17 +67,17 @@
       "checks": [
         {
           "check": "calibration",
-          "detail": "UNMEASURED \u2014 16 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
+          "detail": "UNMEASURED \u2014 17 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
           "ok": true
         },
         {
           "check": "edge",
-          "detail": "UNMEASURED \u2014 16 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
+          "detail": "UNMEASURED \u2014 17 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
           "ok": true
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.08R while refusals reached +0.54R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.14R while refusals reached +0.56R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -113,13 +113,13 @@
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "registered and enabled, HAS NOT RUN YET \u2014 normal for a task whose first fire is still ahead",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
@@ -137,14 +137,14 @@
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
       "checks": [
         {
           "check": "cohorts",
-          "detail": "15 mechanism(s) loaded from 16 resolved trades",
+          "detail": "16 mechanism(s) loaded from 17 resolved trades",
           "ok": true
         },
         {
@@ -154,17 +154,17 @@
         },
         {
           "check": "excursion",
-          "detail": "2 of 15 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
+          "detail": "2 of 16 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
           "ok": false
         },
         {
           "check": "blind bars",
-          "detail": "97 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "98 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.4h old",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "17 delivered, 6 failed",
+          "detail": "19 delivered, 6 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.1h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "207 unique decision(s), no tears",
+          "detail": "218 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "39110MB free",
+          "detail": "39085MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 12 min ago, after a boot 138.2h ago",
+          "detail": "wrote 6 min ago, after a boot 138.7h ago",
           "ok": true
         }
       ],
@@ -208,19 +208,28 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 97,
-      "error": "claude returned text that is not a valid AnalystUniverse: 1 validation error for AnalystUniverse\ndominant_context\n  String should have at most 300 characters [type=string_too_long, input_value='Price is mid-range betwe...ything taken at market.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_too_long; got '{\"candidates\":[{\"setup\":\"TREND_CONTINUATION\",\"",
-      "last": "2026-08-28T13:15:03.389161+00:00",
+      "count": 98,
+      "error": "claude exited 1: {\"is_error\":true,\"duration_api_ms\":0,\"num_turns\":1,\"stop_reason\":\"stop_sequence\",\"session_id\":\"0f7d40bc-c21e-4295-aaaa-a3b632df04b8\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\"",
+      "last": "2026-08-28T14:30:00.418918+00:00",
       "stage": "survey",
-      "why": {}
+      "why": {
+        "duration_api_ms": 0,
+        "input_tokens": 0,
+        "is_error": true,
+        "output_tokens": 0,
+        "reading": "the API was never called -- this is a LOCAL failure (input, login or binary), not a limit or an outage",
+        "result": "You've hit your session limit \u00b7 resets 8:10pm (Europe/Berlin)",
+        "stop_reason": "stop_sequence",
+        "subtype": "success"
+      }
     },
     "REFUSAL_COMPILER": {
-      "count": 51,
-      "last": "2026-08-28T13:30:00.532146+00:00"
+      "count": 58,
+      "last": "2026-08-28T14:15:01.103467+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 43,
-      "last": "2026-08-28T14:00:00.495676+00:00"
+      "count": 45,
+      "last": "2026-08-28T14:15:01.103467+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -231,13 +240,13 @@
       "last": null
     },
     "SIGNAL": {
-      "count": 16,
-      "last": "2026-08-28T14:00:00.495676+00:00"
+      "count": 17,
+      "last": "2026-08-28T14:15:00.149687+00:00"
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T14:30:40.050923+00:00",
-  "last_row_utc": "2026-08-28T14:18:21.597994+00:00",
-  "ledger_rows": 223,
-  "total_faults": 8
+  "generated_utc": "2026-08-28T15:04:29.736839+00:00",
+  "last_row_utc": "2026-08-28T14:30:00.418918+00:00",
+  "ledger_rows": 235,
+  "total_faults": 9
 }
