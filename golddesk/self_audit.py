@@ -138,20 +138,49 @@ def check_excursion_survives(rows: Sequence[dict]) -> Finding:
     restart reset both. Exits reported "MFE +0.00R - MAE +0.00R - 0
     observations" on positions held for hours.
     """
-    bad = [c for c in _closed(rows)
-           if (c.get("observations") == 0
-               and float(c.get("mfe_r") or 0) == 0.0
-               and float(c.get("mae_r") or 0) == 0.0)]
-    if not _closed(rows):
+    closed = _closed(rows)
+    if not closed:
         return Finding("excursion", True, "no closed trades yet")
+
+    def bare(c: dict) -> bool:
+        return (c.get("observations") == 0
+                and float(c.get("mfe_r") or 0) == 0.0
+                and float(c.get("mae_r") or 0) == 0.0)
+
+    # A FIXED DEFECT HAS TO BE ABLE TO CLEAR. This scanned every closed trade
+    # ever, so the two that closed BEFORE the persistence fix landed kept it
+    # BROKEN permanently -- and a check that can never go green is read as
+    # furniture within a week. It was still reporting "the observer is not being
+    # fed" on 2026-08-28, days after rehydrate() began restoring ticks and path
+    # and with test_observer_survives_restart.py pinning that it does.
+    #
+    # THE BOUNDARY IS MEASURED, NOT A DATE. The first closed trade carrying real
+    # excursion is the point the desk demonstrably started recording it, so
+    # anything bare AFTER that is a live defect and anything bare before it is
+    # history that no fix can retrieve. Nothing to go stale, and a desk that has
+    # NEVER recorded excursion still fails on every trade -- which is correct,
+    # and is the case this check was originally written for.
+    first_good = next((i for i, c in enumerate(closed) if not bare(c)), None)
+    if first_good is None:
+        return Finding("excursion", False,
+                       f"NONE of {len(closed)} closed trades carries excursion. "
+                       f"The observer is not being fed, or its state is lost on "
+                       f"restart — every stop-placement question is unanswerable "
+                       f"from this data.")
+    since = closed[first_good:]
+    bad = [c for c in since if bare(c)]
+    historical = sum(1 for c in closed[:first_good] if bare(c))
+    tail = (f" ({historical} earlier trade(s) predate the fix and are not counted "
+            f"— their excursion is gone for good)" if historical else "")
     if bad:
         return Finding("excursion", False,
-                       f"{len(bad)} of {len(_closed(rows))} closed trades carry "
-                       f"ZERO observations and zero excursion. The observer is "
-                       f"not being fed, or its state is lost on restart — every "
-                       f"stop-placement question is unanswerable from this data.")
+                       f"{len(bad)} of {len(since)} closed trades carry ZERO "
+                       f"observations and zero excursion SINCE the observer "
+                       f"started recording — its state is being lost again, and "
+                       f"stop placement is unanswerable for those.{tail}")
     return Finding("excursion", True,
-                   f"all {len(_closed(rows))} closed trades carry excursion")
+                   f"all {len(since)} closed trades since the observer started "
+                   f"recording carry excursion{tail}")
 
 
 def check_blind_bars_are_journalled(rows: Sequence[dict]) -> Finding:

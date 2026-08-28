@@ -91,6 +91,18 @@ BENIGN_PER_TASK: dict[str, frozenset] = {
     # 3 = sampled the venue, archive still too thin to write a profile. That is
     # the expected state for the first hours and a successful run.
     "AurumSignalDesk-VantageSpread": frozenset({3}),
+    # 3 = ran, the quant desk's export was not there, nothing delivered. It
+    # exited 0 for this until 2026-08-28, so the task reported SUCCESS while the
+    # inbox went 178 hours stale against a daily chain and this check passed it.
+    "Aurum-Sync": frozenset({3}),
+}
+
+#: Exit codes that mean "ran, and delivered NOTHING". Benign as a RUN -- the
+#: script did its job and said so -- but they are not silence: a transport
+#: reporting this every day is a broken chain upstream, and the whole reason it
+#: got a distinct code is so that is visible without logging into the box.
+DELIVERED_NOTHING: dict[str, int] = {
+    "Aurum-Sync": 3,
 }
 
 
@@ -148,6 +160,18 @@ def audit(read: Callable[[str], TaskInfo],
             out.append(Finding(name, False,
                                f"last run exited {info.last_result} — {why} is "
                                f"firing and FAILING, which no restart fixes."))
+            continue
+        if info.last_result == DELIVERED_NOTHING.get(name):
+            # RAN, DELIVERED NOTHING. Reported as its own state rather than
+            # folded into the pass -- "the transport is healthy" and "the
+            # transport is healthy and there has been nothing to carry for a
+            # week" are different facts, and only the second one is a problem
+            # somewhere else that nobody is looking at.
+            out.append(Finding(name, True,
+                               f"ran and delivered NOTHING (exit "
+                               f"{info.last_result}) — {why} works, but its "
+                               f"SOURCE was absent. UNMEASURED, not 'no new "
+                               f"findings'; the break is upstream."))
             continue
         if info.last_result == 267011:
             out.append(Finding(name, True,

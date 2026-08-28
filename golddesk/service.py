@@ -875,8 +875,28 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     if enable_macro:
         def macro_fn():
             from .drivers_free import build_drivers
+            from .drivers_mt5 import build_from
             from .macro_context import from_drivers
-            return from_drivers(build_drivers(os.environ.get("FRED_API_KEY")))
+            try:
+                points = build_drivers(os.environ.get("FRED_API_KEY"))
+            except Exception as e:                     # noqa: BLE001
+                # A DEAD WEB FEED MUST NOT MEAN NO MACRO. yfinance broke twice
+                # in two days -- "possibly delisted" for DX-Y.NYB/^GSPC/^VIX on
+                # 2026-08-27, not importable at all on 2026-08-28 -- and each
+                # time the analyst silently lost every macro variable while
+                # every component reported healthy.
+                log.warning("web driver feed failed (%s) — falling back to the "
+                            "execution terminal", e)
+                points = {}
+            # FILLS GAPS ONLY. A driver the web feed really observed is the
+            # actual series and is never overridden by the terminal's proxy.
+            client = getattr(feed, "client", None)
+            if client is not None:
+                from .crossmarket_mt5 import collect
+                points, note = build_from(points, collect(client))
+                if note:
+                    log.info("macro: %s", note)
+            return from_drivers(points)
         log.info("macro feed: drivers_free (dxy, spx, vix, real_yield_10y, "
                  "breakeven_10y) on the desk's own refresh cadence")
     else:

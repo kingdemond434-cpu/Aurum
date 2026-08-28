@@ -71,7 +71,18 @@ if (-not (Test-Path $src)) {
     # means the quant desk learned nothing.
     Write-Host "$stamp no source at $src -- nothing to sync."
     Write-Host "         That is UNMEASURED, not 'no new findings'."
-    exit 0
+    # EXIT 3, NOT 0. Everything above prints to stdout, and Task Scheduler
+    # records only the EXIT CODE -- so exiting 0 here meant the task reported
+    # SUCCESS while nothing had been delivered for 178 hours, and task_health
+    # dutifully passed it. "Ran fine" and "ran fine and delivered nothing" are
+    # different facts; a transport that cannot tell them apart at the exit code
+    # is a transport nobody can monitor.
+    #
+    # 3 is this script's own vocabulary for "ran, source absent, delivered
+    # nothing", listed in task_health.BENIGN_PER_TASK so it is reported as the
+    # UNMEASURED state it is rather than as either a pass or a crash. Same fix
+    # as the quant desk's sync_shadow_to_git.ps1, which had the identical bug.
+    exit 3
 }
 
 New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
