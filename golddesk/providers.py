@@ -333,8 +333,16 @@ class ClaudeCodeAnalyst(AnalystProvider):
     that is 46 to 92 reads a day, which prices out at roughly $290-580 a month
     against an account of EUR 1,500. budget.py's own docstring predicted this
     exactly: at a small account an analyst call can cost more than the trade
-    makes. The CLI authenticates against a Pro/Max subscription, so the same
-    read consumes subscription quota rather than dollars.
+    makes. Routed through the CLI under a Pro/Max subscription, the same read
+    consumes subscription quota rather than dollars.
+
+    THAT SAVING IS CONDITIONAL ON THE LOGIN, AND THE LOGIN IS NOT CHECKED HERE.
+    The CLI can equally be authenticated to an ORGANISATION on API usage
+    billing, in which case every read above is charged at list price and this
+    provider saves nothing at all -- it is then merely a slower, less
+    structured route to the same invoice. Nothing in the JSON envelope
+    distinguishes the two: total_cost_usd is reported either way, as
+    API-EQUIVALENT dollars. See billing_basis(), and declare it on the box.
 
     WHAT IT COSTS INSTEAD, MEASURED NOT ASSUMED. Claude Code injects its own
     scaffolding: a trivial prompt with --system-prompt replacing the default
@@ -397,20 +405,65 @@ class ClaudeCodeAnalyst(AnalystProvider):
         self.cwd, self._billed, self._runner = cwd, billed, runner
         self.effort = effort
 
+    #: Operator's declaration of how the CLI is paid for: "api" or
+    #: "subscription". Set in the environment, because it is a property of the
+    #: BOX's login rather than of any one desk run.
+    BILLING_ENV = "AURUM_CLI_BILLING"
+
+    def billing_basis(self) -> str:
+        """HOW the billing question was answered, not just what the answer was.
+
+        WHY THIS EXISTS SEPARATELY FROM billed(). The old heuristic modelled two
+        cases -- an API key in the environment means metered, its absence means
+        subscription -- and there is a THIRD it silently folded into the second:
+        an OAuth login to an organisation on API usage billing. No
+        ANTHROPIC_API_KEY exists anywhere, and every token is still charged in
+        dollars.
+
+        OBSERVED 2026-08-28. After re-authenticating, the CLI's own banner on
+        the live box read:
+
+            Opus 5 (1M context) - API Usage Billing - <org>
+
+        Under that login the desk was stamping cost_usd 0.0 on reads the
+        organisation is invoiced for -- which is precisely the failure billed()'s
+        own docstring names ("reporting zero for an API-key read would hide it")
+        arriving through the one door it did not check.
+
+        So the answer now carries its provenance. "assumed_subscription" is a
+        GUESS and says so, and budget.py can refuse to treat a guessed zero as a
+        measured one -- rather than a confident False that reads identically to
+        a declared one.
+        """
+        if self._billed is not None:
+            return "explicit"
+        declared = (os.environ.get(self.BILLING_ENV) or "").strip().lower()
+        if declared in ("api", "metered", "billed"):
+            return "declared_api"
+        if declared in ("subscription", "sub", "max", "pro"):
+            return "declared_subscription"
+        if (os.environ.get("ANTHROPIC_API_KEY") or "").strip():
+            return "api_key_present"
+        return "assumed_subscription"
+
     def billed(self) -> bool:
         """Whether these tokens are being charged in dollars.
 
-        HEURISTIC, AND LABELLED AS ONE. Claude Code bills against a metered API
-        key when one is present and against the subscription otherwise, and it
-        does not report which it used. So this reads the environment and the
-        operator can override it. It matters because budget.py prices tokens at
-        API list: reporting real dollars for a subscription read would overstate
-        cost, and reporting zero for an API-key read would hide it. Guessing
-        silently in either direction corrupts every net-value number downstream.
+        HEURISTIC WHERE IT HAS TO BE, DECLARED WHERE IT CAN BE. budget.py prices
+        tokens at API list: reporting real dollars for a subscription read
+        overstates cost, and reporting zero for a metered read hides it, so
+        guessing silently in either direction corrupts every net-value number
+        downstream.
+
+        The CLI does not report which basis it used in the JSON envelope -- it
+        reports total_cost_usd either way, as API-EQUIVALENT dollars -- so there
+        is nothing in a read to infer this from. That is why the operator can
+        declare it (see BILLING_ENV), and why the undeclared case is labelled an
+        assumption rather than passed off as a finding.
         """
         if self._billed is not None:
-            return self._billed
-        return bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+            return bool(self._billed)
+        return self.billing_basis() in ("declared_api", "api_key_present")
 
     @staticmethod
     def _repair(text: str) -> tuple[str, list[str]]:
@@ -895,6 +948,12 @@ class ClaudeCodeAnalyst(AnalystProvider):
             "billed": billed,
             "cost_usd_api_equivalent": env.get("total_cost_usd"),
             "cost_usd": env.get("total_cost_usd") if billed else 0.0,
+            # HOW the zero was arrived at. "assumed_subscription" means nobody
+            # declared the box's billing and no API key was visible -- which is
+            # exactly the state an OAuth login to an org on API usage billing
+            # produces, where the true cost is NOT zero. Carried so budget.py
+            # can tell a declared zero from a guessed one.
+            "billing_basis": self.billing_basis(),
         })
 
 
@@ -969,6 +1028,12 @@ class ClaudeCodeAnalyst(AnalystProvider):
             "billed": billed,
             "cost_usd_api_equivalent": env.get("total_cost_usd"),
             "cost_usd": env.get("total_cost_usd") if billed else 0.0,
+            # HOW the zero was arrived at. "assumed_subscription" means nobody
+            # declared the box's billing and no API key was visible -- which is
+            # exactly the state an OAuth login to an org on API usage billing
+            # produces, where the true cost is NOT zero. Carried so budget.py
+            # can tell a declared zero from a guessed one.
+            "billing_basis": self.billing_basis(),
             "candidates": len(uni.candidates),
         })
         return pr, uni

@@ -357,6 +357,29 @@ def main(argv=None) -> int:
     th_findings = th.audit(_read_task)
     print(th.render(th_findings))
 
+    # PUBLISH BEFORE REMEDIATING. The artifact must describe what was FOUND,
+    # not what was left after fixing -- a state file that only ever shows the
+    # post-fix world cannot answer "what has been going wrong", which is the
+    # question it exists for. It also means a crash in remediation still leaves
+    # a current artifact behind.
+    #
+    # THIS IS WHY IT EXISTS AT ALL: every check above prints to a log ON THE
+    # BOX, so the only way anyone elsewhere learns the desk is blind is to log
+    # in and run something. That cost four hours on 2026-08-28, and it is the
+    # difference between a desk that is watched and one that is asked about.
+    try:
+        from golddesk.state_publish import build_state, publish
+        state = build_state(rows, {"wiring": findings, "capture": cap_findings,
+                                   "analyst": ah_findings,
+                                   "read_quality": rq_findings,
+                                   "tasks": th_findings})
+        _, how = publish(BASE, state, push=not args.dry_run)
+        log.info("desk state: %s", how)
+    except Exception as e:                             # noqa: BLE001
+        # NEVER the reason a self-heal run fails. Publishing is visibility, and
+        # visibility failing must not take down the thing doing the watching.
+        log.warning("could not publish desk state: %s", e)
+
     findings = (list(findings) + list(cap_findings) + list(ah_findings)
                 + list(rq_findings) + list(th_findings))
 

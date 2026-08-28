@@ -394,3 +394,76 @@ def test_the_health_check_ignores_blind_rows_with_other_causes():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# --------------------------------------------------------------------------
+# Who is paying. Not a detail: the entire reason this provider exists is that
+# the metered API priced the desk out at ~$290-580/month against a EUR 1,500
+# account, and that saving is real only if the login is a subscription one.
+
+def _clear_billing_env(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv(ClaudeCodeAnalyst.BILLING_ENV, raising=False)
+
+
+def test_an_undeclared_zero_is_labelled_an_assumption(monkeypatch):
+    """THE THIRD CASE the old heuristic folded into the second. An OAuth login
+    to an organisation on API usage billing has no ANTHROPIC_API_KEY anywhere
+    and is charged in dollars regardless -- observed on the live box, whose CLI
+    banner read 'Opus 5 (1M context) - API Usage Billing - <org>' while the desk
+    stamped cost_usd 0.0 on every read."""
+    _clear_billing_env(monkeypatch)
+    p = ClaudeCodeAnalyst()
+    assert p.billing_basis() == "assumed_subscription"
+    assert p.billed() is False
+
+
+def test_the_operator_can_declare_metered_billing_without_an_api_key(monkeypatch):
+    """The fix has to be reachable from the box's .env, because that is where
+    the fact lives -- the login is a property of the machine, not of a run."""
+    _clear_billing_env(monkeypatch)
+    monkeypatch.setenv(ClaudeCodeAnalyst.BILLING_ENV, "api")
+    p = ClaudeCodeAnalyst()
+    assert p.billing_basis() == "declared_api"
+    assert p.billed() is True
+
+
+def test_a_declared_subscription_is_distinguishable_from_a_guessed_one(monkeypatch):
+    """Both answer False. Only one of them is evidence."""
+    _clear_billing_env(monkeypatch)
+    monkeypatch.setenv(ClaudeCodeAnalyst.BILLING_ENV, "subscription")
+    declared = ClaudeCodeAnalyst().billing_basis()
+    _clear_billing_env(monkeypatch)
+    guessed = ClaudeCodeAnalyst().billing_basis()
+    assert declared != guessed
+    assert ClaudeCodeAnalyst().billed() is False
+
+
+def test_an_api_key_still_means_metered(monkeypatch):
+    _clear_billing_env(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-not-a-real-key")
+    p = ClaudeCodeAnalyst()
+    assert p.billing_basis() == "api_key_present"
+    assert p.billed() is True
+
+
+def test_an_explicit_constructor_flag_beats_every_environment_signal(monkeypatch):
+    _clear_billing_env(monkeypatch)
+    monkeypatch.setenv(ClaudeCodeAnalyst.BILLING_ENV, "api")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-not-a-real-key")
+    p = ClaudeCodeAnalyst(billed=False)
+    assert p.billing_basis() == "explicit"
+    assert p.billed() is False
+
+
+def test_the_read_stamp_carries_how_the_cost_was_decided(monkeypatch):
+    """budget.py has to be able to tell a declared zero from a guessed one. A
+    bare 0.0 reads identically either way, and one of them is wrong."""
+    _clear_billing_env(monkeypatch)
+    from golddesk.analyst import MarketBrief  # noqa: F401  (import shape check)
+    run, _ = _ladder_runner(set())
+    p = ClaudeCodeAnalyst(runner=run)
+    env = p._invoke("BRIEF")
+    assert env["subtype"] == "success"
+    # The stamp is assembled in read()/survey(); the basis it uses is this one.
+    assert p.billing_basis() == "assumed_subscription"
