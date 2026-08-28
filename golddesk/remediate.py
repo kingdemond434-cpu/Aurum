@@ -122,6 +122,7 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
          refresh_macro: Optional[Callable[[], bool]] = None,
          rotate_logs: Optional[Callable[[], bool]] = None,
          sync_quant: Optional[Callable[[], bool]] = None,
+         run_update: Optional[Callable[[], bool]] = None,
          enable_task: Optional[Callable[[str], bool]] = None) -> tuple[list[Remedy], list]:
     """Split audit findings into what can be fixed and what must escalate.
 
@@ -246,6 +247,35 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
             # capacity question and a model that changed under the desk is a
             # configuration question. Restarting hides both for one cycle.
             escalate.append(f)
+
+        elif f.check == "AurumSignalDesk-Update" and run_update is not None:
+            # MECHANICAL, AND THE ONE THAT UNBLOCKS EVERY OTHER FIX.
+            #
+            # The update TASK has been exiting 1 for a day, so nothing deploys
+            # and every fix pushed since sits on the remote unused -- while
+            # self_heal's own task, on the same box under the same account,
+            # runs cleanly every fifteen minutes. Whatever is wrong is in that
+            # task's environment, not in the script: the operator running the
+            # same `git pull` by hand worked three times today.
+            #
+            # THIS IS NOT NEW AUTHORITY. It invokes Update-AurumDesk.ps1, which
+            # already carries every safety the design requires: it refuses a
+            # dirty tree, advances only by fast-forward, runs the SUITE against
+            # the new code while the old desk is still live, rolls back on red,
+            # will not restart on an open position, and never re-registers a
+            # scheduled task. Same script, same guards, a trigger that works.
+            #
+            # Rate-limited by the Remediator like everything else, so a script
+            # that genuinely cannot succeed escalates after three attempts
+            # instead of looping.
+            remedies.append(Remedy(
+                f.check, "deploy pending fixes (the update TASK is failing; "
+                         "self_heal's task is not)",
+                "The updater carries its own safety -- dirty-tree refusal, "
+                "fast-forward only, suite-before-swap with rollback on red, no "
+                "restart on an open position. Running it from a task that works "
+                "changes the trigger, not the risk.",
+                run_update))
 
         elif f.check == "quant inbox" and sync_quant is not None:
             # MECHANICAL. The transport is a deduped file copy, idempotent on

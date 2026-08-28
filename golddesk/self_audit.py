@@ -160,16 +160,28 @@ def check_excursion_survives(rows: Sequence[dict]) -> Finding:
     # history that no fix can retrieve. Nothing to go stale, and a desk that has
     # NEVER recorded excursion still fails on every trade -- which is correct,
     # and is the case this check was originally written for.
-    first_good = next((i for i, c in enumerate(closed) if not bare(c)), None)
-    if first_good is None:
+    def opened(c: dict) -> str:
+        # entry_t0 is the trade's OPEN. Ordering by CLOSE was wrong: a trade
+        # that opened under the broken observer and closed after the fix carries
+        # zero observations through no fault of current code, and no fix can
+        # retroactively give it a path. Judging it by its close date blamed the
+        # running desk for a trade it inherited.
+        return str(c.get("entry_t0") or c.get("ts") or "")
+
+    good_opens = [opened(c) for c in closed if not bare(c)]
+    if not good_opens:
         return Finding("excursion", False,
                        f"NONE of {len(closed)} closed trades carries excursion. "
                        f"The observer is not being fed, or its state is lost on "
                        f"restart — every stop-placement question is unanswerable "
                        f"from this data.")
-    since = closed[first_good:]
+    # The earliest open that DID produce excursion is the point the observer is
+    # known to have been working. A bare trade that opened before it had no
+    # working observer to lose; one that opened after did.
+    boundary = min(good_opens)
+    since = [c for c in closed if opened(c) >= boundary]
     bad = [c for c in since if bare(c)]
-    historical = sum(1 for c in closed[:first_good] if bare(c))
+    historical = sum(1 for c in closed if bare(c) and opened(c) < boundary)
     tail = (f" ({historical} earlier trade(s) predate the fix and are not counted "
             f"— their excursion is gone for good)" if historical else "")
     if bad:

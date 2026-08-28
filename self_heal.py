@@ -162,6 +162,38 @@ def _read_task(name: str):
     return TaskInfo(name, True, status.lower() != "disabled", last_run, last_res)
 
 
+def _run_update() -> bool:
+    """Invoke the deployer directly, because its scheduled task is failing.
+
+    THE LOOP THIS BREAKS. AurumSignalDesk-Update exits 1 every thirty minutes,
+    so nothing deploys -- including the fixes that would tell anyone why it is
+    failing. The only way out has been a human running `git pull` by hand, three
+    times in one day. Meanwhile self_heal's own task, same box, same account,
+    same interpreter, runs cleanly every fifteen minutes: whatever is wrong lives
+    in that task's environment, not in the script.
+
+    SAME SCRIPT, SAME GUARDS. Update-AurumDesk.ps1 refuses a dirty tree, advances
+    only by fast-forward, runs the suite against the new code while the old desk
+    is still live, rolls back on red, refuses to restart on an open position, and
+    never re-registers a task. None of that is bypassed here -- only the trigger
+    changes. UTF-8 is forced for the same reason the script does it: cp1252 and
+    a codebase full of em-dashes is how the suite goes red for no reason.
+    """
+    script = BASE / "deploy" / "windows" / "Update-AurumDesk.ps1"
+    if not script.exists():
+        return False
+    try:
+        env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", str(script), "-DeskRoot", str(BASE)],
+            capture_output=True, timeout=1800, cwd=str(BASE), env=env)
+        return r.returncode == 0
+    except Exception as e:                             # noqa: BLE001
+        log.warning("update run failed: %s", e)
+        return False
+
+
 def _enable_task(name: str) -> bool:
     """Re-enable a registered task. The ONE task-control action taken
     automatically: flipping a flag on an existing registration is deterministic
@@ -548,6 +580,7 @@ def main(argv=None) -> int:
                                  refresh_macro=_refresh_macro,
                                  rotate_logs=_rotate_logs,
                                  sync_quant=_sync_quant,
+                                 run_update=_run_update,
                                  enable_task=_enable_task)
     if args.dry_run:
         for r in remedies:
