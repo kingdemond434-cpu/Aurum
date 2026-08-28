@@ -5,7 +5,7 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "THE LOGIN HAS EXPIRED \u2014 48 blind wake(s) since 2026-08-28 01:00Z carry the CLI's own 'OAuth session expired' message. No retry, restart, flag change or watchdog clears this: run `claude` once interactively on the box, as the user the scheduled task runs as, and complete the browser login. Reads resume on the next wake.",
+          "detail": "THE LOGIN HAS EXPIRED \u2014 49 blind wake(s) since 2026-08-28 01:00Z carry the CLI's own 'OAuth session expired' message. No retry, restart, flag change or watchdog clears this: run `claude` once interactively on the box, as the user the scheduled task runs as, and complete the browser login. Reads resume on the next wake.",
           "ok": false
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "last updated 179h ago and the chain runs daily. A link is broken, which is not the same as quant having found nothing.",
+          "detail": "last updated 180h ago and the chain runs daily. A link is broken, which is not the same as quant having found nothing.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.1h ago",
+          "detail": "18 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -118,12 +118,12 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "91 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "92 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -179,7 +179,7 @@
         },
         {
           "check": "notifications",
-          "detail": "2 delivered, 0 failed",
+          "detail": "3 delivered, 0 failed",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "176 unique decision(s), no tears",
+          "detail": "177 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "39324MB free",
+          "detail": "39294MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 14 min ago, after a boot 135.0h ago",
+          "detail": "wrote 14 min ago, after a boot 135.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 91,
+      "count": 92,
       "error": "claude cannot authenticate: Failed to authenticate: OAuth session expired and could not be refreshed. THIS IS NOT A FLAG, A RATE LIMIT OR AN OUTAGE, and no retry will clear it -- the desk stays blind until somebody logs in. On the box, as the user the scheduled task runs as, run `claude` once interactively and complete the browser login; reads resume on the next wake with no restart needed.",
-      "last": "2026-08-28T10:45:06.595213+00:00",
+      "last": "2026-08-28T11:00:02.866485+00:00",
       "stage": "survey",
       "why": {
         "needs_login": true,
@@ -238,8 +238,8 @@
       "last": "2026-08-27T13:45:00.478992+00:00"
     }
   },
-  "generated_utc": "2026-08-28T11:19:45.130143+00:00",
-  "last_row_utc": "2026-08-28T10:45:06.595213+00:00",
-  "ledger_rows": 183,
-  "total_faults": 9
+  "generated_utc": "2026-08-28T11:30:55.056145+00:00",
+  "last_row_utc": "2026-08-28T11:00:02.866485+00:00",
+  "ledger_rows": 184,
+  "total_faults": 10
 }
