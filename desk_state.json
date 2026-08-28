@@ -5,7 +5,7 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 33 login failure(s) earlier in the window, but the analyst has answered 35 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 32 login failure(s) earlier in the window, but the analyst has answered 35 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 184h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 185h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.2h ago",
+          "detail": "18 sleeve(s) accruing, published 0.5h ago",
           "ok": true
         }
       ],
@@ -118,13 +118,13 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited -1073741502 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
           "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     },
     "wiring": {
       "axis": "wiring",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "103 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "104 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "223 unique decision(s), no tears",
+          "detail": "224 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "39014MB free",
+          "detail": "38989MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 14 min ago, after a boot 140.0h ago",
+          "detail": "wrote 15 min ago, after a boot 140.2h ago",
           "ok": true
         }
       ],
@@ -208,20 +208,11 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 103,
-      "error": "claude exited 1: {\"is_error\":true,\"duration_api_ms\":0,\"num_turns\":1,\"stop_reason\":\"stop_sequence\",\"session_id\":\"7ef52070-c7e5-409c-b591-538c78d6f239\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\"",
-      "last": "2026-08-28T15:45:00.794619+00:00",
+      "count": 104,
+      "error": "claude exited 3221226505: ASSERTION FAILED: MemoryExhaustion: Crash intentionally because memory is exhausted.\nfailureMode != AllocationFailureMode::Assert\n/webkit/Source/JavaScriptCore/heap/LocalAllocator.cpp(164) : void *JSC::LocalAllocator::allocateSlowCase(JSC::Heap &, size_t, GCDeferralContext *, AllocationFailureMode)\n",
+      "last": "2026-08-28T16:00:00.448935+00:00",
       "stage": "survey",
-      "why": {
-        "duration_api_ms": 0,
-        "input_tokens": 0,
-        "is_error": true,
-        "output_tokens": 0,
-        "reading": "the API was never called -- this is a LOCAL failure (input, login or binary), not a limit or an outage",
-        "result": "You've hit your session limit \u00b7 resets 8:10pm (Europe/Berlin)",
-        "stop_reason": "stop_sequence",
-        "subtype": "success"
-      }
+      "why": {}
     },
     "REFUSAL_COMPILER": {
       "count": 58,
@@ -245,8 +236,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T16:15:01.301286+00:00",
-  "last_row_utc": "2026-08-28T15:45:00.794619+00:00",
-  "ledger_rows": 240,
-  "total_faults": 10
+  "generated_utc": "2026-08-28T16:30:00.499553+00:00",
+  "last_row_utc": "2026-08-28T16:00:00.448935+00:00",
+  "ledger_rows": 241,
+  "total_faults": 11
 }
