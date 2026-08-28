@@ -5,12 +5,12 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 7 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 5 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "37/98 wakes (38%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "detail": "35/96 wakes (36%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.2h ago",
+          "detail": "21 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 2 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.0h old",
+          "detail": "newest row 1.2h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.7h ago",
+          "detail": "written 1.0h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "38553MB free",
+          "detail": "38540MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 43 min ago, after a boot 145.2h ago",
+          "detail": "wrote 58 min ago, after a boot 145.5h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T21:30:00.381113+00:00",
+  "generated_utc": "2026-08-28T21:45:00.769567+00:00",
   "last_row_utc": "2026-08-28T20:30:00.951340+00:00",
   "ledger_rows": 284,
-  "total_faults": 9
+  "total_faults": 10
 }
