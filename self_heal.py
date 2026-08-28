@@ -508,10 +508,27 @@ def main(argv=None) -> int:
     try:
         from golddesk.state_publish import (build_state, deployed_commit,
                                             publish)
+        # THE REASON TRAVELS WITH THE FAULT. _why_the_task_failed already reads
+        # the failing task's own log, but only into stdout -- so the single most
+        # useful line on the box stayed on the box, and the artifact carried
+        # "Update exited 1" with no cause, which is the exact uselessness that
+        # published artifact exists to end. Enriched here rather than inside
+        # task_health so the audit stays pure and filesystem-free.
+        import dataclasses
+        th_published = []
+        for f in th_findings:
+            why = "" if f.ok else _why_the_task_failed(f.check)
+            th_published.append(
+                dataclasses.replace(f, detail=f.detail + (
+                    "  ITS OWN LOG SAYS: " + " / ".join(
+                        ln.strip().lstrip("> ") for ln in why.splitlines()
+                        if ln.strip())
+                    if why else ""))
+                if why else f)
         state = build_state(rows, {"wiring": findings, "capture": cap_findings,
                                    "analyst": ah_findings,
                                    "read_quality": rq_findings,
-                                   "tasks": th_findings},
+                                   "tasks": th_published},
                             commit=deployed_commit(BASE))
         _, how = publish(BASE, state, push=not args.dry_run)
         log.info("desk state: %s", how)

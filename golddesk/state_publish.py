@@ -113,7 +113,7 @@ def _summarise_findings(name: str, findings: Sequence[Any]) -> dict:
     for f in findings:
         items.append({"check": getattr(f, "check", "?"),
                       "ok": bool(getattr(f, "ok", False)),
-                      "detail": str(getattr(f, "detail", ""))[:600]})
+                      "detail": str(getattr(f, "detail", ""))[:1400]})
     return {"axis": name,
             "faults": sum(1 for i in items if not i["ok"]),
             "checks": items}

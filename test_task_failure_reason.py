@@ -125,5 +125,47 @@ def test_every_mapped_log_lives_under_the_desk_root():
         assert self_heal.BASE in path.parents, task
 
 
+
+# --------------------------------------------------------------------------
+# The reason has to reach the PUBLISHED artifact, not just stdout.
+
+def test_the_published_artifact_carries_the_failing_task_s_own_log(tmp_path, monkeypatch):
+    """MY OWN GAP. _why_the_task_failed reads the log correctly and printed it
+    to stdout — on the box. So the artifact, whose entire purpose is that
+    nobody has to log into the box, carried "Update exited 1" with no cause,
+    and I sat reading it unable to say why the updater was failing."""
+    from golddesk.state_publish import build_state
+    from golddesk.task_health import Finding
+
+    logp = tmp_path / "update.log"
+    logp.write_text("2026-08-28 11:00:01  ABORT: not a fast-forward. The box "
+                    "has diverged from the remote\n", encoding="utf-8")
+    monkeypatch.setitem(self_heal.TASK_LOGS, TASK, logp)
+
+    import dataclasses
+    f = Finding(TASK, False, "last run exited 1 — pulls and deploys fixes is "
+                             "firing and FAILING, which no restart fixes.")
+    why = self_heal._why_the_task_failed(f.check)
+    enriched = dataclasses.replace(f, detail=f.detail + "  ITS OWN LOG SAYS: "
+                                   + " / ".join(ln.strip().lstrip("> ")
+                                                for ln in why.splitlines()
+                                                if ln.strip()))
+    state = build_state([], {"tasks": [enriched]})
+    detail = state["audits"]["tasks"]["checks"][0]["detail"]
+    assert "ITS OWN LOG SAYS" in detail
+    assert "not a fast-forward" in detail
+
+
+def test_the_quoted_reason_is_not_truncated_out_of_the_artifact(tmp_path, monkeypatch):
+    """The cause sits at the END of the detail string, so a cap that trims the
+    tail removes exactly the part worth publishing."""
+    from golddesk.state_publish import build_state
+    from golddesk.task_health import Finding
+
+    f = Finding(TASK, False, "x" * 500 + "  ITS OWN LOG SAYS: TESTS FAILED — "
+                             "rolling back to 096f81d")
+    state = build_state([], {"tasks": [f]})
+    assert "TESTS FAILED" in state["audits"]["tasks"]["checks"][0]["detail"]
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
