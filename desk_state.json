@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "21 sleeve(s) accruing, published 0.3h ago",
+          "detail": "21 sleeve(s) accruing, published 0.5h ago",
           "ok": true
         }
       ],
@@ -93,8 +93,8 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "last run exited 1 \u2014 restarts a dead desk is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
@@ -118,13 +118,13 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 5
+      "faults": 2
     },
     "wiring": {
       "axis": "wiring",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "89 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "90 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "2 delivered, 0 failed",
+          "detail": "1 delivered, 0 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.3h ago",
+          "detail": "written 0.0h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "174 unique decision(s), no tears",
+          "detail": "175 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "39337MB free",
+          "detail": "39332MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 15 min ago, after a boot 134.5h ago",
+          "detail": "wrote 2 min ago, after a boot 134.7h ago",
           "ok": true
         }
       ],
@@ -208,20 +208,11 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 89,
-      "error": "claude exited 1: {\"is_error\":true,\"duration_api_ms\":0,\"num_turns\":1,\"stop_reason\":\"stop_sequence\",\"session_id\":\"a0802af3-198c-4593-be6c-ebd1c2bccd59\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\"",
-      "last": "2026-08-28T10:15:00.953591+00:00",
+      "count": 90,
+      "error": "claude exited 3221226505: ",
+      "last": "2026-08-28T10:30:04.944843+00:00",
       "stage": "survey",
-      "why": {
-        "duration_api_ms": 0,
-        "input_tokens": 0,
-        "is_error": true,
-        "output_tokens": 0,
-        "reading": "the API was never called -- this is a LOCAL failure (input, login or binary), not a limit or an outage",
-        "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
-        "stop_reason": "stop_sequence",
-        "subtype": "success"
-      }
+      "why": {}
     },
     "REFUSAL_COMPILER": {
       "count": 43,
@@ -244,8 +235,8 @@
       "last": "2026-08-27T13:45:00.478992+00:00"
     }
   },
-  "generated_utc": "2026-08-28T10:45:48.751837+00:00",
-  "last_row_utc": "2026-08-28T10:15:00.953591+00:00",
-  "ledger_rows": 181,
-  "total_faults": 12
+  "generated_utc": "2026-08-28T11:01:48.997232+00:00",
+  "last_row_utc": "2026-08-28T10:30:04.944843+00:00",
+  "ledger_rows": 182,
+  "total_faults": 9
 }
