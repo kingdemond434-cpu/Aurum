@@ -392,3 +392,74 @@ def test_blind_bars_do_not_deflate_usage_coverage():
     text = outage.render()
     assert "BLIND BARS" in text and "8" in text
     assert "predate the stamp" not in text
+
+
+# ------------------- a blind row must NAME the cause, not hint at it
+
+def test_the_cli_verdict_is_extracted_from_its_json():
+    """The CLI reports failure as a JSON blob whose informative fields sit at
+    arbitrary offsets. Blind truncation reliably keeps the useless half: in
+    production the ledger held `..."cache_creation":{...},"inferenc` and nothing
+    after, for a day, while the field explaining the failure sat past the cut."""
+    import json as J
+    from golddesk.live import _explain_analyst_error
+    e = AnalystError("claude exited 1: " + J.dumps({
+        "is_error": True, "duration_api_ms": 0, "num_turns": 1,
+        "stop_reason": "stop_sequence", "subtype": "error_during_execution",
+        "usage": {"input_tokens": 0, "output_tokens": 0}}))
+    d = _explain_analyst_error(e)
+    assert d["subtype"] == "error_during_execution"
+    assert d["duration_api_ms"] == 0
+    assert d["input_tokens"] == 0
+
+
+def test_zero_tokens_and_zero_api_time_is_read_as_a_LOCAL_failure():
+    """THE DISCRIMINATOR. It rules out a rate limit, a model outage and a
+    timeout, and rules IN the input, the login or the binary — which are
+    completely different fixes."""
+    import json as J
+    from golddesk.live import _explain_analyst_error
+    e = AnalystError("claude exited 1: " + J.dumps({
+        "is_error": True, "duration_api_ms": 0,
+        "usage": {"input_tokens": 0, "output_tokens": 0}}))
+    assert "LOCAL failure" in _explain_analyst_error(e)["reading"]
+
+
+def test_a_real_api_failure_is_NOT_called_local():
+    """Tokens consumed means the API was reached; calling that local would send
+    the reader to the wrong half of the system."""
+    import json as J
+    from golddesk.live import _explain_analyst_error
+    e = AnalystError("claude exited 1: " + J.dumps({
+        "is_error": True, "duration_api_ms": 4200,
+        "usage": {"input_tokens": 31000, "output_tokens": 12}}))
+    assert "reading" not in _explain_analyst_error(e)
+
+
+def test_a_non_json_error_yields_no_explanation_rather_than_a_guess():
+    from golddesk.live import _explain_analyst_error
+    assert _explain_analyst_error(AnalystError("connection reset by peer")) == {}
+
+
+def test_the_helper_is_not_silently_broken_by_a_missing_import():
+    """It parses inside a try/except, so a NameError from a missing `import
+    json` returned {} forever — 'nothing to explain' is indistinguishable from
+    'nothing was explainable'. That is exactly what shipped."""
+    import golddesk.live as L
+    assert hasattr(L, "json"), "live.py must import json for _explain_analyst_error"
+
+
+def test_a_blind_row_carries_the_verdict_and_the_prompt_size(tmp_path):
+    _, rows = _drive(tmp_path)
+    r = next(r for r in rows if r.get("kind") == "BLIND")
+    assert "cli" in r["decision"]
+    assert "prompt_chars" in r["decision"]
+    assert r["decision"]["prompt_chars"] is None or r["decision"]["prompt_chars"] > 0
+
+
+def test_the_error_text_is_no_longer_cut_before_the_cause(tmp_path):
+    """500 chars cut every CLI failure off mid-field. providers.py already
+    carries 2000 WITH A COMMENT saying 300 was doing exactly this."""
+    src = (Path(__file__).parent / "golddesk" / "live.py").read_text(encoding="utf-8")
+    assert 'str(err)[:2000]' in src
+    assert 'str(err)[:500]' not in src

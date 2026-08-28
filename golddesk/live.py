@@ -39,6 +39,7 @@ management. That is enforced by _notify() below, not by hope.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -66,6 +67,43 @@ from .runner import RiskLimits, RiskState, build_brief, risk_check
 from .watcher import Watcher
 
 log = logging.getLogger(__name__)
+
+
+def _explain_analyst_error(err: Exception) -> dict:
+    """Pull the CLI's own verdict out of its JSON error payload.
+
+    The Claude Code CLI reports failure as a JSON blob, and the informative
+    fields (`subtype`, `result`, and the token counts that say whether the API
+    was ever reached) sit at arbitrary offsets inside it. Blind truncation of
+    the whole string reliably keeps the useless half.
+
+    Returns {} when there is no JSON to read -- an absent explanation, never a
+    guessed one.
+    """
+    text = str(err)
+    i, j = text.find("{"), text.rfind("}")
+    if i < 0 or j <= i:
+        return {}
+    try:
+        d = json.loads(text[i:j + 1])
+    except Exception:                                  # noqa: BLE001
+        return {}
+    if not isinstance(d, dict):
+        return {}
+    usage = d.get("usage") or {}
+    out = {k: d[k] for k in ("subtype", "result", "stop_reason", "is_error",
+                             "num_turns", "duration_api_ms") if k in d}
+    for k in ("input_tokens", "output_tokens"):
+        if k in usage:
+            out[k] = usage[k]
+    # THE DISCRIMINATOR. Zero tokens AND zero API time means the CLI failed
+    # before it ever called the API -- which rules out a rate limit, a model
+    # outage and a timeout, and rules IN something local: the input it was
+    # handed, the login, or the binary itself.
+    if out.get("duration_api_ms") == 0 and not out.get("input_tokens"):
+        out["reading"] = ("the API was never called -- this is a LOCAL failure "
+                          "(input, login or binary), not a limit or an outage")
+    return out
 
 
 def _downsample_path(path: Sequence, cap: int = 400) -> list:
@@ -374,6 +412,12 @@ class LiveDesk:
         self.crossmarket_provider = crossmarket_provider
         self._crossmarket: Optional[str] = None
         self._crossmarket_at = None
+        #: Size of the brief handed to the analyst on the last wake. Recorded on
+        #: BLIND rows because it is the one input that VARIES between a wake that
+        #: answers and one that does not -- and a CLI failure with zero tokens
+        #: and zero API time is a local rejection, where size is the first
+        #: hypothesis to rule in or out.
+        self._last_prompt_chars: Optional[int] = None
         # Event proximity. None means the calendar is not wired, which the
         # uncertainty decomposition reports as UNKNOWN rather than as "no event"
         # — those are different claims and only one of them is true.
@@ -680,10 +724,16 @@ class LiveDesk:
         self.last_spread = max(0.0, ask - bid)
         self._refresh_macro(ts)
         self._refresh_crossmarket(ts)
+
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             macro=self._macro,
                             crossmarket=self._crossmarket,
                             timeframe=ENTRY_TF)
+        try:
+            self._last_prompt_chars = len(brief.render())
+        except Exception:                             # noqa: BLE001
+            self._last_prompt_chars = None
+
         # THE CAUSAL SNAPSHOT OF THIS DECISION MOMENT, built before anything
         # decides. It is what makes the model league real rather than
         # theoretical: a competitor -- another model, a rule, the user -- can be
@@ -1585,6 +1635,16 @@ class LiveDesk:
         forward path is still resolved, so an outage window can be priced later
         without pretending the desk chose to sit it out.
         """
+        # THE ERROR TEXT, KEPT LONG ENOUGH TO NAME THE CAUSE.
+        #
+        # This truncated at 500 chars and cut every CLI failure off mid-field --
+        # in production the ledger held `..."cache_creation":{...},"inferenc` and
+        # nothing after, for a day, while the field that explains the failure sat
+        # just past the cut. providers.py already carries 2000 chars WITH A
+        # COMMENT saying 300 was doing exactly this; I reintroduced the same
+        # defect one layer out, in the row that exists to make the failure
+        # diagnosable.
+        detail = _explain_analyst_error(err)
         self.stats.analyst_errors += 1
         self.stats.consecutive_blind += 1
         self.stats.longest_blind_streak = max(self.stats.longest_blind_streak,
@@ -1593,7 +1653,17 @@ class LiveDesk:
         try:
             self._record(bars, i, brief, DecisionKind.BLIND, "NONE",
                          {"stage": stage, "error_type": type(err).__name__,
-                          "error": str(err)[:500],
+                          "error": str(err)[:2000],
+                          # The CLI's own verdict, lifted out of its JSON so the
+                          # cause is readable without hunting through a payload.
+                          "cli": detail,
+                          # PROMPT SIZE, because it is the variable that changes
+                          # between a wake that answers and one that does not.
+                          # A failure with zero tokens and zero API time is a
+                          # LOCAL rejection, and size is the first thing to rule
+                          # in or out -- without it the question stays open for
+                          # as long as it takes to reproduce.
+                          "prompt_chars": self._last_prompt_chars,
                           "vision": self.vision.value,
                           "consecutive_blind": self.stats.consecutive_blind},
                          f"BLIND: analyst unavailable at {stage} — {type(err).__name__}",
