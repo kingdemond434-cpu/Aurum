@@ -5,17 +5,17 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 49 login failure(s) earlier in the window, but the analyst has answered 13 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 49 login failure(s) earlier in the window, but the analyst has answered 15 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "56/69 wakes (81%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "55/70 wakes (79%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 211s of 600s budget (35%) over 13 reads",
+          "detail": "median 211s of 600s budget (35%) over 15 reads",
           "ok": true
         },
         {
@@ -31,17 +31,17 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 98 recent / 0 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 100 recent / 0 prior decisions, under 40 either side",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/87 (32%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/88 (32%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
           "check": "capture",
-          "detail": "83% of MFE kept over 6 winners",
+          "detail": "85% of MFE kept over 7 winners",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "21 sleeve(s) accruing, published 0.2h ago",
+          "detail": "18 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -67,17 +67,17 @@
       "checks": [
         {
           "check": "calibration",
-          "detail": "UNMEASURED \u2014 11 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
+          "detail": "UNMEASURED \u2014 12 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
           "ok": true
         },
         {
           "check": "edge",
-          "detail": "UNMEASURED \u2014 11 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
+          "detail": "UNMEASURED \u2014 12 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
           "ok": true
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.07R while refusals reached +0.45R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.05R while refusals reached +0.46R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -144,7 +144,7 @@
       "checks": [
         {
           "check": "cohorts",
-          "detail": "11 mechanism(s) loaded from 11 resolved trades",
+          "detail": "12 mechanism(s) loaded from 12 resolved trades",
           "ok": true
         },
         {
@@ -154,7 +154,7 @@
         },
         {
           "check": "excursion",
-          "detail": "2 of 10 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
+          "detail": "2 of 11 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
           "ok": false
         },
         {
@@ -179,7 +179,7 @@
         },
         {
           "check": "notifications",
-          "detail": "9 delivered, 4 failed",
+          "detail": "11 delivered, 4 failed",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "192 unique decision(s), no tears",
+          "detail": "194 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "39220MB free",
+          "detail": "39211MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 11 min ago, after a boot 136.5h ago",
+          "detail": "wrote 12 min ago, after a boot 136.7h ago",
           "ok": true
         }
       ],
@@ -219,8 +219,8 @@
       "last": "2026-08-28T12:15:00.792024+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 38,
-      "last": "2026-08-28T12:15:00.792024+00:00"
+      "count": 39,
+      "last": "2026-08-28T12:30:00.626060+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -231,13 +231,13 @@
       "last": null
     },
     "SIGNAL": {
-      "count": 11,
-      "last": "2026-08-28T12:15:00.792024+00:00"
+      "count": 12,
+      "last": "2026-08-28T12:30:00.626060+00:00"
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T12:44:59.970756+00:00",
-  "last_row_utc": "2026-08-28T12:34:05.116518+00:00",
-  "ledger_rows": 203,
+  "generated_utc": "2026-08-28T13:00:01.407700+00:00",
+  "last_row_utc": "2026-08-28T12:47:41.602730+00:00",
+  "ledger_rows": 206,
   "total_faults": 9
 }
