@@ -91,6 +91,12 @@ FILENAME = "desk_state.json"
 KINDS = ("SIGNAL", "BLIND", "REFUSAL_MODEL", "REFUSAL_COMPILER",
          "REFUSAL_ROUTER", "REFUSAL_RISK")
 
+#: Decisions carried in full in the artifact. 40 covers roughly a trading day at
+#: this desk's cadence, which is the window a question like "did it catch that
+#: move" is actually asked about. Larger would turn the artifact into a second
+#: copy of the ledger, which is not what a 15-minute health file is for.
+RECENT_N = 40
+
 #: Fields copied out of a BLIND row's CLI detail. POSITIVE allowlist: a denylist
 #: is one forgotten key away from publishing something it should not.
 CLI_FIELDS = ("subtype", "result", "stop_reason", "is_error", "duration_api_ms",
@@ -160,6 +166,35 @@ def build_state(rows: Sequence[dict], audits: dict[str, Sequence[Any]],
             entry["error"] = str(dec.get("error") or "")[:400]
         by_kind[k] = entry
 
+    # THE LAST N DECISIONS, IN FULL ENOUGH DETAIL TO ANSWER "WHAT DID IT DO".
+    #
+    # The artifact carried COUNTS -- 15 signals, 97 blind -- which answers
+    # "is it alive" and nothing else. Asked on 2026-08-28 whether the desk had
+    # caught a 55-point collapse, the honest answer was that I could not tell
+    # from the artifact, and the alternative was reading arrows off a phone
+    # screenshot. "It never signalled" and "it signalled correctly and exited
+    # early" need OPPOSITE fixes, and counts cannot separate them.
+    #
+    # Bounded and allowlisted like everything else here: the last RECENT_N
+    # decisions, named fields only, no prose. Enough to reconstruct the desk's
+    # behaviour, not enough to become a second copy of the ledger.
+    recent = []
+    for r in list(rows)[-RECENT_N:]:
+        dec = r.get("decision") or {}
+        item = {"t": _ts(r), "kind": r.get("kind")}
+        for src, keys in ((r, ("direction", "realised_r", "mfe_r", "mae_r",
+                               "resolution", "observations", "mechanism_name",
+                               "reason", "evidence_valid", "entry_t0")),
+                          (dec, ("setup", "direction", "mechanism_name",
+                                 "confidence", "rr_tp1", "rr_tp2", "provider",
+                                 "model"))):
+            for k in keys:
+                if src.get(k) is not None and k not in item:
+                    item[k] = src[k]
+        if r.get("kind") == "BLIND":
+            item["stage"] = dec.get("stage")
+        recent.append(item)
+
     faults = sum(a["faults"] for a in
                  (_summarise_findings(n, f) for n, f in audits.items()))
     return {
@@ -174,6 +209,7 @@ def build_state(rows: Sequence[dict], audits: dict[str, Sequence[Any]],
         "last_row_utc": _ts(rows[-1]) if rows else None,
         "total_faults": faults,
         "decisions": by_kind,
+        "recent": recent,
         "audits": {n: _summarise_findings(n, f) for n, f in audits.items()},
     }
 

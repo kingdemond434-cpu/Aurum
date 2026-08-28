@@ -367,5 +367,68 @@ def test_a_repo_git_cannot_answer_for_reports_unknown(tmp_path):
     from golddesk.state_publish import deployed_commit
     assert deployed_commit(tmp_path / "nope") == "unknown"
 
+
+# --------------------------------------------------------------------------
+# Counts answer "is it alive". They cannot answer "what did it do".
+
+def test_the_artifact_carries_the_recent_decisions_not_only_counts():
+    """Asked on 2026-08-28 whether the desk had caught a 55-point collapse, the
+    artifact could say only "15 signals". "It never signalled" and "it signalled
+    correctly and exited early" need OPPOSITE fixes, and a count cannot separate
+    them — the alternative was reading arrows off a phone screenshot."""
+    rows = [{"kind": "SIGNAL", "t0": "2026-08-28T13:30:00+00:00",
+             "decision": {"setup": "NOVEL", "direction": "SHORT",
+                          "rr_tp2": 2.57, "confidence": 3}}]
+    got = build_state(rows, {}, NOW)["recent"]
+    assert len(got) == 1
+    assert got[0]["direction"] == "SHORT"
+    assert got[0]["rr_tp2"] == 2.57
+
+
+def test_a_closed_trade_carries_its_outcome_and_its_excursion():
+    """The exit question — did it get out early — is answerable only with the
+    realised R next to the MFE the move actually offered."""
+    rows = [{"kind": "TRADE_CLOSED", "ts": "2026-08-28T14:00:00+00:00",
+             "entry_t0": "2026-08-28T13:30:00+00:00", "direction": "SHORT",
+             "realised_r": 0.2, "mfe_r": 3.4, "mae_r": -0.3,
+             "observations": 210, "resolution": "TICK_OBSERVED",
+             "mechanism_name": "failed-reclaim", "evidence_valid": True}]
+    got = build_state(rows, {}, NOW)["recent"][0]
+    assert got["realised_r"] == 0.2 and got["mfe_r"] == 3.4
+    assert got["mechanism_name"] == "failed-reclaim"
+
+
+def test_it_is_bounded_to_the_recent_window():
+    """A 15-minute health file must not become a second copy of the ledger."""
+    from golddesk.state_publish import RECENT_N
+    rows = [{"kind": "SIGNAL", "t0": f"2026-08-28T10:{i:02d}:00+00:00",
+             "decision": {}} for i in range(RECENT_N + 25)]
+    assert len(build_state(rows, {}, NOW)["recent"]) == RECENT_N
+
+
+def test_it_keeps_the_NEWEST_decisions_not_the_oldest():
+    from golddesk.state_publish import RECENT_N
+    rows = [{"kind": "SIGNAL", "t0": f"2026-08-28T10:{i:02d}:00+00:00",
+             "decision": {"confidence": i}} for i in range(RECENT_N + 5)]
+    got = build_state(rows, {}, NOW)["recent"]
+    assert got[-1]["confidence"] == RECENT_N + 4
+
+
+def test_recent_decisions_carry_no_prose():
+    """Named fields only. The brief, the why and the why_not are the operator's
+    to read in Telegram; putting them here would publish a paragraph every
+    fifteen minutes and bury the fields that answer questions."""
+    rows = [{"kind": "SIGNAL", "t0": "2026-08-28T13:30:00+00:00",
+             "decision": {"direction": "SHORT", "why": "SECRET PROSE",
+                          "read": "MORE PROSE", "analyst_read": {"why": "X"}}}]
+    blob = json.dumps(build_state(rows, {}, NOW))
+    assert "SECRET PROSE" not in blob and "MORE PROSE" not in blob
+
+
+def test_a_blind_row_says_which_stage_failed():
+    rows = [{"kind": "BLIND", "t0": "2026-08-28T13:30:00+00:00",
+             "decision": {"stage": "survey", "error": "x"}}]
+    assert build_state(rows, {}, NOW)["recent"][0]["stage"] == "survey"
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
