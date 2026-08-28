@@ -1,0 +1,251 @@
+{
+  "audits": {
+    "analyst": {
+      "axis": "analyst",
+      "checks": [
+        {
+          "check": "analyst login",
+          "detail": "THE LOGIN HAS EXPIRED \u2014 47 blind wake(s) since 2026-08-28 01:00Z carry the CLI's own 'OAuth session expired' message. No retry, restart, flag change or watchdog clears this: run `claude` once interactively on the box, as the user the scheduled task runs as, and complete the browser login. Reads resume on the next wake.",
+          "ok": false
+        },
+        {
+          "check": "analyst answering",
+          "detail": "59/59 wakes (100%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "ok": false
+        },
+        {
+          "check": "analyst latency",
+          "detail": "UNMEASURED \u2014 0 stamped read(s), under 10",
+          "ok": true
+        },
+        {
+          "check": "analyst model",
+          "detail": "no stamped reads in the window",
+          "ok": true
+        }
+      ],
+      "faults": 2
+    },
+    "capture": {
+      "axis": "capture",
+      "checks": [
+        {
+          "check": "signal rate",
+          "detail": "UNMEASURED \u2014 85 recent / 0 prior decisions, under 40 either side",
+          "ok": true
+        },
+        {
+          "check": "dominant gate",
+          "detail": "28/78 (36%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "ok": true
+        },
+        {
+          "check": "capture",
+          "detail": "UNMEASURED \u2014 3 trade(s) with positive MFE, under 5",
+          "ok": true
+        },
+        {
+          "check": "quant inbox",
+          "detail": "last updated 179h ago and the chain runs daily. A link is broken, which is not the same as quant having found nothing.",
+          "ok": false
+        },
+        {
+          "check": "survivors",
+          "detail": "69 finding(s) arrived and none reports a cell clearing the ten-gate battery. Either nothing has passed yet \u2014 the honest state of a desk with no forward evidence, and no fault here \u2014 or the gates never ran. Answered on the quant side: check reports/QQUANT_GATES.json.",
+          "ok": false
+        },
+        {
+          "check": "shadow evidence",
+          "detail": "21 sleeve(s) accruing, published 0.3h ago",
+          "ok": true
+        }
+      ],
+      "faults": 2
+    },
+    "read_quality": {
+      "axis": "read_quality",
+      "checks": [
+        {
+          "check": "calibration",
+          "detail": "UNMEASURED \u2014 7 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
+          "ok": true
+        },
+        {
+          "check": "edge",
+          "detail": "UNMEASURED \u2014 7 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
+          "ok": true
+        },
+        {
+          "check": "selection",
+          "detail": "UNMEASURED \u2014 7 taken and 78 refused with a resolved path; needs 10 and 30",
+          "ok": true
+        }
+      ],
+      "faults": 0
+    },
+    "tasks": {
+      "axis": "tasks",
+      "checks": [
+        {
+          "check": "AurumSignalDesk",
+          "detail": "enabled, last result 267009",
+          "ok": true
+        },
+        {
+          "check": "AurumSignalDesk-Watchdog",
+          "detail": "last run exited 1 \u2014 restarts a dead desk is firing and FAILING, which no restart fixes.",
+          "ok": false
+        },
+        {
+          "check": "AurumSignalDesk-SelfHeal",
+          "detail": "enabled, last result 267009",
+          "ok": true
+        },
+        {
+          "check": "AurumSignalDesk-Update",
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.",
+          "ok": false
+        },
+        {
+          "check": "AurumSignalDesk-VantageSpread",
+          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.",
+          "ok": false
+        },
+        {
+          "check": "AurumSignalDesk-Cycle",
+          "detail": "registered and enabled, HAS NOT RUN YET \u2014 normal for a task whose first fire is still ahead",
+          "ok": true
+        },
+        {
+          "check": "MT5-ShadowSync",
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
+        },
+        {
+          "check": "MT5-Shadow",
+          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
+        },
+        {
+          "check": "MT5-QQuantGatesCertify",
+          "detail": "enabled, last result 0",
+          "ok": true
+        },
+        {
+          "check": "Aurum-Sync",
+          "detail": "enabled, last result 0",
+          "ok": true
+        }
+      ],
+      "faults": 5
+    },
+    "wiring": {
+      "axis": "wiring",
+      "checks": [
+        {
+          "check": "cohorts",
+          "detail": "7 mechanism(s) loaded from 7 resolved trades",
+          "ok": true
+        },
+        {
+          "check": "tp1 banking",
+          "detail": "0 trade(s) reached TP1 \u2014 too few to judge",
+          "ok": true
+        },
+        {
+          "check": "excursion",
+          "detail": "2 of 7 closed trades carry ZERO observations and zero excursion. The observer is not being fed, or its state is lost on restart \u2014 every stop-placement question is unanswerable from this data.",
+          "ok": false
+        },
+        {
+          "check": "blind bars",
+          "detail": "89 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "ok": true
+        },
+        {
+          "check": "ledger growth",
+          "detail": "newest row 0.5h old",
+          "ok": true
+        },
+        {
+          "check": "macro",
+          "detail": "all 20 recent briefs carried MACRO UNMEASURED \u2014 the analyst is reading gold with no DXY, no real yield and no risk proxy",
+          "ok": false
+        },
+        {
+          "check": "spread profile",
+          "detail": "absent \u2014 every expectancy figure is priced against the FEED's spread, not the venue that actually fills you",
+          "ok": false
+        },
+        {
+          "check": "notifications",
+          "detail": "2 delivered, 0 failed",
+          "ok": true
+        },
+        {
+          "check": "checkpoint",
+          "detail": "written 0.3h ago",
+          "ok": true
+        },
+        {
+          "check": "ledger integrity",
+          "detail": "174 unique decision(s), no tears",
+          "ok": true
+        },
+        {
+          "check": "disk",
+          "detail": "39337MB free",
+          "ok": true
+        },
+        {
+          "check": "came back after boot",
+          "detail": "wrote 15 min ago, after a boot 134.5h ago",
+          "ok": true
+        }
+      ],
+      "faults": 3
+    }
+  },
+  "decisions": {
+    "BLIND": {
+      "count": 89,
+      "error": "claude exited 1: {\"is_error\":true,\"duration_api_ms\":0,\"num_turns\":1,\"stop_reason\":\"stop_sequence\",\"session_id\":\"a0802af3-198c-4593-be6c-ebd1c2bccd59\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\"",
+      "last": "2026-08-28T10:15:00.953591+00:00",
+      "stage": "survey",
+      "why": {
+        "duration_api_ms": 0,
+        "input_tokens": 0,
+        "is_error": true,
+        "output_tokens": 0,
+        "reading": "the API was never called -- this is a LOCAL failure (input, login or binary), not a limit or an outage",
+        "result": "Failed to authenticate: OAuth session expired and could not be refreshed",
+        "stop_reason": "stop_sequence",
+        "subtype": "success"
+      }
+    },
+    "REFUSAL_COMPILER": {
+      "count": 43,
+      "last": "2026-08-27T20:30:01.317987+00:00"
+    },
+    "REFUSAL_MODEL": {
+      "count": 35,
+      "last": "2026-08-27T20:30:01.317987+00:00"
+    },
+    "REFUSAL_RISK": {
+      "count": 0,
+      "last": null
+    },
+    "REFUSAL_ROUTER": {
+      "count": 0,
+      "last": null
+    },
+    "SIGNAL": {
+      "count": 7,
+      "last": "2026-08-27T13:45:00.478992+00:00"
+    }
+  },
+  "generated_utc": "2026-08-28T10:45:48.751837+00:00",
+  "last_row_utc": "2026-08-28T10:15:00.953591+00:00",
+  "ledger_rows": 181,
+  "total_faults": 12
+}
