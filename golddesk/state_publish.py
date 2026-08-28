@@ -25,18 +25,41 @@ never leaves the box, and the allowlist below is positive -- fields are copied i
 by name, never filtered out by pattern. A denylist is one forgotten key away
 from leaking; an allowlist fails closed.
 
+WHY IT PUBLISHES TO ITS OWN REF, AND WHY THE OBVIOUS DESIGN WAS WRONG
+
+The first version of this committed the artifact onto the desk's CODE branch.
+That is broken, and the thing it breaks is the auto-updater:
+
+  Update-AurumDesk.ps1 advances the box with `git merge --ff-only`, and skips
+  entirely when `git status --porcelain` is non-empty. So an artifact committed
+  on the code branch whose push loses a race to a code push leaves the box
+  DIVERGED -- "ABORT: not a fast-forward" -- and auto-update stops until a human
+  intervenes. Writing the file into a tracked directory dirties the tree and
+  makes the updater skip on its own. A visibility fix that disables the update
+  path is worse than no visibility fix.
+
+So state is published as a COMMIT BUILT BY PLUMBING on a dedicated ref
+(STATE_BRANCH). hash-object, mktree, commit-tree and update-ref never read or
+write the index, HEAD, the working tree or the current branch, so this cannot
+dirty the tree, cannot diverge the code branch, and cannot race the updater --
+not by policy, but because it never touches any of them. The local file is a
+buffer only, and is gitignored so the code tree stays permanently clean.
+
+Read it with:
+
+    git fetch origin aurum-state
+    git show origin/aurum-state:desk_state.json
+
 WHY IT IS SAFE TO RUN UNATTENDED
 
-It is deterministic, bounded to a single file, and it REFUSES rather than forces:
-  - it stages exactly one path, never `git commit -a` (R0423 -- three recorded
-    instances of a broad commit sweeping a sibling session's staged files);
+  - it never runs `git add`, `git commit`, `git checkout`, `git pull` or
+    `git reset`, so R0423's failure -- a broad commit sweeping a sibling
+    session's staged files -- is not merely avoided but unreachable;
   - it never stashes (same law; a stash restores to the index and a sibling can
     check the tree out from under you);
-  - if the working tree carries changes to anything else, it does NOT commit --
-    a deployment clone should be clean, and a dirty one means something is going
-    on that an automated commit would bury;
-  - a rejected push is retried exactly once, after a rebase, and then left for
-    the next cycle. It never force-pushes.
+  - it never force-pushes. A rejected push is left for the next cycle, fifteen
+    minutes away, and the ref is rebuilt from scratch each time anyway;
+  - an unchanged state does no git work at all.
 """
 
 from __future__ import annotations
@@ -47,9 +70,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
-#: Where the published artifact lands. Tracked in git ON PURPOSE -- the whole
-#: point is that it travels.
+#: LOCAL BUFFER ONLY, and gitignored. It exists so an unchanged state can be
+#: detected without touching git at all; the published copy lives on
+#: STATE_BRANCH, built by plumbing, and never enters this tree's index.
 ARTIFACT = Path("reports") / "desk_state.json"
+
+#: The ref the artifact is published on. A branch of its own, carrying ONE file
+#: and no code, so it can never fast-forward-block the desk's code branch or
+#: dirty the tree the auto-updater checks.
+STATE_BRANCH = "aurum-state"
+
+#: The artifact's name inside that branch. Flat: the state branch has no
+#: directory structure to mirror, and a reader should not have to know where the
+#: buffer happened to sit on the box.
+FILENAME = "desk_state.json"
 
 #: Decision kinds summarised in the artifact. Explicit rather than "whatever is
 #: in the ledger", so a new kind is a deliberate addition here rather than an
@@ -120,67 +154,86 @@ def build_state(rows: Sequence[dict], audits: dict[str, Sequence[Any]],
     }
 
 
-def _git(base: Path, *args: str, timeout: int = 120):
-    return subprocess.run(["git", "-C", str(base), *args],
+def _git(base: Path, *args: str, stdin: Optional[str] = None,
+         timeout: int = 120):
+    return subprocess.run(["git", "-C", str(base), *args], input=stdin,
                           capture_output=True, text=True, timeout=timeout)
 
 
 def publish(base: Path, state: dict, *, push: bool = True,
             runner=None) -> tuple[bool, str]:
-    """Write, stage, commit and push the artifact. Returns (changed, message).
+    """Build a one-file commit on STATE_BRANCH by plumbing and push it.
 
-    `changed` is False when the state is byte-identical to what is already
-    committed -- the common case, fifteen minutes at a time. An empty commit
-    every cycle would bury the ones that mean something.
+    Returns (changed, message). `changed` is False when the state is
+    byte-identical to the buffer already on disk -- the common case, fifteen
+    minutes at a time -- and that check happens BEFORE any git call, so a quiet
+    cycle costs nothing.
+
+    NOTHING HERE READS OR WRITES THE INDEX, HEAD, THE WORKING TREE OR THE
+    CURRENT BRANCH. hash-object, mktree, commit-tree and update-ref all operate
+    on the object database directly. That is the property that makes it safe to
+    run every fifteen minutes underneath an auto-updater that advances with
+    `merge --ff-only` and skips on a dirty tree: this cannot dirty the tree and
+    cannot diverge the branch, because it never touches either.
     """
-    git = runner or (lambda *a: _git(base, *a))
+    git = runner or (lambda *a, **kw: _git(base, *a, **kw))
     path = base / ARTIFACT
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(state, indent=2, sort_keys=True, default=str) + "\n"
 
-    # NOTHING TO SAY. Compared against the file rather than against git, so a
-    # cycle that finds no change does no git work at all.
     if path.exists() and path.read_text(encoding="utf-8") == text:
         return False, "unchanged"
-
-    # REFUSE ON A DIRTY TREE. A deployment clone should carry nothing but this
-    # artifact; anything else means work is in progress that an automated commit
-    # would sweep up. R0423 records three instances of exactly that.
-    st = git("status", "--porcelain")
-    if st.returncode != 0:
-        return False, f"git status failed: {(st.stderr or st.stdout)[:200]}"
-    dirty = [ln[3:].strip() for ln in (st.stdout or "").splitlines() if ln.strip()]
-    unexpected = [p for p in dirty if p.replace("\\", "/") != ARTIFACT.as_posix()]
-    if unexpected:
-        return False, (f"working tree carries {len(unexpected)} other change(s) "
-                       f"({unexpected[:4]}) — NOT committing over them")
-
     path.write_text(text, encoding="utf-8")
-    add = git("add", "--", ARTIFACT.as_posix())        # explicit path, never -a
-    if add.returncode != 0:
-        return False, f"git add failed: {(add.stderr or add.stdout)[:200]}"
-    msg = f"aurum desk state {state.get('generated_utc', '')}"
-    com = git("commit", "-m", msg, "--", ARTIFACT.as_posix())
-    if com.returncode != 0:
-        out = (com.stdout or "") + (com.stderr or "")
-        if "nothing to commit" in out:
-            return False, "unchanged"
-        return False, f"git commit failed: {out[:200]}"
-    if not push:
-        return True, "committed (push disabled)"
 
-    p = git("push")
+    # 1. The file becomes a blob. -w writes it to the object database; it does
+    #    NOT stage it.
+    blob = git("hash-object", "-w", "--", str(path))
+    if blob.returncode != 0:
+        return False, f"hash-object failed: {(blob.stderr or blob.stdout)[:200]}"
+    sha = (blob.stdout or "").strip()
+    if not sha:
+        return False, "hash-object produced no sha"
+
+    # 2. A tree containing exactly that one blob. Built from stdin rather than
+    #    from the index, which is why the index is never involved.
+    tree = git("mktree", stdin=f"100644 blob {sha}\t{FILENAME}\n")
+    if tree.returncode != 0:
+        return False, f"mktree failed: {(tree.stderr or tree.stdout)[:200]}"
+    tree_sha = (tree.stdout or "").strip()
+
+    # 3. Parent is the previous state commit, if the ref exists. Missing on the
+    #    first run, and an absent ref is a normal state rather than an error --
+    #    the first publish is a root commit.
+    head = git("rev-parse", "--verify", "--quiet", f"refs/heads/{STATE_BRANCH}")
+    parent = (head.stdout or "").strip() if head.returncode == 0 else ""
+
+    # 4. commit-tree needs an identity, and a deployment box may have none
+    #    configured. Supplied per-invocation with -c rather than by writing to
+    #    the repo config, because changing a box's git identity is a side effect
+    #    nobody asked for.
+    ident = ["-c", "user.name=aurum-desk",
+             "-c", "user.email=aurum-desk@localhost"]
+    args = [*ident, "commit-tree", tree_sha]
+    if parent:
+        args += ["-p", parent]
+    msg = f"aurum desk state {state.get('generated_utc', '')}"
+    com = git(*args, stdin=msg + "\n")
+    if com.returncode != 0:
+        return False, f"commit-tree failed: {(com.stderr or com.stdout)[:200]}"
+    commit = (com.stdout or "").strip()
+
+    upd = git("update-ref", f"refs/heads/{STATE_BRANCH}", commit)
+    if upd.returncode != 0:
+        return False, f"update-ref failed: {(upd.stderr or upd.stdout)[:200]}"
+    if not push:
+        return True, f"{STATE_BRANCH} updated (push disabled)"
+
+    # 5. NEVER --force. The ref is rebuilt from scratch every cycle, so a
+    #    rejected push costs one cycle and nothing else; forcing would trade a
+    #    fifteen-minute delay for the chance of discarding somebody's work.
+    p = git("push", "origin",
+            f"refs/heads/{STATE_BRANCH}:refs/heads/{STATE_BRANCH}")
     if p.returncode == 0:
         return True, "pushed"
-    # ONE rebase and ONE retry. A push races the code branch; losing that race
-    # is ordinary and the next cycle is fifteen minutes away, so this never
-    # loops and never forces.
-    rb = git("pull", "--rebase")
-    if rb.returncode != 0:
-        return True, (f"committed; rebase failed, will retry next cycle: "
-                      f"{(rb.stderr or rb.stdout)[:200]}")
-    p2 = git("push")
-    if p2.returncode == 0:
-        return True, "pushed after rebase"
-    return True, (f"committed; push rejected twice, will retry next cycle: "
-                  f"{(p2.stderr or p2.stdout)[:200]}")
+    return True, (f"{STATE_BRANCH} updated locally; push failed, will retry "
+                  f"next cycle: {(p.stderr or p.stdout)[:200]}")

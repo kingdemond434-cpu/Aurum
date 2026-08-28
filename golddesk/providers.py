@@ -336,13 +336,13 @@ class ClaudeCodeAnalyst(AnalystProvider):
     makes. Routed through the CLI under a Pro/Max subscription, the same read
     consumes subscription quota rather than dollars.
 
-    THAT SAVING IS CONDITIONAL ON THE LOGIN, AND THE LOGIN IS NOT CHECKED HERE.
-    The CLI can equally be authenticated to an ORGANISATION on API usage
-    billing, in which case every read above is charged at list price and this
-    provider saves nothing at all -- it is then merely a slower, less
-    structured route to the same invoice. Nothing in the JSON envelope
-    distinguishes the two: total_cost_usd is reported either way, as
-    API-EQUIVALENT dollars. See billing_basis(), and declare it on the box.
+    THE LIVE DESK RUNS ON A MAX SUBSCRIPTION (operator, 2026-08-28), which is
+    what makes the cadence above affordable and is the premise every cost number
+    downstream rests on. It is worth stating explicitly because NOTHING IN A
+    READ PROVES IT: total_cost_usd comes back either way, as API-EQUIVALENT
+    dollars, so the envelope cannot distinguish a subscription read from a
+    metered one. See billing_basis(), which labels the assumption instead of
+    passing it off as a measurement.
 
     WHAT IT COSTS INSTEAD, MEASURED NOT ASSUMED. Claude Code injects its own
     scaffolding: a trivial prompt with --system-prompt replacing the default
@@ -415,25 +415,20 @@ class ClaudeCodeAnalyst(AnalystProvider):
 
         WHY THIS EXISTS SEPARATELY FROM billed(). The old heuristic modelled two
         cases -- an API key in the environment means metered, its absence means
-        subscription -- and there is a THIRD it silently folded into the second:
-        an OAuth login to an organisation on API usage billing. No
-        ANTHROPIC_API_KEY exists anywhere, and every token is still charged in
-        dollars.
+        subscription -- and a bare False is returned for the second WITHOUT
+        having established it. That is a guess wearing a finding's clothes, and
+        budget.py cannot tell the two apart from a 0.0.
 
-        OBSERVED 2026-08-28. After re-authenticating, the CLI's own banner on
-        the live box read:
+        THE LIVE DESK RUNS ON A MAX SUBSCRIPTION (operator, 2026-08-28), so
+        "assumed_subscription" happens to be right there and cost_usd 0.0 is
+        the correct stamp. This is not a claim that it is wrong; it is a record
+        that nothing in a read PROVES it. Nothing in the CLI's JSON envelope
+        distinguishes the bases -- total_cost_usd is reported either way, as
+        API-equivalent dollars -- so the only way to turn the assumption into a
+        fact is for the box to declare it (BILLING_ENV).
 
-            Opus 5 (1M context) - API Usage Billing - <org>
-
-        Under that login the desk was stamping cost_usd 0.0 on reads the
-        organisation is invoiced for -- which is precisely the failure billed()'s
-        own docstring names ("reporting zero for an API-key read would hide it")
-        arriving through the one door it did not check.
-
-        So the answer now carries its provenance. "assumed_subscription" is a
-        GUESS and says so, and budget.py can refuse to treat a guessed zero as a
-        measured one -- rather than a confident False that reads identically to
-        a declared one.
+        So the answer now carries its provenance rather than laundering a guess
+        into a measurement. Nothing about the desk's behaviour changes.
         """
         if self._billed is not None:
             return "explicit"

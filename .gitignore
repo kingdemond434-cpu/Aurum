@@ -76,3 +76,13 @@ data/**/*.csv.gz
 # The flows that MATTER downstream — the prompt block the analyst was shown —
 # travel in the ledger row's `brief_render`, which is committed. Nothing is lost.
 state/flows.json
+
+# ---- the desk state buffer -------------------------------------------------
+# NOT a secret and NOT hidden evidence: the published copy lives on the
+# `aurum-state` branch, one file per commit, every 15 minutes
+#   git fetch origin aurum-state && git show origin/aurum-state:desk_state.json
+# The local copy is a change-detection buffer only. It is ignored HERE because
+# Update-AurumDesk.ps1 skips the auto-update whenever `git status --porcelain`
+# is non-empty, so a tracked file rewritten every 15 minutes would silently
+# stop the box from ever updating itself.
+reports/desk_state.json

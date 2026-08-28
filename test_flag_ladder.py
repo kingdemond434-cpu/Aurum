@@ -407,11 +407,10 @@ def _clear_billing_env(monkeypatch):
 
 
 def test_an_undeclared_zero_is_labelled_an_assumption(monkeypatch):
-    """THE THIRD CASE the old heuristic folded into the second. An OAuth login
-    to an organisation on API usage billing has no ANTHROPIC_API_KEY anywhere
-    and is charged in dollars regardless -- observed on the live box, whose CLI
-    banner read 'Opus 5 (1M context) - API Usage Billing - <org>' while the desk
-    stamped cost_usd 0.0 on every read."""
+    """The live desk runs on a Max subscription, so this zero is the right
+    answer. The point is that nothing in a read PROVES it: total_cost_usd comes
+    back either way as API-equivalent dollars, so a bare False is a guess
+    wearing a finding's clothes and budget.py cannot tell them apart."""
     _clear_billing_env(monkeypatch)
     p = ClaudeCodeAnalyst()
     assert p.billing_basis() == "assumed_subscription"
