@@ -302,6 +302,77 @@ def _save_attempts(attempts: dict) -> None:
     STATE.write_text(json.dumps(d, indent=2), encoding="utf-8")
 
 
+#: Publish outcomes that mean the artifact reached the remote.
+_PUBLISH_OK = ("pushed", "unchanged")
+
+#: How long a publish may keep failing before the operator is told, in cycles of
+#: 15 minutes. TWO, not one: a single rejected push is ordinary -- it races the
+#: code branch and the next cycle rebuilds the ref from scratch. Two in a row is
+#: not a race, it is a broken channel.
+_PUBLISH_ALARM_AFTER = 2
+
+PUBLISH_STATE = BASE / "state" / "publish_health.json"
+
+
+def _report_publish_health(how: str, dry_run: bool) -> None:
+    """Say out loud when the state channel itself is down.
+
+    THE CIRCULARITY THIS CLOSES, and it is a defect I shipped. The whole point of
+    state_publish is that the desk's condition reaches someone without them
+    logging into the box. But the delivery is a git push, so when the push fails
+    -- no credentials on the clone, a rejected ref, no network -- the failure is
+    written to a log ON THE BOX. The channel that exists to end "go and look"
+    was, in exactly the case that matters, only visible by going and looking.
+
+    Observed 2026-08-28: the operator asked whether the desk was working, the
+    artifact had never appeared on the remote, and nothing anywhere could say
+    which link had broken.
+
+    So a publish that does not reach the remote escalates to Telegram, which is
+    the channel already known to work. Rate-limited to two consecutive failures
+    so a lost push race stays quiet, and it announces recovery, because the last
+    thing the operator heard must never be that something was broken.
+    """
+    if dry_run:
+        return
+    ok = any(how.startswith(p) for p in _PUBLISH_OK)
+    try:
+        prev = json.loads(PUBLISH_STATE.read_text(encoding="utf-8"))
+    except Exception:                                  # noqa: BLE001
+        prev = {}
+    fails = 0 if ok else int(prev.get("consecutive_failures") or 0) + 1
+    alarmed = bool(prev.get("alarmed"))
+
+    msg = None
+    if not ok and fails >= _PUBLISH_ALARM_AFTER and not alarmed:
+        alarmed = True
+        msg = ("*DESK STATE NOT PUBLISHING* — the 15-minute state artifact has "
+               f"failed to reach the remote {fails} times running.\n\n"
+               f"`{how[:300]}`\n\n"
+               "The desk itself may be fine; what is broken is the channel that "
+               "reports on it. Until this clears, the desk's condition is only "
+               "visible ON THE BOX — which is the situation this artifact exists "
+               "to end. Most likely: the clone has no push credentials.")
+    elif ok and alarmed:
+        alarmed = False
+        msg = "*DESK STATE PUBLISHING AGAIN* — the state artifact reached the remote."
+
+    if msg:
+        try:
+            from golddesk.notify import build_sink
+            build_sink(None).send(msg)
+        except Exception as e:                         # noqa: BLE001
+            log.warning("could not notify about publish health: %s", e)
+    try:
+        PUBLISH_STATE.parent.mkdir(parents=True, exist_ok=True)
+        PUBLISH_STATE.write_text(json.dumps(
+            {"consecutive_failures": fails, "alarmed": alarmed,
+             "last": how[:300],
+             "at": datetime.now(timezone.utc).isoformat()}), encoding="utf-8")
+    except Exception as e:                             # noqa: BLE001
+        log.warning("could not record publish health: %s", e)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dry-run", action="store_true",
@@ -375,10 +446,12 @@ def main(argv=None) -> int:
                                    "tasks": th_findings})
         _, how = publish(BASE, state, push=not args.dry_run)
         log.info("desk state: %s", how)
+        _report_publish_health(how, args.dry_run)
     except Exception as e:                             # noqa: BLE001
         # NEVER the reason a self-heal run fails. Publishing is visibility, and
         # visibility failing must not take down the thing doing the watching.
         log.warning("could not publish desk state: %s", e)
+        _report_publish_health(f"crashed: {e}", args.dry_run)
 
     findings = (list(findings) + list(cap_findings) + list(ah_findings)
                 + list(rq_findings) + list(th_findings))

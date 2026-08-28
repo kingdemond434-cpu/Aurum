@@ -192,15 +192,53 @@ def test_every_action_is_injected_not_summoned():
 
 def test_the_runner_only_controls_the_desk_task():
     """self_heal.py is the one file allowed to touch a process, and it may only
-    bounce the scheduled task — not kill by PID, not spawn python directly."""
+    bounce the scheduled task — not kill by PID, not spawn python directly.
+
+    CHECKED ON THE CALLS, NOT ON THE TEXT. This scanned the raw source for the
+    forbidden words, which made it fire on PROSE: a docstring explaining why a
+    failed `git push` must escalate contains the word "git", and tripped a law
+    about INVOKING it. A gate that fails on its own explanation is one that gets
+    relaxed to shut it up — and this law is worth keeping — so it now reads the
+    string constants that actually reach a `.run(...)` call, which is what "can
+    invoke" means.
+    """
     src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     calls = [n for n in ast.walk(tree)
              if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "run"]
     args = [a.value for c in calls for a in ast.walk(c) if isinstance(a, ast.Constant)]
     assert "schtasks" in args
-    for bad in ("taskkill", "Stop-Process", "shutdown", "pip", "git"):
-        assert bad not in src, f"self_heal.py can invoke {bad!r}"
+    for bad in ("taskkill", "Stop-Process", "shutdown", "pip", "git", "python"):
+        assert bad not in args, f"self_heal.py can invoke {bad!r}"
+
+
+def test_the_only_git_the_healer_can_reach_is_the_state_publisher():
+    """The healer now causes git to run — through state_publish, never itself.
+
+    That is a NEW process-touching capability in a file that runs unattended
+    every fifteen minutes, so it gets an explicit allowlist rather than
+    inheriting trust from the module that calls it. Every verb it may use is
+    object-database plumbing or a push of one named ref: none can move HEAD, the
+    index, the working tree or the code branch, which is exactly what makes it
+    safe to run underneath an auto-updater that advances with `merge --ff-only`
+    and skips on a dirty tree.
+    """
+    src = (Path(__file__).parent / "golddesk" / "state_publish.py").read_text(
+        encoding="utf-8")
+    tree = ast.parse(src)
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "run"]
+    invoked = {a.value for c in calls for a in ast.walk(c)
+               if isinstance(a, ast.Constant) and isinstance(a.value, str)}
+    assert "git" in invoked, "the publisher stopped invoking git at all"
+
+    verbs = {v.value for v in ast.walk(tree)
+             if isinstance(v, ast.Constant) and isinstance(v.value, str)}
+    for destructive in ("reset", "checkout", "clean", "stash", "pull", "merge",
+                        "rebase", "--force", "add", "commit"):
+        assert destructive not in verbs, (
+            f"state_publish.py can run `git {destructive}` — it must only ever "
+            f"use plumbing that cannot touch the tree or the code branch")
 
 
 def test_the_dry_run_changes_nothing():
