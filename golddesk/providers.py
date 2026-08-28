@@ -655,6 +655,44 @@ class ClaudeCodeAnalyst(AnalystProvider):
                     "please run /login", "invalid api key",
                     "authentication_error", "credentials could not be refreshed")
 
+    #: What an exhausted subscription quota looks like in the CLI's own words.
+    #:
+    #: OBSERVED LIVE 2026-08-28: "You've hit your session limit - resets 8:10pm
+    #: (Europe/Berlin)". It arrives with exit 1, duration_api_ms 0 and zero
+    #: tokens -- BYTE-IDENTICAL on every field the flag ladder inspects to a
+    #: rejected flag, and identical again to an expired login.
+    #:
+    #: That collision was expensive twice over. The ladder walked all four rungs
+    #: on every wake, spending FIVE invocations against a quota that was already
+    #: empty; and _explain_analyst_error's generic reading told the operator
+    #: this was "a LOCAL failure (input, login or binary), NOT a limit or an
+    #: outage" -- confidently, in the one place they would look, about the one
+    #: thing it was.
+    QUOTA_MARKERS = ("session limit", "usage limit", "rate limit",
+                     "quota", "too many requests", "resets ")
+
+    @classmethod
+    def _quota_exhausted(cls, stdout: str, stderr: str) -> Optional[str]:
+        """The CLI's own sentence about the limit, or None.
+
+        Returns the message so the reset time survives into the error: "resets
+        8:10pm" is the entire actionable content, and a paraphrase would drop
+        the only part that tells anyone when to expect reads again.
+        """
+        blob = (stdout or "") + "\n" + (stderr or "")
+        if not any(m in blob.lower() for m in cls.QUOTA_MARKERS):
+            return None
+        import json as _json
+        i, j = blob.find("{"), blob.rfind("}")
+        if i >= 0 and j > i:
+            try:
+                d = _json.loads(blob[i:j + 1])
+                if isinstance(d, dict) and d.get("result"):
+                    return str(d["result"])[:300]
+            except Exception:                          # noqa: BLE001
+                pass
+        return blob.strip()[:300]
+
     @classmethod
     def _auth_failure(cls, stdout: str, stderr: str) -> Optional[str]:
         """The CLI's own sentence about the login, or None.
@@ -801,6 +839,19 @@ class ClaudeCodeAnalyst(AnalystProvider):
             # be rejected.
             return self._invoke(prompt, system, effort=self.FALLBACK_EFFORT,
                                 timeout_s=self.FALLBACK_TIMEOUT_S, drop=drop)
+        # QUOTA BEFORE FLAGS, for the same reason auth goes before flags: the
+        # envelope is identical and only the message separates them. Checked
+        # first of all because it is the one failure that gets WORSE when
+        # retried -- every rung of the ladder is another call against a limit
+        # that is already exceeded.
+        quota = self._quota_exhausted(out_s, err_s) if rc != 0 else None
+        if quota is not None:
+            raise AnalystError(
+                f"claude quota exhausted: {quota}. NOT a flag, a login or an "
+                f"outage — the subscription's session limit is reached and "
+                f"every retry spends against a limit that is already gone. "
+                f"Reads resume by themselves at the reset time; until then the "
+                f"desk runs on the rule-based arm.")
         auth = self._auth_failure(out_s, err_s) if rc != 0 else None
         if auth is not None:
             # NOT A FLAG. The ladder below and this branch are triggered by an

@@ -89,11 +89,35 @@ def _explain_analyst_error(err: Exception) -> dict:
     # checked on the raw text rather than a parsed field because the CLI reports
     # this with subtype "success" and api_error_status null -- `result` is the
     # only field that says anything true.
+    # QUOTA FIRST. A session-limit rejection is byte-identical to a rejected
+    # flag and to an expired login on every field below -- exit 1,
+    # duration_api_ms 0, zero tokens -- so the generic reading fired and told
+    # the operator "this is a LOCAL failure (input, login or binary), NOT a
+    # limit or an outage" about a row whose own `result` read "You've hit your
+    # session limit - resets 8:10pm". Confidently wrong, in the one field
+    # anybody would read.
+    # AUTH IS CHECKED FIRST HERE, and the order is the opposite of the
+    # provider's on purpose. There the input is the CLI's own output; here it is
+    # the desk's own ERROR PROSE, which for the auth case says "THIS IS NOT A
+    # FLAG, A RATE LIMIT OR AN OUTAGE" -- and a substring scan for quota markers
+    # matched "rate limit" inside the sentence denying one. The desk's
+    # explanation of a fault was being read as evidence of a different fault.
+    #
+    # Auth wins because it is the more specific claim: _auth_failure requires
+    # "failed to authenticate" or "oauth session expired", which a quota refusal
+    # never says.
     if ClaudeCodeAnalyst._auth_failure(text, "") is not None:
         needs_login = {"needs_login": True,
                        "reading": ("the LOGIN has expired. No retry, restart or "
                                    "flag change clears this -- run `claude` once "
                                    "interactively on the box, as the task's user")}
+    elif ClaudeCodeAnalyst._quota_exhausted(text, "") is not None:
+        needs_login = {"quota_exhausted": True,
+                       "reading": ("the subscription's SESSION LIMIT is reached. "
+                                   "Not a login, not a flag, not an outage — and "
+                                   "retrying spends against a limit that is "
+                                   "already gone. Reads resume by themselves at "
+                                   "the reset time in `result`.")}
     else:
         needs_login = {}
     i, j = text.find("{"), text.rfind("}")

@@ -316,10 +316,68 @@ def check_login(rows: Sequence[dict], now: Optional[datetime] = None,
                    f"Reads resume on the next wake.")
 
 
+#: The CLI's words for an exhausted subscription quota. Kept beside
+#: LOGIN_MARKERS for the same reason: this module must not import the provider
+#: layer, and a test pins both lists against it.
+QUOTA_MARKERS = ("session limit", "usage limit", "quota")
+
+
+def check_quota(rows: Sequence[dict], now: Optional[datetime] = None,
+                hours: float = 12.0) -> Finding:
+    """Is the desk blind because it ran out of subscription quota?
+
+    A DIFFERENT FAULT FROM EVERY OTHER ONE HERE, and it needs saying because
+    the remedy is the opposite of the usual. Nothing is broken, nothing needs
+    fixing, and every retry makes it worse -- the limit resets on a clock and
+    reads resume by themselves. Reported so the operator is not sent to
+    re-login, restart or reinstall anything at all.
+
+    Observed live 2026-08-28: "You've hit your session limit - resets 8:10pm
+    (Europe/Berlin)", arriving with the same exit 1 / zero tokens / zero API
+    time signature as a rejected flag and an expired login.
+    """
+    now = now or datetime.now(timezone.utc)
+    rec = _recent(rows, now, hours)
+    hits, latest = [], None
+    for r in rec:
+        if r.get("kind") != "BLIND":
+            continue
+        dec = r.get("decision") or {}
+        cli = dec.get("cli") or {}
+        blob = (" ".join(str(v) for v in cli.values() if v is not None)
+                + " " + str(dec.get("error") or "")).lower()
+        if dec.get("quota_exhausted") or cli.get("quota_exhausted") \
+                or any(m in blob for m in QUOTA_MARKERS):
+            hits.append(r)
+            latest = str(cli.get("result") or "")[:120] or latest
+    if not hits:
+        return Finding("analyst quota", True, f"no quota refusal in {hours:.0f}h")
+
+    answered_after = [
+        r for r in rec
+        if str(r.get("kind", "")) in ("SIGNAL", "REFUSAL_MODEL",
+                                      "REFUSAL_COMPILER", "REFUSAL_ROUTER")
+        and not _is_degraded(r)
+        and (_ts(r) or now) > (_ts(hits[-1]) or now)]
+    if answered_after:
+        return Finding("analyst quota", True,
+                       f"RECOVERED — {len(hits)} quota refusal(s) earlier in the "
+                       f"window and the analyst has answered since.")
+    return Finding("analyst quota", False,
+                   f"SUBSCRIPTION QUOTA EXHAUSTED — {len(hits)} wake(s) refused. "
+                   f"{latest or ''} "
+                   f"NOTHING IS BROKEN: this is not a login, a flag or an "
+                   f"outage, no restart or re-login helps, and every retry "
+                   f"spends against a limit that is already gone. Reads resume "
+                   f"by themselves at the reset time; until then the desk runs "
+                   f"on the rule-based arm.")
+
+
 def audit(rows: Sequence[dict], now: Optional[datetime] = None,
           expected_model: Optional[str] = None,
           budget_s: float = DEFAULT_BUDGET_S) -> list[Finding]:
     return [
+        check_quota(rows, now),
         check_login(rows, now),
         check_answer_rate(rows, now),
         check_latency(rows, now, budget_s=budget_s),
