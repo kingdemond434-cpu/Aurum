@@ -5,7 +5,7 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 13 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 12 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 188h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 189h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -133,7 +133,7 @@
         },
         {
           "check": "Aurum-Sync",
-          "detail": "enabled, last result 0",
+          "detail": "ran and delivered NOTHING (exit 3) \u2014 carries quant's findings into this desk's inbox works, but its SOURCE was absent. UNMEASURED, not 'no new findings'; the break is upstream.",
           "ok": true
         }
       ],
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "118 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "119 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "21 delivered, 6 failed",
+          "detail": "22 delivered, 6 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.1h ago",
+          "detail": "written 0.2h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "264 unique decision(s), no tears",
+          "detail": "265 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38651MB free",
+          "detail": "38612MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 9 min ago, after a boot 144.0h ago",
+          "detail": "wrote 14 min ago, after a boot 144.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 118,
-      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"a582715f-5999-49fd-846d-bf868eac9a6a\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
-      "last": "2026-08-28T19:45:00.962393+00:00",
+      "count": 119,
+      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"88fb1621-767f-445b-a4ef-3daa188d0ca1\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
+      "last": "2026-08-28T20:00:00.458227+00:00",
       "stage": "survey",
       "why": {
         "duration_api_ms": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T20:15:00.603227+00:00",
-  "last_row_utc": "2026-08-28T19:45:00.962393+00:00",
-  "ledger_rows": 281,
+  "generated_utc": "2026-08-28T20:31:29.200537+00:00",
+  "last_row_utc": "2026-08-28T20:00:00.458227+00:00",
+  "ledger_rows": 282,
   "total_faults": 10
 }
