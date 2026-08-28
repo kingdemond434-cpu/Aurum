@@ -302,6 +302,63 @@ def _save_attempts(attempts: dict) -> None:
     STATE.write_text(json.dumps(d, indent=2), encoding="utf-8")
 
 
+#: Where a failing scheduled task writes its OWN reason. An explicit map, not a
+#: guess: each path is the one the installer wires that task's stdout to.
+TASK_LOGS = {
+    "AurumSignalDesk-Update": BASE / "logs" / "update.log",
+    "AurumSignalDesk-SelfHeal": BASE / "logs" / "self_heal.log",
+    "AurumSignalDesk-VantageSpread": BASE / "logs" / "vantage_spread.log",
+    "AurumSignalDesk-Cycle": BASE / "logs" / "cycle.log",
+}
+
+#: Lines from the tail of a task's log that are worth quoting. Matched
+#: case-insensitively. Deliberately short: the point is to name the cause, not
+#: to reprint the log into a Telegram message.
+_FAILURE_MARKERS = ("abort", "failed", "error", "traceback", "not a fast-forward",
+                    "skip:", "exception", "refus")
+
+
+def _why_the_task_failed(task: str, keep: int = 4, scan: int = 200) -> str:
+    """The failing task's own explanation, or an honest UNREADABLE.
+
+    WHY THIS EXISTS. task_health can say `AurumSignalDesk-Update last run exited
+    1 -- pulls and deploys fixes is firing and FAILING`, which is true and
+    useless: it names the task, not the cause. Meanwhile the cause is one line
+    in a log ON THE BOX, and Update-AurumDesk.ps1 has exactly three ways to exit
+    1 (git not on PATH, not a fast-forward, suite red) that are trivially told
+    apart by reading it.
+
+    OBSERVED 2026-08-28: the updater had been failing long enough that the box
+    sat on a commit from before a day of fixes -- login detection, the flag
+    ladder, state publishing, all pushed and none deployed -- while every report
+    said only "exited 1". The desk was blind on 59 of 59 wakes and the thing
+    that would have said why had never been installed, because the thing that
+    installs it was the thing that was broken.
+
+    Read-only, bounded to the tail, and quoted rather than interpreted.
+    """
+    path = TASK_LOGS.get(task)
+    if path is None:
+        return ""
+    try:
+        if not path.exists():
+            # ABSENT IS A FINDING. A task that exits 1 without ever writing its
+            # log died before its first line -- which for a scheduled task means
+            # the interpreter or the working directory, not the script's logic.
+            return (f"      (no {path.name} — the task failed BEFORE writing a "
+                    f"single line, so it is the interpreter, the working "
+                    f"directory or the PATH, not the script's own logic)")
+        tail = path.read_text(encoding="utf-8", errors="replace").splitlines()[-scan:]
+    except Exception as e:                             # noqa: BLE001
+        return f"      (could not read {path.name}: {e})"
+    hits = [ln.strip() for ln in tail
+            if any(m in ln.lower() for m in _FAILURE_MARKERS)]
+    if not hits:
+        return (f"      (nothing in the last {scan} lines of {path.name} names a "
+                f"failure — UNMEASURED, not healthy)")
+    return "\n".join(f"      > {ln[:300]}" for ln in hits[-keep:])
+
+
 #: Publish outcomes that mean the artifact reached the remote.
 _PUBLISH_OK = ("pushed", "unchanged")
 
@@ -427,6 +484,16 @@ def main(argv=None) -> int:
     # and a stopped check looks exactly like a passing one.
     th_findings = th.audit(_read_task)
     print(th.render(th_findings))
+    # AND WHY. "exited 1" names the task, not the cause, and the cause is one
+    # line in that task's own log sitting on this very box. Quoting it turns a
+    # report that prompts another round of asking into one that can be acted on.
+    for f in th_findings:
+        if f.ok:
+            continue
+        why = _why_the_task_failed(f.check)
+        if why:
+            print(f"    {f.check} — its own log says:")
+            print(why)
 
     # PUBLISH BEFORE REMEDIATING. The artifact must describe what was FOUND,
     # not what was left after fixing -- a state file that only ever shows the
