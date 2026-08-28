@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.8h old",
+          "detail": "newest row 2.0h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 1.5h ago",
+          "detail": "written 1.7h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "38524MB free",
+          "detail": "38501MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 88 min ago, after a boot 146.0h ago",
+          "detail": "wrote 103 min ago, after a boot 146.2h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T22:15:05.827983+00:00",
+  "generated_utc": "2026-08-28T22:30:00.565704+00:00",
   "last_row_utc": "2026-08-28T20:30:00.951340+00:00",
   "ledger_rows": 284,
   "total_faults": 9
