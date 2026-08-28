@@ -483,15 +483,48 @@ class ClaudeCodeAnalyst(AnalystProvider):
         s = s.split("\n", 1)[1] if "\n" in s else ""
         return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
 
+    #: Characters of system prompt above which it is moved OFF the command line
+    #: and into stdin.
+    #:
+    #: WHY THIS EXISTS. `--system-prompt` is passed as a single argv element, and
+    #: on Windows a launcher shim that re-invokes through cmd.exe truncates the
+    #: command line at 8,191 characters. Over that, the CLI fails LOCALLY: exit
+    #: 1, is_error true, duration_api_ms 0, zero input and output tokens -- it
+    #: never reaches the API, so it looks like neither a rate limit nor an
+    #: outage nor a timeout.
+    #:
+    #: OBSERVED 2026-08-27/28. universe_system() is 9,098 chars against a
+    #: single-read ANALYST_SYSTEM of 7,226, so the desk answered normally on the
+    #: single-read path and went blind on EVERY survey -- which is exactly the
+    #: shape the ledger showed: every failure carrying stage "survey", 59
+    #: successful reads at a healthy 115s median in the same window.
+    #:
+    #: 7,900 is chosen to sit BETWEEN the two real prompts, not at a round
+    #: number: single-read is 7,226 and stays on argv, universe is 9,098 and does
+    #: not. That matters because the single-read path is currently WORKING and
+    #: producing evidence -- moving it too would silently change how a working
+    #: arm addresses the model, and a change to the arm must be deliberate.
+    #:
+    #: The rest of argv (binary path, model, flags) is ~130 chars on the live
+    #: box, so 7,900 leaves ~160 of margin inside the 8,191 budget. If
+    #: ANALYST_SYSTEM grows past this the single-read path flips to stdin too --
+    #: automatically, loudly, and still working, which is the entire point.
+    MAX_SYSTEM_ARGV_CHARS = 7900
+
     def _argv(self, system: Optional[str] = None,
               effort: Optional[str] = None) -> list[str]:
         """`effort` overrides self.effort for ONE call -- used by the degraded retry below."""
+        sys_text = system or ANALYST_SYSTEM
+        if len(sys_text) > self.MAX_SYSTEM_ARGV_CHARS:
+            # Signalled by omitting the flag; _invoke prepends the text to stdin.
+            sys_text = None
         argv = [self.binary, "-p",
                 "--output-format", "json",
                 "--model", self.model,
-                "--system-prompt", system or ANALYST_SYSTEM,
                 "--allowed-tools", "",
                 "--max-turns", "1"]
+        if sys_text is not None:
+            argv += ["--system-prompt", sys_text]
         chosen = effort if effort is not None else self.effort
         if chosen is not None:
             if chosen not in self.EFFORTS:
@@ -525,9 +558,22 @@ class ClaudeCodeAnalyst(AnalystProvider):
             # meant the degrade-on-timeout policy below existed only on the subprocess path and
             # could not be exercised by any test -- retry policy silently coupled to transport.
             # A test runner that raises TimeoutExpired now travels the same path production does.
+            argv = self._argv(system, effort)
+            sys_text = system or ANALYST_SYSTEM
+            if "--system-prompt" not in argv:
+                # TOO LONG FOR THE COMMAND LINE. Carried in stdin instead, which
+                # is unbounded. Logged at WARNING every time: a transport that
+                # silently changes how the model is addressed is a change to the
+                # arm, and it must be visible in the log rather than inferred
+                # later from a shift in behaviour.
+                log.warning("system prompt is %d chars, over the %d-char argv "
+                            "budget -- sending it in stdin instead. The model "
+                            "sees the same text; only the transport changes.",
+                            len(sys_text), self.MAX_SYSTEM_ARGV_CHARS)
+                prompt = f"{sys_text}\n\n---\n\n{prompt}"
             if self._runner is not None:
-                return self._runner(self._argv(system, effort), prompt)
-            p = subprocess.run(self._argv(system, effort), input=prompt, env=self._env(),
+                return self._runner(argv, prompt)
+            p = subprocess.run(argv, input=prompt, env=self._env(),
                                cwd=self.cwd, capture_output=True, text=True,
                                timeout=budget)
         except FileNotFoundError as e:

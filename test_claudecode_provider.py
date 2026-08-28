@@ -421,7 +421,17 @@ def test_the_universe_system_prompt_reaches_the_cli_and_carries_the_cap():
     seen: list = []
     ClaudeCodeAnalyst(runner=fake(json.dumps(universe(1)), seen)).survey(brief())
     argv, prompt = seen[0]
-    system = argv[argv.index("--system-prompt") + 1]
+    # BY EITHER ROUTE. The universe system prompt is 9,098 chars, over the argv
+    # budget, so it now travels in stdin -- on Windows a launcher shim truncates
+    # the command line at 8,191 and the CLI then fails locally with zero tokens
+    # and zero API time, which is what took the desk blind on every survey for
+    # 12 hours on 2026-08-27. This test's intent is unchanged and still the
+    # point: the universe addendum must REACH the model rather than being
+    # silently dropped or replaced by read()'s.
+    if "--system-prompt" in argv:
+        system = argv[argv.index("--system-prompt") + 1]
+    else:
+        system = prompt                  # relocated, not lost
     assert "candidates" in system
     assert str(MAX_CANDIDATES) in system
     assert "had_more" in prompt          # the universe schema, not the read one
