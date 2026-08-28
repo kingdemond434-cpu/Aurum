@@ -5,12 +5,12 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 12 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 10 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "40/101 wakes (40%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "detail": "39/100 wakes (39%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
           "ok": false
         },
         {
@@ -46,21 +46,21 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 189h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
-          "ok": false
+          "detail": "updated 0h ago",
+          "ok": true
         },
         {
           "check": "survivors",
-          "detail": "69 finding(s) arrived and none reports a cell clearing the ten-gate battery. Either nothing has passed yet \u2014 the honest state of a desk with no forward evidence, and no fault here \u2014 or the gates never ran. Answered on the quant side: check reports/QQUANT_GATES.json.",
+          "detail": "335 finding(s) arrived and none reports a cell clearing the ten-gate battery. Either nothing has passed yet \u2014 the honest state of a desk with no forward evidence, and no fault here \u2014 or the gates never ran. Answered on the quant side: check reports/QQUANT_GATES.json.",
           "ok": false
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.2h ago",
+          "detail": "21 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 1
     },
     "read_quality": {
       "axis": "read_quality",
@@ -113,7 +113,7 @@
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "registered and enabled, HAS NOT RUN YET \u2014 normal for a task whose first fire is still ahead",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "119 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "120 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "265 unique decision(s), no tears",
+          "detail": "266 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38612MB free",
+          "detail": "38599MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 14 min ago, after a boot 144.2h ago",
+          "detail": "wrote 14 min ago, after a boot 144.5h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 119,
-      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"88fb1621-767f-445b-a4ef-3daa188d0ca1\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
-      "last": "2026-08-28T20:00:00.458227+00:00",
+      "count": 120,
+      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"47fccbbb-804d-4ae8-ba93-eae8f1e0907b\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
+      "last": "2026-08-28T20:15:01.226246+00:00",
       "stage": "survey",
       "why": {
         "duration_api_ms": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T20:31:29.200537+00:00",
-  "last_row_utc": "2026-08-28T20:00:00.458227+00:00",
-  "ledger_rows": 282,
-  "total_faults": 10
+  "generated_utc": "2026-08-28T20:46:43.699034+00:00",
+  "last_row_utc": "2026-08-28T20:15:01.226246+00:00",
+  "ledger_rows": 283,
+  "total_faults": 9
 }
