@@ -306,7 +306,7 @@ def test_the_normaliser_runs_on_every_input_route(telegram, tmp_path):
     """
     bot_id, _, secret = GOOD.partition(":")
     spaced = f"{bot_id}: {secret}"
-    f = tmp_path / "tok"; f.write_text(spaced + "\n")
+    f = tmp_path / "tok"; f.write_text(spaced + "\n", encoding="utf-8")
     telegram.updates = [_update(31)]
     assert ts.main(["--secrets", str(tmp_path / "s"), "--token-file", str(f)]) == 0
     assert (tmp_path / "s" / "telegram_token").read_text(encoding='utf-8').strip() == GOOD

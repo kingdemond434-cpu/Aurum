@@ -43,7 +43,7 @@ def seed_ledger(desk, n=60):
     rows.append({"ts": "2026-06-02T11:00:00+00:00", "kind": "REFUSAL_MODEL",
                  "reason": "no alignment", "forward_r": 1.2})
     (desk / "state" / "ledger.jsonl").write_text(
-        "\n".join(json.dumps(r) for r in rows) + "\n")
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     return rows
 
 
@@ -88,7 +88,7 @@ def test_mining_refuses_to_guess_the_server_offset(desk):
     misaligns every session inference, while every timestamp still looks
     ordinary. There is no safe default."""
     (desk / "inbox" / "copytrade").mkdir(parents=True)
-    (desk / "inbox" / "copytrade" / "s.csv").write_text("x\n")
+    (desk / "inbox" / "copytrade" / "s.csv").write_text("x\n", encoding="utf-8")
     out = C.step_mining({})
     assert "no safe default" in out
 
@@ -101,14 +101,14 @@ def test_mining_says_where_to_put_the_files_when_there_are_none(desk):
 def test_mining_ingests_and_reverse_engineers(desk):
     inbox = desk / "inbox" / "copytrade"
     inbox.mkdir(parents=True)
-    (desk / "state" / "ingest_offset.txt").write_text("3")
+    (desk / "state" / "ingest_offset.txt").write_text("3", encoding="utf-8")
     rows = ["Ticket,Position,Symbol,Type,Entry,Volume,Price,Time,S/L,T/P,Profit"]
     for i in range(30):
         rows.append(f"{i*2+1},P{i},XAUUSD,BUY,in,0.10,2000.00,"
                     f"2026-06-{(i % 28)+1:02d} 10:00:00,1990.00,2030.00,0")
         rows.append(f"{i*2+2},P{i},XAUUSD,SELL,out,0.10,2010.00,"
                     f"2026-06-{(i % 28)+1:02d} 14:00:00,,,100")
-    (inbox / "s.csv").write_text("\n".join(rows) + "\n")
+    (inbox / "s.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
     ctx = {}
     out = C.step_mining(ctx)
     assert "30 paired trades" in out
@@ -119,11 +119,11 @@ def test_mining_ingests_and_reverse_engineers(desk):
 def test_mining_is_idempotent_across_runs(desk):
     inbox = desk / "inbox" / "copytrade"
     inbox.mkdir(parents=True)
-    (desk / "state" / "ingest_offset.txt").write_text("3")
+    (desk / "state" / "ingest_offset.txt").write_text("3", encoding="utf-8")
     (inbox / "s.csv").write_text(
         "Ticket,Position,Symbol,Type,Entry,Volume,Price,Time\n"
         "1,P1,XAUUSD,BUY,in,0.10,2000.00,2026-06-01 10:00:00\n"
-        "2,P1,XAUUSD,SELL,out,0.10,2010.00,2026-06-01 14:00:00\n")
+        "2,P1,XAUUSD,SELL,out,0.10,2010.00,2026-06-01 14:00:00\n", encoding="utf-8")
     C.step_mining({})
     assert "0 new deal(s)" in C.step_mining({})
 
@@ -191,7 +191,7 @@ def test_absorb_queues_findings_from_the_inbox(desk):
     (inbox / "quant_findings.jsonl").write_text(json.dumps({
         "statement": "asia session range widens after a US CPI print",
         "source": "hunt12", "grade": "E4", "measured_on": "XAUUSD H1 2018-2026",
-        "transfer_test": "does Aurum's asia range widen on CPI days"}) + "\n")
+        "transfer_test": "does Aurum's asia range widen on CPI days"}) + "\n", encoding="utf-8")
     out = C.step_absorb({})
     assert "1 new finding" in out
 
@@ -202,7 +202,7 @@ def test_a_malformed_finding_costs_one_row_not_the_step(desk):
     (inbox / "quant_findings.jsonl").write_text(
         json.dumps({"nonsense": 1}) + "\n"
         + json.dumps({"statement": "s", "source": "x", "grade": "E4",
-                      "measured_on": "m", "transfer_test": "t"}) + "\n")
+                      "measured_on": "m", "transfer_test": "t"}) + "\n", encoding="utf-8")
     assert "1 new finding" in C.step_absorb({})
 
 
@@ -211,7 +211,7 @@ def test_re_running_absorb_does_not_re_queue(desk):
     inbox.mkdir()
     (inbox / "quant_findings.jsonl").write_text(json.dumps({
         "statement": "s", "source": "x", "grade": "E4",
-        "measured_on": "m", "transfer_test": "t"}) + "\n")
+        "measured_on": "m", "transfer_test": "t"}) + "\n", encoding="utf-8")
     C.step_absorb({})
     assert "0 new finding" in C.step_absorb({})
 
@@ -257,7 +257,7 @@ def test_the_cycle_runs_once_a_day_unless_forced(desk):
 
 def test_a_torn_ledger_line_costs_one_row_not_the_cycle(desk):
     seed_ledger(desk, n=30)
-    with (desk / "state" / "ledger.jsonl").open("a") as f:
+    with (desk / "state" / "ledger.jsonl").open("a", encoding="utf-8") as f:
         f.write('{"ts": "2026-06-30T10:00:00+00:00", "realised_r": 1.')
     ctx = {}
     out = C.step_evidence(ctx)
@@ -472,7 +472,7 @@ def test_the_refusal_filter_matches_the_kinds_the_ledger_writes(desk):
     rows = [{"ts": "2026-06-01T10:00:00+00:00", "kind": k, "reason": "x"}
             for k in refusal_kinds]
     (desk / "state" / "ledger.jsonl").write_text(
-        "\n".join(json.dumps(r) for r in rows) + "\n")
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     ctx = {}
     out = C.step_evidence(ctx)
     assert len(ctx["refusals"]) == len(refusal_kinds), ctx["refusals"]
@@ -491,7 +491,7 @@ def test_a_blind_bar_is_reported_and_is_never_counted_as_a_refusal(desk):
             {"ts": "2026-06-01T10:15:00+00:00", "kind": "BLIND",
              "reason": "BLIND: analyst unavailable at read — TimeoutExpired"}]
     (desk / "state" / "ledger.jsonl").write_text(
-        "\n".join(json.dumps(r) for r in rows) + "\n")
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     ctx = {}
     out = C.step_evidence(ctx)
     assert len(ctx["refusals"]) == 1, "a blind bar was counted as a refusal"

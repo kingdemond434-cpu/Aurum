@@ -158,7 +158,7 @@ class Memory:
                 offset, line_no = 0, 0
 
             added = 0
-            with p.open("rb") as fh:
+            with p.open("rb", encoding="utf-8") as fh:
                 fh.seek(offset)
                 for raw_line in fh:
                     text = raw_line.decode("utf-8", "replace").strip()

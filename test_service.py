@@ -344,7 +344,7 @@ def test_halt_flag_stands_the_desk_down():
     print("\nHALT  the flag written by the bot actually stops the loop")
     out = Path(tempfile.mkdtemp())
     halt = out / "HALTED"
-    halt.write_text("set by test")
+    halt.write_text("set by test", encoding="utf-8")
 
     sink = RecordingSink()
     f = FakeFeed(bars())

@@ -327,7 +327,7 @@ def cmd_why(cfg: BotConfig) -> str:
 def cmd_halt(cfg: BotConfig) -> str:
     cfg.halt_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.halt_path.write_text(
-        f"halted via telegram at {datetime.now(timezone.utc).isoformat()}\n")
+        f"halted via telegram at {datetime.now(timezone.utc).isoformat()}\n", encoding="utf-8")
     return ("HALT SET. The desk stands down at its next check.\n"
             "It does NOT close anything — Aurum has never had a position to "
             "close; whatever is open is open in YOUR terminal and is untouched.\n"

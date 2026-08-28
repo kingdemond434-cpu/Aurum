@@ -711,7 +711,7 @@ def run(force: bool = False, dry: bool = False) -> int:
         state["last_run"] = today
         state["last_failed_steps"] = failed
         state["version"] = CYCLE_VERSION
-        CYCLE_STATE.write_text(json.dumps(state, indent=2))
+        CYCLE_STATE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
     log(f"daily cycle {today} done"
         + (f" -- FAILED: {', '.join(failed)}" if failed else ""))

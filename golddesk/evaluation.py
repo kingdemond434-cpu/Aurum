@@ -82,7 +82,7 @@ class Preregistration:
                                      "frozen_at": datetime.now(timezone.utc).isoformat()})
         payload = {"spec": asdict(stamped), "hash": stamped.content_hash()}
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, indent=2))
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload["hash"]
 
     @staticmethod

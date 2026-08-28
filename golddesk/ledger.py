@@ -235,7 +235,7 @@ class Ledger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def append(self, rec: DecisionRecord) -> None:
-        with self.path.open("a") as fh:
+        with self.path.open("a", encoding="utf-8") as fh:
             fh.write(rec.to_json() + "\n")
 
     def append_raw(self, row: dict) -> None:
@@ -245,7 +245,7 @@ class Ledger:
         the ordering between "what was decided" and "what happened next" is
         preserved in one place. Rows carry `kind`, so readers filter.
         """
-        with self.path.open("a") as fh:
+        with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, default=str) + "\n")
 
     def read_all(self) -> list[dict]:

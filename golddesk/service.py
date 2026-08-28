@@ -253,7 +253,7 @@ class DeskService:
         payload = asdict(self.state)
         payload["notification_health"] = self.notification_health()
         tmp = self.cfg.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, indent=2, default=str))
+        tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         os.replace(tmp, self.cfg.state_path)
 
     def rehydrate(self) -> bool:

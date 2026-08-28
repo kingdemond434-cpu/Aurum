@@ -374,7 +374,7 @@ class IngestLog:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(self.to_json())
+        tmp.write_text(self.to_json(), encoding="utf-8")
         tmp.replace(p)                       # atomic: a torn write loses history
 
     @staticmethod
@@ -402,7 +402,7 @@ def ingest_file(path: Path, server_offset_hours: Optional[float] = None,
     timestamp still looks ordinary. There is no safe guess, so there is no guess.
     """
     p = Path(path)
-    text = p.read_text(errors="replace")
+    text = p.read_text(errors="replace", encoding="utf-8")
     log = log or IngestLog()
     if server_offset_hours is None:
         raise IngestError(

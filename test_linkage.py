@@ -212,7 +212,7 @@ def test_a_legacy_file_with_unlinked_runs_still_loads_so_it_can_be_audited(tmp_p
         "known_hids": ["H1"],
         "runs": [{"rid": "OLD", "hypothesis_ids": [], "kind": "backtest",
                   "started_utc": "2026-01-01T00:00:00+00:00"}],
-        "invalidations": []}))
+        "invalidations": []}), encoding="utf-8")
     back = LinkedRegistry.load(p)
     assert back.unlinked_runs() == ["OLD"]
     ok, why = back.audit()
@@ -225,7 +225,7 @@ def test_a_dangling_reference_is_caught_by_the_audit(tmp_path):
         "known_hids": ["H1"],
         "runs": [{"rid": "R1", "hypothesis_ids": ["H_GONE"], "kind": "backtest",
                   "started_utc": "2026-01-01T00:00:00+00:00"}],
-        "invalidations": []}))
+        "invalidations": []}), encoding="utf-8")
     ok, why = LinkedRegistry.load(p).audit()
     assert not ok and "unknown hypotheses" in why
 

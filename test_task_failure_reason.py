@@ -45,7 +45,7 @@ def test_it_quotes_the_line_that_names_the_cause(logfile):
     logfile.write_text(
         "2026-08-28 07:00:02  new commits on branch: 096f81d -> 1a2e56f\n"
         "2026-08-28 07:00:03  running the suite against the new code...\n"
-        "2026-08-28 07:04:41  TESTS FAILED — rolling back to 096f81d. Desk untouched.\n")
+        "2026-08-28 07:04:41  TESTS FAILED — rolling back to 096f81d. Desk untouched.\n", encoding="utf-8")
     out = self_heal._why_the_task_failed(TASK)
     assert "TESTS FAILED" in out
     assert "rolling back to 096f81d" in out
@@ -58,7 +58,7 @@ def test_it_distinguishes_the_three_ways_the_updater_can_die(logfile):
             ("ABORT: git is not on this task's PATH", "not on this task's PATH"),
             ("ABORT: not a fast-forward. The box has diverged", "not a fast-forward"),
             ("TESTS FAILED — rolling back to 096f81d", "TESTS FAILED")):
-        logfile.write_text(f"routine line\n{line}\n")
+        logfile.write_text(f"routine line\n{line}\n", encoding="utf-8")
         assert token in self_heal._why_the_task_failed(TASK)
 
 
@@ -76,7 +76,7 @@ def test_a_missing_log_is_itself_the_finding(logfile):
 def test_a_log_with_no_failure_line_is_UNMEASURED_not_healthy(logfile):
     """L1.28a. Absence of a matched line means this could not find the cause —
     never that there wasn't one."""
-    logfile.write_text("2026-08-28 07:00:02  up to date at 096f81d\n" * 5)
+    logfile.write_text("2026-08-28 07:00:02  up to date at 096f81d\n" * 5, encoding="utf-8")
     out = self_heal._why_the_task_failed(TASK)
     assert "UNMEASURED" in out
     assert "not healthy" in out
@@ -87,7 +87,7 @@ def test_it_reads_the_TAIL_not_the_whole_log(logfile):
     an unbounded read would put it in a Telegram message."""
     logfile.write_text("ABORT: ancient failure nobody cares about\n"
                        + "routine line\n" * 500
-                       + "TESTS FAILED — today's actual problem\n")
+                       + "TESTS FAILED — today's actual problem\n", encoding="utf-8")
     out = self_heal._why_the_task_failed(TASK)
     assert "today's actual problem" in out
     assert "ancient failure" not in out
@@ -95,7 +95,7 @@ def test_it_reads_the_TAIL_not_the_whole_log(logfile):
 
 def test_the_quoted_output_is_bounded(logfile):
     """It travels into a report and possibly a notification."""
-    logfile.write_text("".join(f"ERROR line {i} {'x' * 900}\n" for i in range(50)))
+    logfile.write_text("".join(f"ERROR line {i} {'x' * 900}\n" for i in range(50)), encoding="utf-8")
     out = self_heal._why_the_task_failed(TASK)
     assert len(out.splitlines()) <= 4
     assert all(len(ln) <= 310 for ln in out.splitlines())
@@ -108,7 +108,7 @@ def test_an_unmapped_task_says_nothing_rather_than_guessing(tmp_path):
 
 
 def test_an_unreadable_log_is_reported_not_swallowed(logfile, monkeypatch):
-    logfile.write_text("TESTS FAILED\n")
+    logfile.write_text("TESTS FAILED\n", encoding="utf-8")
 
     def boom(*a, **kw):
         raise PermissionError("in use by another process")

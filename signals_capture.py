@@ -166,7 +166,7 @@ class SignalLog:
         if not self.path.exists():
             return "genesis"
         last = None
-        with self.path.open() as fh:
+        with self.path.open(encoding="utf-8") as fh:
             for line in fh:
                 if line.strip():
                     last = line
@@ -184,7 +184,7 @@ class SignalLog:
         body = json.dumps({k: v for k, v in event.items() if k != "hash"},
                           sort_keys=True, default=str)
         event["hash"] = hashlib.sha256(body.encode()).hexdigest()[:32]
-        with self.path.open("a") as fh:
+        with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, default=str) + "\n")
         self._last = event["hash"]
         return event
@@ -195,7 +195,7 @@ class SignalLog:
             return True, "no log yet"
         prev = "genesis"
         n = 0
-        with self.path.open() as fh:
+        with self.path.open(encoding="utf-8") as fh:
             for i, line in enumerate(fh, 1):
                 if not line.strip():
                     continue
@@ -216,7 +216,7 @@ class SignalLog:
         kinds: dict[str, int] = {}
         chans: dict[str, int] = {}
         calls = edits = dels = complete = 0
-        with self.path.open() as fh:
+        with self.path.open(encoding="utf-8") as fh:
             for line in fh:
                 if not line.strip():
                     continue

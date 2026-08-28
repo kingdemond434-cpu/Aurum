@@ -60,7 +60,7 @@ class FileSink:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def send(self, text: str) -> bool:
-        with self.path.open("a") as fh:
+        with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({"text": text}) + "\n")
         return True
 

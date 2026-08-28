@@ -256,8 +256,8 @@ def telegram() -> None:
     from golddesk.notify import NullSink, TelegramSink
 
     d = Path(tempfile.mkdtemp())
-    (d / "telegram_token").write_text("")
-    (d / "telegram_chat_id").write_text("")
+    (d / "telegram_token").write_text("", encoding="utf-8")
+    (d / "telegram_chat_id").write_text("", encoding="utf-8")
     for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         os.environ.pop(k, None)
     tok, cid, where = resolve_telegram(d)
@@ -267,8 +267,8 @@ def telegram() -> None:
     check("and the sink degrades to null rather than pretending",
           isinstance(build_sink(d), NullSink))
 
-    (d / "telegram_token").write_text("123:AA\n")
-    (d / "telegram_chat_id").write_text("-100123\n")
+    (d / "telegram_token").write_text("123:AA\n", encoding="utf-8")
+    (d / "telegram_chat_id").write_text("-100123\n", encoding="utf-8")
     tok, cid, where = resolve_telegram(d)
     check("filled files resolve", tok == "123:AA" and cid == "-100123", where)
     check("and produce a real Telegram sink",

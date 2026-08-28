@@ -100,7 +100,7 @@ def test_unchanged_counts_as_reaching_the_remote(sent):
     needed. Treating that as a failure would alarm on a perfectly healthy desk
     within half an hour."""
     self_heal._report_publish_health("unchanged", False)
-    assert json.loads(self_heal.PUBLISH_STATE.read_text())["consecutive_failures"] == 0
+    assert json.loads(self_heal.PUBLISH_STATE.read_text(encoding="utf-8"))["consecutive_failures"] == 0
     assert sent == []
 
 
@@ -129,17 +129,17 @@ def test_a_notify_failure_does_not_raise(tmp_path, monkeypatch):
     monkeypatch.setattr("golddesk.notify.build_sink", boom)
     self_heal._report_publish_health("push failed", False)
     self_heal._report_publish_health("push failed", False)   # must not raise
-    assert json.loads((tmp_path / "h.json").read_text())["consecutive_failures"] == 2
+    assert json.loads((tmp_path / "h.json").read_text(encoding="utf-8"))["consecutive_failures"] == 2
 
 
 def test_an_unreadable_health_file_is_not_read_as_healthy(tmp_path, monkeypatch):
     """UNMEASURED is a real answer. A corrupt file resetting the counter to zero
     would make an outage invisible for as long as it kept corrupting."""
     p = tmp_path / "h.json"
-    p.write_text("{not json")
+    p.write_text("{not json", encoding="utf-8")
     monkeypatch.setattr(self_heal, "PUBLISH_STATE", p)
     self_heal._report_publish_health("push failed", False)
-    assert json.loads(p.read_text())["consecutive_failures"] == 1
+    assert json.loads(p.read_text(encoding="utf-8"))["consecutive_failures"] == 1
 
 
 if __name__ == "__main__":

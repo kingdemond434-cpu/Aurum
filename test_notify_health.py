@@ -112,8 +112,8 @@ def test_health_tracking_is_on_by_default(tmp_path):
 def test_the_wrapper_preserves_the_resolved_sink(tmp_path):
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("tok")
-    (sec / "telegram_chat_id").write_text("123")
+    (sec / "telegram_token").write_text("tok", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     s = build_sink(sec)
     assert type(s.inner).__name__ == "TelegramSink"
 
@@ -148,8 +148,8 @@ def test_preflight_sends_rather_than_only_reading_files(tmp_path, monkeypatch):
     import run_desk
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("tok")
-    (sec / "telegram_chat_id").write_text("123")
+    (sec / "telegram_token").write_text("tok", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     sent = []
     monkeypatch.setattr("golddesk.notify.TelegramSink.send",
                         lambda self, text: sent.append(text) or True)
@@ -163,8 +163,8 @@ def test_preflight_FAILS_when_credentials_exist_but_do_not_work(tmp_path, monkey
     import run_desk
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("revoked-token")
-    (sec / "telegram_chat_id").write_text("123")
+    (sec / "telegram_token").write_text("revoked-token", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     monkeypatch.setattr("golddesk.notify.TelegramSink.send",
                         lambda self, text: False)
     c = run_desk._telegram_check(True, sec)
@@ -175,8 +175,8 @@ def test_empty_credentials_still_fail_before_any_send(tmp_path):
     import run_desk
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("")
-    (sec / "telegram_chat_id").write_text("")
+    (sec / "telegram_token").write_text("", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("", encoding="utf-8")
     c = run_desk._telegram_check(True, sec)
     assert not c.ok and "EMPTY" in c.detail
 
@@ -185,8 +185,8 @@ def test_delivery_can_be_skipped_deliberately(tmp_path):
     import run_desk
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("tok")
-    (sec / "telegram_chat_id").write_text("123")
+    (sec / "telegram_token").write_text("tok", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     c = run_desk._telegram_check(True, sec, deliver=False)
     assert c.ok and "NOT verified by delivery" in c.detail
 

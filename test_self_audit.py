@@ -219,7 +219,7 @@ def test_a_profile_with_no_measured_session_is_still_a_fault(tmp_path):
     import json
     b = _base(tmp_path)
     (b / "config" / "spread_profile.json").write_text(
-        json.dumps({"by_session": {}, "calibrated_from": "Vantage"}))
+        json.dumps({"by_session": {}, "calibrated_from": "Vantage"}), encoding="utf-8")
     f = _by(_sys(tmp_path), "spread profile")
     assert not f.ok
     assert "NO session was calibrated" in f.detail
@@ -229,7 +229,7 @@ def test_a_calibrated_profile_passes_and_names_the_venue(tmp_path):
     import json
     b = _base(tmp_path)
     (b / "config" / "spread_profile.json").write_text(
-        json.dumps({"by_session": {"LONDON": 0.28}, "calibrated_from": "Vantage-Live"}))
+        json.dumps({"by_session": {"LONDON": 0.28}, "calibrated_from": "Vantage-Live"}), encoding="utf-8")
     f = _by(_sys(tmp_path), "spread profile")
     assert f.ok and "Vantage-Live" in f.detail
 
@@ -242,7 +242,7 @@ def test_mostly_failing_sends_is_a_fault(tmp_path):
     import json
     b = _base(tmp_path)
     (b / "state" / "service_state.json").write_text(
-        json.dumps({"notification_health": {"sent": 2, "failed": 30}}))
+        json.dumps({"notification_health": {"sent": 2, "failed": 30}}), encoding="utf-8")
     f = _by(_sys(tmp_path), "notifications")
     assert not f.ok
     assert "deciding into a void" in f.detail
@@ -251,7 +251,7 @@ def test_mostly_failing_sends_is_a_fault(tmp_path):
 def test_a_sink_that_tracks_nothing_reads_UNKNOWN_not_healthy(tmp_path):
     import json
     b = _base(tmp_path)
-    (b / "state" / "service_state.json").write_text(json.dumps({"notification_health": {}}))
+    (b / "state" / "service_state.json").write_text(json.dumps({"notification_health": {}}), encoding="utf-8")
     f = _by(_sys(tmp_path), "notifications")
     assert f.ok
     assert "UNKNOWN" in f.detail and "not the same as healthy" in f.detail
@@ -263,7 +263,7 @@ def test_a_stale_checkpoint_is_a_fault(tmp_path):
     import json, os, time
     b = _base(tmp_path)
     p = b / "state" / "service_state.json"
-    p.write_text(json.dumps({}))
+    p.write_text(json.dumps({}), encoding="utf-8")
     old = time.time() - 60 * 60 * 24
     os.utime(p, (old, old))
     f = _by(audit([], None, now=datetime.now(UTC), base=b), "checkpoint")
@@ -276,7 +276,7 @@ def test_a_stale_checkpoint_is_a_fault(tmp_path):
 def test_torn_lines_and_duplicate_ids_are_counted(tmp_path):
     b = _base(tmp_path)
     (b / "state" / "ledger.jsonl").write_text(
-        '{"decision_id": "a"}\n{"decision_id": "a"}\n{not json\n')
+        '{"decision_id": "a"}\n{"decision_id": "a"}\n{not json\n', encoding="utf-8")
     f = _by(_sys(tmp_path), "ledger integrity")
     assert not f.ok
     assert "1 torn line(s), 1 duplicate" in f.detail
@@ -286,18 +286,18 @@ def test_the_ledger_is_never_auto_repaired(tmp_path):
     """It is the only record of what this desk predicted. A process that edits
     evidence unattended is how the evidence gets destroyed."""
     b = _base(tmp_path)
-    (b / "state" / "ledger.jsonl").write_text('{"decision_id": "a"}\n{bad\n')
-    before = (b / "state" / "ledger.jsonl").read_text()
+    (b / "state" / "ledger.jsonl").write_text('{"decision_id": "a"}\n{bad\n', encoding="utf-8")
+    before = (b / "state" / "ledger.jsonl").read_text(encoding="utf-8")
     f = _by(_sys(tmp_path), "ledger integrity")
     assert not f.ok
     assert "NOT auto-repaired" in f.detail
-    assert (b / "state" / "ledger.jsonl").read_text() == before
+    assert (b / "state" / "ledger.jsonl").read_text(encoding="utf-8") == before
 
 
 def test_a_clean_ledger_passes(tmp_path):
     b = _base(tmp_path)
     (b / "state" / "ledger.jsonl").write_text(
-        '{"decision_id": "a"}\n{"decision_id": "b"}\n')
+        '{"decision_id": "a"}\n{"decision_id": "b"}\n', encoding="utf-8")
     assert _by(_sys(tmp_path), "ledger integrity").ok
 
 

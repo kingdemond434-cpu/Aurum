@@ -192,7 +192,7 @@ def to_inbox(quant_root: Path, inbox: Path, dry_run: bool = False) -> dict:
     findings, dropped = scan(Path(quant_root))
     if not dry_run:
         Path(inbox).parent.mkdir(parents=True, exist_ok=True)
-        with Path(inbox).open("a") as fh:
+        with Path(inbox).open("a", encoding="utf-8") as fh:
             for f in findings:
                 fh.write(json.dumps({
                     "statement": f.statement, "source": f.source,
@@ -233,7 +233,7 @@ def sync(quant_root: Path, state: Path, journal: Optional[Path] = None,
         absorber.save(Path(state))
         if journal:
             Path(journal).parent.mkdir(parents=True, exist_ok=True)
-            with Path(journal).open("a") as fh:
+            with Path(journal).open("a", encoding="utf-8") as fh:
                 for f, status in results:
                     fh.write(json.dumps({
                         "hash": f.content_hash(), "status": status,

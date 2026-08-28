@@ -153,7 +153,7 @@ class FrozenStates:
                 f"cannot detect the code moving")
         self.path.write_text(json.dumps({"version": DRIFT_VERSION,
                                          "frozen_at": datetime.now(timezone.utc).isoformat(),
-                                         "states": list(states)}, indent=2, default=str))
+                                         "states": list(states)}, indent=2, default=str), encoding="utf-8")
         return len(states)
 
     def read(self) -> list[dict]:
@@ -172,7 +172,7 @@ def record_baseline(decisions: Sequence[StateDecision], root: Path) -> Path:
     p.write_text(json.dumps({"version": DRIFT_VERSION,
                              "recorded_at": datetime.now(timezone.utc).isoformat(),
                              "decisions": [asdict(d) for d in decisions]},
-                            indent=2, default=str))
+                            indent=2, default=str), encoding="utf-8")
     return p
 
 

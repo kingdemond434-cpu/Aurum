@@ -125,7 +125,7 @@ def test_the_specialist_needs_nothing_downloaded():
     """The whole point: no checkpoint, no licence, no GPU."""
     s = build_specialist(cyclic(), window=24, horizon=4)
     assert s.predict_fn is not None
-    src = open("golddesk/analogue_seq.py").read()
+    src = open("golddesk/analogue_seq.py", encoding="utf-8").read()
     for banned in ("torch", "tensorflow", "huggingface", "from_pretrained",
                    "requests.get", "urllib"):
         assert banned not in src

@@ -257,7 +257,7 @@ class Adapter:
         return out
 
     def _write(self, rep: AdaptationReport) -> None:
-        with self.trail.open("a") as fh:
+        with self.trail.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({
                 "ts": rep.cycle_ts, "version": ADAPT_VERSION,
                 "rows": rep.rows_read,

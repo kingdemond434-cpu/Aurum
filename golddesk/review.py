@@ -268,7 +268,7 @@ class LessonStore:
     def _flush(self) -> None:
         self.path.write_text(json.dumps(
             {"lessons": [asdict(l) for l in self._lessons]}, indent=1
-        ))
+        ), encoding="utf-8")
 
 
 # Jaccard overlap above which two lesson claims are treated as the same claim.

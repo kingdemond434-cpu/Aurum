@@ -152,7 +152,7 @@ def main() -> int:
             print(f"ticks: {len(td):>9,} ticks  {td.index[0]} .. {td.index[-1]}"
                   f"   median spread {spread.median():.3f}")
 
-        (out / f"{sym}_EXPORT.json").write_text(json.dumps(meta, indent=2, default=str))
+        (out / f"{sym}_EXPORT.json").write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
         print(f"\nwrote {out / f'{sym}_EXPORT.json'}")
         print("Send the .parquet files and the EXPORT.json back to the desk.")
     finally:

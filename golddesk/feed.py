@@ -123,7 +123,7 @@ class ServerClock:
     def _save(self) -> None:
         if self.cache_path:
             Path(self.cache_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(self.cache_path).write_text(str(self.offset.total_seconds()))
+            Path(self.cache_path).write_text(str(self.offset.total_seconds()), encoding="utf-8")
 
     def observe(self, tick_server_time: datetime, now_utc: datetime) -> bool:
         """Update the offset only if this quote is genuinely newer than the last.

@@ -174,7 +174,7 @@ def _repo(tmp_path):
         pytest.skip(f"git init -b unsupported: {(init.stderr or '').strip()[:120]}")
     g("config", "user.email", "t@t")
     g("config", "user.name", "t")
-    (tmp_path / "code.py").write_text("x = 1\n")
+    (tmp_path / "code.py").write_text("x = 1\n", encoding="utf-8")
     g("add", "code.py")
     if g("commit", "-qm", "base").returncode != 0:
         pytest.skip("could not create a base commit in a scratch repo")
@@ -187,7 +187,7 @@ def test_it_leaves_the_working_tree_clean(tmp_path):
     dirties the tree every fifteen minutes silently stops the box from ever
     updating itself again."""
     g = _repo(tmp_path)
-    (tmp_path / ".gitignore").write_text(f"{ARTIFACT.as_posix()}\n")
+    (tmp_path / ".gitignore").write_text(f"{ARTIFACT.as_posix()}\n", encoding="utf-8")
     g("add", ".gitignore"); g("commit", "-qm", "ignore")
     before = g("status", "--porcelain").stdout
 

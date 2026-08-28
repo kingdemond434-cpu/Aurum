@@ -374,7 +374,7 @@ def main() -> int:
 
     print("=" * 78)
     print(f"ALL {len(TRACE)} ARROWS EXECUTED")
-    (OUT / "trace.txt").write_text("\n".join(TRACE))
+    (OUT / "trace.txt").write_text("\n".join(TRACE), encoding="utf-8")
     return 0
 
 

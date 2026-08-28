@@ -271,7 +271,7 @@ class Absorber:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(self.to_json())
+        tmp.write_text(self.to_json(), encoding="utf-8")
         tmp.replace(p)
 
     @staticmethod

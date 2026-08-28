@@ -142,6 +142,21 @@ $py = Join-Path $DeskRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { $py = "py" }
 if (-not $SkipTests) {
     Say "running the suite against the new code (old desk still live)..."
+    # FORCE UTF-8 ON THE CHILD. Windows Python defaults to the LOCALE encoding
+    # (cp1252 here), and this codebase's prose is full of em-dashes -- every
+    # docstring, every test name, every refusal reason. Under cp1252 a test that
+    # merely PRINTS one raises UnicodeEncodeError, and a source file read with
+    # no explicit encoding raises UnicodeDecodeError. Neither is a real defect,
+    # and both arrive here as "TESTS FAILED", roll the box back, and exit 1 --
+    # a red suite caused by the alphabet, blocking every future deployment while
+    # each log line says the update ran.
+    #
+    # The source-side half (an explicit encoding= on 93 read_text/write_text/
+    # open calls) is in the same commit. This is the OUTPUT side, which no
+    # amount of source hygiene reaches. Set on this process so the child
+    # inherits it; the desk's own environment is untouched.
+    $env:PYTHONUTF8 = "1"
+    $env:PYTHONIOENCODING = "utf-8"
     & $py -m pytest -q 2>&1 | Select-Object -Last 3 | ForEach-Object { Say "  $_" }
     if ($LASTEXITCODE -ne 0) {
         Say "TESTS FAILED — rolling back to $($before.Substring(0,7)). Desk untouched."

@@ -270,7 +270,7 @@ class LinkedRegistry:
         # Atomic: a torn write here loses the trial census, and the census is the
         # only thing standing between this desk and an over-confident q-value.
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(self.to_json())
+        tmp.write_text(self.to_json(), encoding="utf-8")
         tmp.replace(p)
 
     @staticmethod

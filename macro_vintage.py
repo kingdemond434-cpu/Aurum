@@ -95,7 +95,7 @@ class VintageStore:
         if not self.path:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("w") as fh:
+        with self.path.open("w", encoding="utf-8") as fh:
             for v in self._rows:
                 fh.write(json.dumps(asdict(v)) + "\n")
 
