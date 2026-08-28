@@ -10,33 +10,33 @@
         },
         {
           "check": "analyst answering",
-          "detail": "32/93 wakes (34%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "detail": "1 of 93 wakes in 12h were served by the RULE-BASED FALLBACK and 31 got nothing \u2014 34% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 211s of 600s budget (35%) over 61 reads",
+          "detail": "median 210s of 600s budget (35%) over 62 reads",
           "ok": true
         },
         {
           "check": "analyst model",
-          "detail": "all reads answered as claude-opus-5",
-          "ok": true
+          "detail": "2 different models answered in 12h (['claude-opus-5', 'rules-v1']) \u2014 reads from different models are not comparable evidence and land in the same cohort.",
+          "ok": false
         }
       ],
-      "faults": 1
+      "faults": 2
     },
     "capture": {
       "axis": "capture",
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 146 recent / 0 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 147 recent / 0 prior decisions, under 40 either side",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/129 (22%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/130 (22%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.2h ago",
+          "detail": "21 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 2.0h old",
+          "detail": "newest row 0.7h old",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "22 delivered, 6 failed",
+          "detail": "2 delivered, 0 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 1.7h ago",
+          "detail": "written 0.2h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "267 unique decision(s), no tears",
+          "detail": "268 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38501MB free",
+          "detail": "38498MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 103 min ago, after a boot 146.2h ago",
+          "detail": "wrote 14 min ago, after a boot 146.5h ago",
           "ok": true
         }
       ],
@@ -228,8 +228,8 @@
       "last": "2026-08-28T19:15:00.646587+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 51,
-      "last": "2026-08-28T19:15:00.646587+00:00"
+      "count": 52,
+      "last": "2026-08-28T22:01:34.178037+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T22:30:00.565704+00:00",
-  "last_row_utc": "2026-08-28T20:30:00.951340+00:00",
-  "ledger_rows": 284,
-  "total_faults": 9
+  "generated_utc": "2026-08-28T22:45:35.987119+00:00",
+  "last_row_utc": "2026-08-28T22:01:34.178037+00:00",
+  "ledger_rows": 285,
+  "total_faults": 10
 }
