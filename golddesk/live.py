@@ -60,7 +60,8 @@ from .observer import TradeObserver, Trigger, Wake, resolve_intrabar
 from .policies import (ContextualChooser, HeuristicChooser, ManagementChooser,
                        PassiveChooser, ReentryPolicy)
 from .policy_state import PolicyState
-from .providers import AnalystError, AnalystProvider, ProviderRead
+from .providers import (AnalystError, AnalystProvider, ClaudeCodeAnalyst,
+                        ProviderRead)
 from .quant_findings import strength_bucket
 from .reentry import PriorTrade
 from .runner import RiskLimits, RiskState, build_brief, risk_check
@@ -81,15 +82,29 @@ def _explain_analyst_error(err: Exception) -> dict:
     guessed one.
     """
     text = str(err)
+    # THE LOGIN IS CHECKED FIRST AND OUTSIDE THE JSON. When the provider
+    # recognises an expired OAuth session it raises a plain sentence with the
+    # remedy in it and no JSON payload at all, so a JSON-first reader would have
+    # returned {} for the one failure whose cause is fully known. It is also
+    # checked on the raw text rather than a parsed field because the CLI reports
+    # this with subtype "success" and api_error_status null -- `result` is the
+    # only field that says anything true.
+    if ClaudeCodeAnalyst._auth_failure(text, "") is not None:
+        needs_login = {"needs_login": True,
+                       "reading": ("the LOGIN has expired. No retry, restart or "
+                                   "flag change clears this -- run `claude` once "
+                                   "interactively on the box, as the task's user")}
+    else:
+        needs_login = {}
     i, j = text.find("{"), text.rfind("}")
     if i < 0 or j <= i:
-        return {}
+        return needs_login
     try:
         d = json.loads(text[i:j + 1])
     except Exception:                                  # noqa: BLE001
-        return {}
+        return needs_login
     if not isinstance(d, dict):
-        return {}
+        return needs_login
     usage = d.get("usage") or {}
     out = {k: d[k] for k in ("subtype", "result", "stop_reason", "is_error",
                              "num_turns", "duration_api_ms") if k in d}
@@ -103,6 +118,10 @@ def _explain_analyst_error(err: Exception) -> dict:
     if out.get("duration_api_ms") == 0 and not out.get("input_tokens"):
         out["reading"] = ("the API was never called -- this is a LOCAL failure "
                           "(input, login or binary), not a limit or an outage")
+    # A KNOWN cause overrides the generic one. "local failure (input, login or
+    # binary)" is three suspects; "the login expired" is a fix. Written last so
+    # it wins.
+    out.update(needs_login)
     return out
 
 
@@ -418,6 +437,10 @@ class LiveDesk:
         #: and zero API time is a local rejection, where size is the first
         #: hypothesis to rule in or out.
         self._last_prompt_chars: Optional[int] = None
+        #: One login alarm per outage. Separate from consecutive_blind because
+        #: the two fire on different rules -- this one on the FIRST failure,
+        #: since an expired login is known immediately and cannot self-clear.
+        self._login_alarm_sent = False
         # Event proximity. None means the calendar is not wired, which the
         # uncertainty decomposition reports as UNKNOWN rather than as "no event"
         # — those are different claims and only one of them is true.
@@ -1680,7 +1703,24 @@ class LiveDesk:
         # bar is one nobody reads. The recovery notice matters as much as the
         # alarm: without it the last thing the operator ever heard was that the
         # desk was down.
-        if self.stats.consecutive_blind == BLIND_ALARM_AFTER:
+        # AN EXPIRED LOGIN DOES NOT WAIT FOR THE THIRD WAKE. The three-wake
+        # threshold exists because a single timeout is ordinary and self-clears;
+        # a login does neither. It is known on the FIRST failure, it cannot
+        # resolve on its own, and the only person who can clear it is the one
+        # holding the browser — so waiting ~45 minutes to say so is 45 minutes
+        # of a blind desk bought for nothing. Sent once per outage, like the
+        # generic alarm, and reset by _analyst_answered.
+        if detail.get("needs_login") and not self._login_alarm_sent:
+            self._login_alarm_sent = True
+            self._notify(
+                "*ANALYST LOGGED OUT* — the Claude CLI's OAuth session expired "
+                "and could not refresh. This is NOT a rate limit, an outage or "
+                "a bug, and NOTHING the desk does will clear it: it will book "
+                "BLIND on every bar until somebody logs in.\n\n"
+                "On the VPS, as the user the scheduled task runs as:\n"
+                "`claude` — then complete the browser login.\n\n"
+                "No restart needed; the next wake reads normally.")
+        elif self.stats.consecutive_blind == BLIND_ALARM_AFTER:
             self._notify(
                 f"*ANALYST DOWN* — {BLIND_ALARM_AFTER} consecutive wakes with no "
                 f"read ({stage}: {type(err).__name__}). The desk is BLIND, not "
@@ -1689,10 +1729,11 @@ class LiveDesk:
 
     def _analyst_answered(self) -> None:
         """Called on every successful read. Closes an open outage."""
-        if self.stats.consecutive_blind >= BLIND_ALARM_AFTER:
+        if self.stats.consecutive_blind >= BLIND_ALARM_AFTER or self._login_alarm_sent:
             self._notify(f"*ANALYST BACK* — reading again after "
                          f"{self.stats.consecutive_blind} blind wakes.")
         self.stats.consecutive_blind = 0
+        self._login_alarm_sent = False
 
     def _record(self, bars, i, brief, kind, by, decision, reason, direction,
                 risk_price, suffix: str = ""):

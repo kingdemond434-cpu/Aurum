@@ -184,10 +184,62 @@ def check_model_is_what_was_asked_for(rows: Sequence[dict],
     return Finding("analyst model", True, f"all reads answered as {seen[0]}")
 
 
+#: The CLI's own words for an expired subscription login, lowercased. Kept here
+#: rather than imported from providers so this module stays free of an
+#: import-time dependency on the provider layer, matching DEFAULT_BUDGET_S's
+#: existing convention; test_flag_ladder pins the two lists together.
+LOGIN_MARKERS = ("failed to authenticate", "oauth session expired",
+                 "please run /login", "invalid api key")
+
+
+def check_login(rows: Sequence[dict], now: Optional[datetime] = None,
+                hours: float = 12.0) -> Finding:
+    """Has the CLI's login expired?
+
+    A SEPARATE CHECK BECAUSE IT NEEDS NO SAMPLE. Every other check here is
+    statistical and refuses to speak under MIN_WAKES, which is right: one
+    timeout means nothing. But an expired login is not a rate to estimate, it is
+    a fact the CLI states outright, and one row carrying it is conclusive.
+
+    It also matters that this cannot self-clear. check_answer_rate says "the
+    desk is blind, and here are the three things it might be"; this says which
+    one, and what clears it. Observed 2026-08-28: every read from ~21:00
+    returned `{"subtype":"success", "api_error_status":null, "result":"Failed to
+    authenticate: OAuth session expired and could not be refreshed"}` -- an
+    envelope that says "success" twice over while naming the failure once, in
+    the one field nothing was reading.
+    """
+    now = now or datetime.now(timezone.utc)
+    hits = []
+    for r in _recent(rows, now, hours):
+        if r.get("kind") != "BLIND":
+            continue
+        dec = r.get("decision") or {}
+        blob = " ".join(str(x) for x in
+                        (dec.get("cli") or {}).values() if x is not None).lower()
+        blob += " " + str(dec.get("error") or "").lower()
+        if dec.get("needs_login") or (dec.get("cli") or {}).get("needs_login") \
+                or any(m in blob for m in LOGIN_MARKERS):
+            hits.append(r)
+    if not hits:
+        return Finding("analyst login", True,
+                       f"no login failure in {hours:.0f}h")
+    first = _ts(hits[0]) or now
+    return Finding("analyst login", False,
+                   f"THE LOGIN HAS EXPIRED — {len(hits)} blind wake(s) since "
+                   f"{first:%Y-%m-%d %H:%M}Z carry the CLI's own "
+                   f"'OAuth session expired' message. No retry, restart, flag "
+                   f"change or watchdog clears this: run `claude` once "
+                   f"interactively on the box, as the user the scheduled task "
+                   f"runs as, and complete the browser login. Reads resume on "
+                   f"the next wake.")
+
+
 def audit(rows: Sequence[dict], now: Optional[datetime] = None,
           expected_model: Optional[str] = None,
           budget_s: float = DEFAULT_BUDGET_S) -> list[Finding]:
     return [
+        check_login(rows, now),
         check_answer_rate(rows, now),
         check_latency(rows, now, budget_s=budget_s),
         check_model_is_what_was_asked_for(rows, expected_model, now),

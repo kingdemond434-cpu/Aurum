@@ -511,21 +511,60 @@ class ClaudeCodeAnalyst(AnalystProvider):
     #: automatically, loudly, and still working, which is the entire point.
     MAX_SYSTEM_ARGV_CHARS = 7900
 
+    #: Flags dropped, in order, when the CLI rejects a call LOCALLY.
+    #:
+    #: WHY A LADDER RATHER THAN A DIAGNOSIS. On 2026-08-28 every survey failed
+    #: with exit 1, a session id, `duration_api_ms: 0` and zero tokens in and
+    #: out -- the CLI refusing before it billed anything. That is what a
+    #: rejected FLAG looks like, and it is indistinguishable from an expired
+    #: login without reading the CLI's own message. A desk that stays blind
+    #: while somebody works out which flag changed has already lost the day.
+    #:
+    #: ORDERED LEAST HARMFUL FIRST, and the order is the argument:
+    #:   --effort        a reasoning HINT. Losing it costs depth, not capability.
+    #:   --allowed-tools passed as an empty string, which is exactly the kind of
+    #:                   argument a CLI update starts rejecting.
+    #:   --max-turns     a bound the desk does not depend on: the schema does.
+    #:   --model         LAST, and never silently. Dropping it changes WHICH
+    #:                   MODEL answers, which changes the arm and makes reads
+    #:                   from either side non-comparable in one cohort. It is
+    #:                   still better than a desk that produces nothing, and
+    #:                   analyst_health's model check reports the substitution
+    #:                   within fifteen minutes.
+    FLAG_LADDER = ("--effort", "--allowed-tools", "--max-turns", "--model")
+
+    #: How many rungs of FLAG_LADDER are currently dropped. A CLASS default of 0
+    #: rather than an __init__ assignment, so a provider is never missing it --
+    #: including the __new__-constructed ones the argv tests use, where an
+    #: AttributeError here would be an artefact of the test harness rather than
+    #: a real defect. Instances shadow it the moment a rung is confirmed, so the
+    #: memory is per-provider and never leaks between them.
+    _flag_drop: int = 0
+
     def _argv(self, system: Optional[str] = None,
-              effort: Optional[str] = None) -> list[str]:
-        """`effort` overrides self.effort for ONE call -- used by the degraded retry below."""
+              effort: Optional[str] = None, drop: int = 0) -> list[str]:
+        """`effort` overrides self.effort for ONE call -- used by the degraded retry below.
+
+        `drop` removes the first N flags of FLAG_LADDER, for the local-rejection
+        ladder in _invoke.
+        """
+        dropped = set(self.FLAG_LADDER[:drop])
         sys_text = system or ANALYST_SYSTEM
         if len(sys_text) > self.MAX_SYSTEM_ARGV_CHARS:
             # Signalled by omitting the flag; _invoke prepends the text to stdin.
             sys_text = None
-        argv = [self.binary, "-p",
-                "--output-format", "json",
-                "--model", self.model,
-                "--allowed-tools", "",
-                "--max-turns", "1"]
+        argv = [self.binary, "-p", "--output-format", "json"]
+        if "--model" not in dropped:
+            argv += ["--model", self.model]
+        if "--allowed-tools" not in dropped:
+            argv += ["--allowed-tools", ""]
+        if "--max-turns" not in dropped:
+            argv += ["--max-turns", "1"]
         if sys_text is not None:
             argv += ["--system-prompt", sys_text]
         chosen = effort if effort is not None else self.effort
+        if "--effort" in dropped:
+            chosen = None
         if chosen is not None:
             if chosen not in self.EFFORTS:
                 raise AnalystError(
@@ -549,17 +588,128 @@ class ClaudeCodeAnalyst(AnalystProvider):
             env.pop("ANTHROPIC_AUTH_TOKEN", None)
         return env
 
+    #: What an expired login looks like in the CLI's own words.
+    #:
+    #: OBSERVED 2026-08-28, after four hours of the desk booking BLIND on every
+    #: single read. The envelope is deliberately confusing: `subtype` is
+    #: "success", `stop_reason` is "stop_sequence", `api_error_status` is null,
+    #: and the ONLY field that names the problem is `result`:
+    #:
+    #:     "Failed to authenticate: OAuth session expired and could not be
+    #:      refreshed"
+    #:
+    #: It is byte-identical to a rejected flag on every field the flag ladder
+    #: below inspects -- exit 1, duration_api_ms 0, zero tokens, a session id --
+    #: which is exactly why the ladder cannot be the only answer here. Matched
+    #: on the CLI's TEXT rather than inferred, so the desk names the actual fix
+    #: instead of degrading its own arm four times and then guessing.
+    AUTH_MARKERS = ("failed to authenticate", "oauth session expired",
+                    "please run /login", "invalid api key",
+                    "authentication_error", "credentials could not be refreshed")
+
+    @classmethod
+    def _auth_failure(cls, stdout: str, stderr: str) -> Optional[str]:
+        """The CLI's own sentence about the login, or None.
+
+        Returns the MESSAGE rather than a bool so the error the desk raises can
+        quote the CLI verbatim. A paraphrase would be one more thing to doubt at
+        01:30 when nothing has read the market since 21:00.
+        """
+        blob = (stdout or "") + "\n" + (stderr or "")
+        low = blob.lower()
+        if not any(m in low for m in cls.AUTH_MARKERS):
+            return None
+        import json as _json
+        i, j = blob.find("{"), blob.rfind("}")
+        if i >= 0 and j > i:
+            try:
+                d = _json.loads(blob[i:j + 1])
+                if isinstance(d, dict) and d.get("result"):
+                    return str(d["result"])[:300]
+            except Exception:                          # noqa: BLE001
+                pass
+        return blob.strip()[:300]
+
+    @staticmethod
+    def _is_local_rejection(stdout: str, stderr: str) -> bool:
+        """Did the CLI refuse BEFORE calling the API?
+
+        The discriminator is SPEND: zero input tokens, zero output tokens and
+        zero API duration mean nothing was sent, which rules out a rate limit, a
+        model outage and a timeout, and rules in the invocation itself. Anything
+        else -- a real API error, a bad response, a partial answer -- must NOT
+        walk the flag ladder, or the desk degrades its own arm in response to a
+        problem the flags did not cause.
+
+        Absence of the field is not zero. `duration_api_ms` must be PRESENT and
+        0: a CLI that stops reporting it would otherwise make every failure look
+        local and walk the whole ladder down to an unpinned model on the first
+        real API outage.
+        """
+        import json as _json
+        blob = (stdout or "") + (stderr or "")
+        i, j = blob.find("{"), blob.rfind("}")
+        if i < 0 or j <= i:
+            return False
+        try:
+            d = _json.loads(blob[i:j + 1])
+        except Exception:                              # noqa: BLE001
+            return False
+        if not isinstance(d, dict) or "duration_api_ms" not in d:
+            return False
+        u = d.get("usage") or {}
+        return (d.get("duration_api_ms") == 0
+                and not u.get("input_tokens")
+                and not u.get("output_tokens"))
+
+    def _run(self, argv: list[str], prompt: str,
+             budget: float) -> tuple[int, str, str]:
+        """TRANSPORT ONLY. Returns (returncode, stdout, stderr); decides nothing.
+
+        Everything above this line -- the timeout degrade, the flag ladder, the
+        envelope checks -- is policy, and policy that can only be reached
+        through subprocess.run is policy no test can exercise. That is not
+        hypothetical here: the flag ladder below was written against
+        `p.returncode` and an injected runner returned a parsed envelope, so the
+        ladder existed on exactly one path and the tests could not see it.
+
+        An injected runner may return either shape:
+          - a dict  -- the parsed envelope, treated as a successful exit;
+          - a (rc, stdout, stderr) tuple -- for exercising NON-zero exits.
+        """
+        if self._runner is not None:
+            out = self._runner(argv, prompt)
+            if isinstance(out, tuple):
+                rc, so, se = out
+                return int(rc), so or "", se or ""
+            return 0, json.dumps(out), ""
+        import subprocess
+        p = subprocess.run(argv, input=prompt, env=self._env(),
+                           cwd=self.cwd, capture_output=True, text=True,
+                           timeout=budget)
+        return p.returncode, p.stdout or "", p.stderr or ""
+
     def _invoke(self, prompt: str, system: Optional[str] = None,
-                effort: Optional[str] = None, timeout_s: Optional[float] = None) -> dict:
+                effort: Optional[str] = None, timeout_s: Optional[float] = None,
+                drop: Optional[int] = None) -> dict:
         import subprocess
         budget = self.timeout_s if timeout_s is None else timeout_s
+        # Start from the level already known to work, so the ladder is probed
+        # once rather than on every wake.
+        drop = self._flag_drop if drop is None else drop
         try:
             # THE INJECTED TRANSPORT IS INSIDE THE TRY ON PURPOSE. It used to sit above it, which
             # meant the degrade-on-timeout policy below existed only on the subprocess path and
             # could not be exercised by any test -- retry policy silently coupled to transport.
             # A test runner that raises TimeoutExpired now travels the same path production does.
-            argv = self._argv(system, effort)
+            argv = self._argv(system, effort, drop=drop)
             sys_text = system or ANALYST_SYSTEM
+            # `prompt` IS NOT REASSIGNED. Both retry paths below recurse with it,
+            # and an in-place prepend meant the retry re-prepended a system text
+            # the payload already carried -- the model got the whole 9,098-char
+            # universe prompt twice, on exactly the path (oversized system, so
+            # stdin) that was already the failing one.
+            stdin_text = prompt
             if "--system-prompt" not in argv:
                 # TOO LONG FOR THE COMMAND LINE. Carried in stdin instead, which
                 # is unbounded. Logged at WARNING every time: a transport that
@@ -570,12 +720,8 @@ class ClaudeCodeAnalyst(AnalystProvider):
                             "budget -- sending it in stdin instead. The model "
                             "sees the same text; only the transport changes.",
                             len(sys_text), self.MAX_SYSTEM_ARGV_CHARS)
-                prompt = f"{sys_text}\n\n---\n\n{prompt}"
-            if self._runner is not None:
-                return self._runner(argv, prompt)
-            p = subprocess.run(argv, input=prompt, env=self._env(),
-                               cwd=self.cwd, capture_output=True, text=True,
-                               timeout=budget)
+                stdin_text = f"{sys_text}\n\n---\n\n{prompt}"
+            rc, out_s, err_s = self._run(argv, stdin_text, budget)
         except FileNotFoundError as e:
             raise AnalystError(
                 f"{self.binary!r} not found. Install Claude Code on this box and "
@@ -602,22 +748,85 @@ class ClaudeCodeAnalyst(AnalystProvider):
                                    f"venue, not reasoning depth") from e
             log.warning("claude timed out after %ss; retrying once at %s effort within %ss",
                         budget, self.FALLBACK_EFFORT, self.FALLBACK_TIMEOUT_S)
+            # `drop` is carried: a timeout is not evidence about the flags, so
+            # the retry must not silently climb back to a rung already known to
+            # be rejected.
             return self._invoke(prompt, system, effort=self.FALLBACK_EFFORT,
-                                timeout_s=self.FALLBACK_TIMEOUT_S)
-        if p.returncode != 0:
+                                timeout_s=self.FALLBACK_TIMEOUT_S, drop=drop)
+        auth = self._auth_failure(out_s, err_s) if rc != 0 else None
+        if auth is not None:
+            # NOT A FLAG. The ladder below and this branch are triggered by an
+            # identical envelope -- exit 1, zero tokens, zero API time -- and the
+            # only thing that separates them is the CLI's own message. Walking
+            # the ladder here would spend four invocations, log "CLI FLAGS
+            # DEGRADED", leave the model unpinned, and still be blind, with the
+            # log now actively pointing away from the cause.
+            #
+            # AND NOTHING THE DESK CAN DO WILL FIX IT. A subscription login is
+            # an interactive browser flow: it is the principal's act, the same
+            # way arming capital is. So this raises immediately with the exact
+            # command, and self_heal's ESCALATE path carries it to Telegram
+            # rather than pretending a retry might help.
+            raise AnalystError(
+                f"claude cannot authenticate: {auth}. "
+                f"THIS IS NOT A FLAG, A RATE LIMIT OR AN OUTAGE, and no retry "
+                f"will clear it -- the desk stays blind until somebody logs in. "
+                f"On the box, as the user the scheduled task runs as, run "
+                f"`claude` once interactively and complete the browser login; "
+                f"reads resume on the next wake with no restart needed.")
+        if rc != 0 and self._is_local_rejection(out_s, err_s) and drop < len(self.FLAG_LADDER):
+            # THE CLI REFUSED BEFORE IT BILLED ANYTHING. Zero tokens, zero API
+            # time, a session id and exit 1: it parsed, started, and declined.
+            # That is what a rejected FLAG looks like, and a CLI that updates
+            # under a long-running desk is a recurring risk rather than a
+            # one-off -- the flags this desk passes were accepted for weeks
+            # before 2026-08-28 and then were not.
+            #
+            # Step down the ladder rather than stay blind. The level that works
+            # is REMEMBERED, so the probe costs one extra invocation once and
+            # not on every wake.
+            nxt = drop + 1
+            log.warning("claude refused locally (exit %s, no tokens spent) -- "
+                        "retrying without %s. A rejected flag and an expired "
+                        "login look identical here; if the ladder runs out it "
+                        "was the login.",
+                        rc, self.FLAG_LADDER[drop])
+            out = self._invoke(prompt, system, effort, timeout_s, drop=nxt)
+            if self._flag_drop < nxt:
+                self._flag_drop = nxt
+                log.error("CLI FLAGS DEGRADED to drop=%d (%s removed). %s",
+                          nxt, ", ".join(self.FLAG_LADDER[:nxt]),
+                          "MODEL IS NO LONGER PINNED -- reads may come from a "
+                          "different model and are not comparable in one cohort; "
+                          "analyst_health reports which."
+                          if "--model" in self.FLAG_LADDER[:nxt]
+                          else "Reasoning depth or bounds reduced, capability intact.")
+            return out
+        if rc != 0:
             # 300 chars was cutting off every failure at almost exactly the point where the
             # CLI's own JSON error payload names the actual problem -- every "analyst
             # unavailable" line in production ended with "output_tokens": and nothing after,
             # for days, because the field that would have explained the failure sits past that
             # cutoff. 2000 chars comfortably covers the CLI's error JSON without risking an
             # unbounded log line from a truly pathological response.
-            raise AnalystError(f"claude exited {p.returncode}: "
-                               f"{(p.stderr or p.stdout)[:2000]}")
+            #
+            # THE LADDER IS NAMED WHEN IT IS EXHAUSTED. Reaching here at the last
+            # rung means every flag was dropped and the CLI still refused before
+            # spending a token, which is no longer a flag problem: it is the
+            # login. Saying so turns a recurring hour of guessing into one line.
+            exhausted = ""
+            if drop >= len(self.FLAG_LADDER) and self._is_local_rejection(out_s, err_s):
+                exhausted = (" -- EVERY flag in the ladder was dropped and the CLI "
+                             "still refused without spending a token, so this is NOT "
+                             "a rejected flag. Log in on the box: `claude` once, "
+                             "interactively, as the user the task runs as.")
+            raise AnalystError(f"claude exited {rc}: "
+                               f"{(err_s or out_s)[:2000]}{exhausted}")
         try:
-            return json.loads(p.stdout)
+            return json.loads(out_s)
         except json.JSONDecodeError as e:
             raise AnalystError(f"claude did not return JSON: "
-                               f"{p.stdout[:300]!r}") from e
+                               f"{out_s[:300]!r}") from e
 
     def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
         if charts:
