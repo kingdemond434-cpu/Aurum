@@ -186,12 +186,49 @@ def check_quant_inbox(base: Path, now: Optional[datetime] = None) -> Finding:
                        "not scheduled — quant's installer only registers it when "
                        "run with -AurumRoot.")
     age_h = (now.timestamp() - inbox.stat().st_mtime) / 3600.0
-    if age_h > INBOX_STALE_H:
+    if age_h <= INBOX_STALE_H:
+        return Finding("quant inbox", True, f"updated {age_h:.0f}h ago")
+
+    # THE FILE'S AGE IS NOT THE TRANSPORT'S AGE, and this check asserted that it
+    # was -- "A link is broken, which is not the same as quant having found
+    # nothing", committed by the check itself. Sync-QuantFindings.ps1 APPENDS,
+    # and when there are no new rows it does not touch the file at all, so the
+    # mtime records the last time CONTENT arrived and says nothing about whether
+    # the transport ran this morning. Observed 2026-08-28: 180h "stale" on a
+    # chain that may well have been running daily and finding nothing new.
+    #
+    # The heartbeat separates the two, and its ABSENCE is read as unmeasured
+    # rather than as proof of a break -- an old box simply predates it.
+    hb = base / "inbox" / "quant_sync_heartbeat.json"
+    beat = None
+    if hb.exists():
+        try:
+            beat = json.loads(hb.read_text(encoding="utf-8"))
+        except Exception:                              # noqa: BLE001
+            beat = None
+    if beat is None:
         return Finding("quant inbox", False,
-                       f"last updated {age_h:.0f}h ago and the chain runs daily. "
-                       f"A link is broken, which is not the same as quant having "
-                       f"found nothing.")
-    return Finding("quant inbox", True, f"updated {age_h:.0f}h ago")
+                       f"no new findings for {age_h:.0f}h and NO transport "
+                       f"heartbeat to say whether it ran. UNMEASURED which of "
+                       f"the two it is — a broken link and a quiet quant desk "
+                       f"look identical from the file's age alone.")
+    hb_age = (now.timestamp() - hb.stat().st_mtime) / 3600.0
+    if hb_age > INBOX_STALE_H:
+        return Finding("quant inbox", False,
+                       f"the TRANSPORT last ran {hb_age:.0f}h ago on a daily "
+                       f"chain (status {beat.get('status')!r}) — the link is "
+                       f"genuinely broken, and no new findings for {age_h:.0f}h "
+                       f"is a consequence of that, not evidence about quant.")
+    if beat.get("status") == "no-source":
+        return Finding("quant inbox", False,
+                       f"the transport ran {hb_age:.0f}h ago and found NO SOURCE "
+                       f"file at {beat.get('source')}. The break is UPSTREAM: "
+                       f"quant's daily_cycle is not exporting. Aurum's side of "
+                       f"the chain is working.")
+    return Finding("quant inbox", True,
+                   f"transport alive ({hb_age:.0f}h ago, status "
+                   f"{beat.get('status')!r}); no NEW findings for {age_h:.0f}h, "
+                   f"which is the quant desk being quiet, not a broken link.")
 
 
 #: The phrase quant's exporter puts on a certified-survivor finding. Matched

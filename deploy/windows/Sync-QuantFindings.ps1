@@ -63,6 +63,34 @@ $dst = Join-Path $dstDir "quant_findings.jsonl"
 
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
+# THE HEARTBEAT. A transport that delivers nothing leaves NO trace otherwise:
+# when there are no new rows this script does not touch the inbox file, so its
+# mtime stays at the last time content actually arrived. The watchdog read that
+# mtime and declared "a link is broken" after 180 hours -- which was exactly the
+# error its own text warns against, committed by the check itself, because "ran
+# daily and found nothing new" and "has not run since Tuesday" are
+# indistinguishable from the data file alone.
+#
+# Written on EVERY path, including the no-source exit above, so liveness and
+# content age are separate facts with separate evidence.
+function Write-Heartbeat($status, $newCount, $total) {
+    try {
+        $hbDir = Join-Path $AurumRoot "inbox"
+        New-Item -ItemType Directory -Force -Path $hbDir | Out-Null
+        $hb = Join-Path $hbDir "quant_sync_heartbeat.json"
+        $obj = [ordered]@{
+            at      = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            status  = $status
+            new     = $newCount
+            total   = $total
+            source  = $src
+        }
+        ($obj | ConvertTo-Json -Compress) | Set-Content -LiteralPath $hb -Encoding utf8
+    } catch {
+        Write-Host ("  WARNING could not write heartbeat: {0}" -f $_.Exception.Message)
+    }
+}
+
 if (-not (Test-Path $src)) {
     # NOT an error, and deliberately not silent. reports\ is gitignored and
     # lives on whichever host ran the hunts, so its absence here is a real and
@@ -82,6 +110,7 @@ if (-not (Test-Path $src)) {
     # nothing", listed in task_health.BENIGN_PER_TASK so it is reported as the
     # UNMEASURED state it is rather than as either a pass or a crash. Same fix
     # as the quant desk's sync_shadow_to_git.ps1, which had the identical bug.
+    Write-Heartbeat "no-source" 0 0
     exit 3
 }
 
@@ -123,6 +152,7 @@ foreach ($line in (Get-Content -LiteralPath $src -Encoding utf8)) {
 
 if ($new.Count -eq 0) {
     Write-Host ("  0 new finding(s); inbox already holds {0}. Steady state for a daily run." -f $have.Count)
+    Write-Heartbeat "no-new" 0 $have.Count
 } else {
     Add-Content -LiteralPath $dst -Value $new -Encoding utf8
     Write-Host ("  {0} new finding(s) appended to {1}" -f $new.Count, $dst)
@@ -134,6 +164,8 @@ if ($new.Count -eq 0) {
         } catch { }
     }
 }
+
+if ($new.Count -gt 0) { Write-Heartbeat "delivered" $new.Count $have.Count }
 
 Write-Host "$stamp sync complete. Aurum's next cycle queues anything new as a"
 Write-Host "         SEALED HYPOTHESIS at zero authority -- absorption is not adoption."

@@ -148,7 +148,19 @@ def test_a_never_delivered_inbox_names_the_likely_cause(tmp_path):
     assert "-AurumRoot" in f.detail
 
 
-def test_a_stale_inbox_is_a_broken_link_not_a_quiet_quant_desk(tmp_path):
+def test_a_stale_inbox_with_no_heartbeat_is_UNMEASURED_not_a_verdict(tmp_path):
+    """THIS TEST USED TO ASSERT THE OPPOSITE, and it was wrong.
+
+    It was named "a stale inbox is a broken link, not a quiet quant desk" and
+    pinned that claim. But Sync-QuantFindings.ps1 APPENDS, and with no new rows
+    it does not touch the file — so the mtime records when CONTENT last arrived
+    and says nothing about whether the transport ran. The check was making
+    exactly the inference its own message warned against, and this test held it
+    there.
+
+    With a heartbeat the two are separable (test_inbox_liveness.py). Without
+    one, the honest answer is that it cannot be told — which is what an older
+    box, predating the heartbeat, will report."""
     import os
     b = _inbox(tmp_path, [{"statement": "x"}])
     p = b / "inbox" / "quant_findings.jsonl"
@@ -156,7 +168,8 @@ def test_a_stale_inbox_is_a_broken_link_not_a_quiet_quant_desk(tmp_path):
     os.utime(p, (old, old))
     f = _by(audit([], now=NOW, base=b), "quant inbox")
     assert not f.ok
-    assert "not the same as quant having found nothing" in f.detail
+    assert "UNMEASURED" in f.detail
+    assert "look identical" in f.detail
 
 
 def test_the_survivor_check_matches_the_real_exporter_marker(tmp_path):
