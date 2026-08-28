@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "46/81 wakes (57%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "detail": "47/82 wakes (57%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
           "ok": false
         },
         {
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "113 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "114 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -184,22 +184,22 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.0h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "233 unique decision(s), no tears",
+          "detail": "234 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38871MB free",
+          "detail": "38859MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 14 min ago, after a boot 141.5h ago",
+          "detail": "wrote 0 min ago, after a boot 141.7h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 113,
-      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"dbf55cc5-eaf5-4f79-86c1-b034dca8bbf1\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
-      "last": "2026-08-28T17:15:00.550878+00:00",
+      "count": 114,
+      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"eb5692dd-ee9c-49f0-8026-716f1467d818\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
+      "last": "2026-08-28T17:30:01.012056+00:00",
       "stage": "survey",
       "why": {
         "duration_api_ms": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T17:46:04.935693+00:00",
-  "last_row_utc": "2026-08-28T17:15:00.550878+00:00",
-  "ledger_rows": 250,
+  "generated_utc": "2026-08-28T18:00:00.836138+00:00",
+  "last_row_utc": "2026-08-28T17:30:01.012056+00:00",
+  "ledger_rows": 251,
   "total_faults": 10
 }
