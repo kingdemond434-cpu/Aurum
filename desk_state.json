@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "46/81 wakes (57%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "detail": "47/82 wakes (57%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
           "ok": false
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 186h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 187h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.2h ago",
+          "detail": "18 sleeve(s) accruing, published 0.5h ago",
           "ok": true
         }
       ],
@@ -118,13 +118,13 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "115 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "116 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "235 unique decision(s), no tears",
+          "detail": "236 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38833MB free",
+          "detail": "38798MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 14 min ago, after a boot 142.0h ago",
+          "detail": "wrote 12 min ago, after a boot 142.2h ago",
           "ok": true
         }
       ],
@@ -208,20 +208,11 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 115,
-      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"94bdc1c9-883f-4c15-82c2-0441f47b0b24\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
-      "last": "2026-08-28T17:45:00.455788+00:00",
+      "count": 116,
+      "error": "claude returned text that is not a valid AnalystUniverse: 1 validation error for AnalystUniverse\nsurvey\n  String should have at most 800 characters [type=string_too_long, input_value='Worked both directions a...ment makes unreachable.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_too_long; got '{\"candidates\":[{\"setup\":\"TREND_CONTINUATION\",\"direction\"",
+      "last": "2026-08-28T18:00:00.450709+00:00",
       "stage": "survey",
-      "why": {
-        "duration_api_ms": 0,
-        "input_tokens": 0,
-        "is_error": true,
-        "output_tokens": 0,
-        "reading": "the API was never called -- this is a LOCAL failure (input, login or binary), not a limit or an outage",
-        "result": "You've hit your session limit \u00b7 resets 8:10pm (Europe/Berlin)",
-        "stop_reason": "stop_sequence",
-        "subtype": "success"
-      }
+      "why": {}
     },
     "REFUSAL_COMPILER": {
       "count": 58,
@@ -245,8 +236,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T18:15:31.093535+00:00",
-  "last_row_utc": "2026-08-28T17:45:00.455788+00:00",
-  "ledger_rows": 252,
+  "generated_utc": "2026-08-28T18:30:00.194424+00:00",
+  "last_row_utc": "2026-08-28T18:00:00.450709+00:00",
+  "ledger_rows": 253,
   "total_faults": 10
 }
