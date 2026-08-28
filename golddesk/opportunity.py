@@ -232,17 +232,50 @@ class Heat:
     correlation_haircut: float = 0.65     # same-symbol same-direction overlap
     max_daily_loss_r: float = 3.0
 
+    #: Whether hitting the daily loss REFUSES the signal, or merely says so.
+    #:
+    #: ADVISORY BY DEFAULT, BECAUSE THIS DESK HOLDS NO CAPITAL. A daily-loss cap
+    #: is ruin control, and ruin control protects an account. Aurum has no
+    #: account: it sends signals, and the operator decides what to take and at
+    #: what size. So refusing here does not prevent a loss — it prevents the
+    #: OPERATOR SEEING a setup, and hands them less information on precisely the
+    #: day they have most reason to want it. The exposure being managed is
+    #: theirs, and they are the only one who can manage it.
+    #:
+    #: MEASURED, 2026-08-28: 28 of 78 recent refusals (36%) were this one line —
+    #: the single largest suppressor of output on the desk, and none of it was
+    #: the analyst declining a setup.
+    #:
+    #: THE NUMBER IS NOT DELETED, which is the part that matters. day_loss_r is
+    #: still tracked, still reported, still sizes through
+    #: allocation.drawdown_scalar, and the state still rides in the ledger row —
+    #: so "did signals sent after a -3R day do worse" stays an answerable
+    #: question instead of becoming an assumption. What changed is that the
+    #: thing being measured no longer prevents the measurement.
+    #:
+    #: Set True the moment anything here places its own orders. That is what
+    #: makes this a property of an ADVISORY desk rather than a loosening.
+    daily_loss_blocks: bool = False
+
     def room_for(self, open_risks: Sequence[float], same_direction: int,
                  new_risk_r: float, day_loss_r: float) -> tuple[bool, str]:
-        if day_loss_r <= -self.max_daily_loss_r:
+        over_daily = day_loss_r <= -self.max_daily_loss_r
+        if over_daily and self.daily_loss_blocks:
             return False, f"daily loss {day_loss_r:.2f}R at limit"
+        # CARRIED, NOT ENFORCED. The reason string lands in the ledger row, so a
+        # signal sent past the cap is labelled as such and stays separable in
+        # every later analysis.
+        note = (f" [daily loss {day_loss_r:.2f}R past the {self.max_daily_loss_r:.2f}R "
+                f"advisory cap — ADVISORY on a desk that holds no capital]"
+                if over_daily else "")
         effective = sum(open_risks) + new_risk_r * (
             1.0 + self.correlation_haircut * same_direction)
         if effective > self.max_open_risk_r:
             return False, (f"portfolio heat {effective:.2f}R would exceed "
                            f"{self.max_open_risk_r:.2f}R "
-                           f"({len(open_risks)} open, {same_direction} same-direction)")
-        return True, f"heat {effective:.2f}R of {self.max_open_risk_r:.2f}R"
+                           f"({len(open_risks)} open, {same_direction} same-direction)"
+                           + note)
+        return True, f"heat {effective:.2f}R of {self.max_open_risk_r:.2f}R{note}"
 
 
 # --------------------------------------------------------------------------

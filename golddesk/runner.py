@@ -378,9 +378,25 @@ class RiskLimits:
     portfolio heat in opportunity.Heat, which is denominated in risk.
     """
     max_risk_per_trade_pct: float = 0.5
-    max_daily_loss_r: float = 3.0        # ruin control, not selectivity
+    max_daily_loss_r: float = 3.0        # advisory on an advisory desk; see below
     max_open_risk_r: float = 2.0         # total R live across all positions
     correlation_haircut: float = 0.65    # same-symbol same-direction overlap
+
+    #: The same switch as opportunity.Heat.daily_loss_blocks, on the live path.
+    #: The two MUST agree, or the universe arm and the single-read arm would
+    #: refuse differently for the same reason and the comparison between them
+    #: would be measuring the discrepancy instead of the reads.
+    #:
+    #: False because Aurum HOLDS NO CAPITAL. A daily-loss cap is ruin control,
+    #: and ruin control protects an account; this desk has none. It sends
+    #: signals and the operator decides what to take. Refusing here does not
+    #: prevent a loss — it prevents the operator seeing the setup, on exactly
+    #: the day they have most reason to want it.
+    #:
+    #: MEASURED 2026-08-28: 28 of 78 recent refusals (36%) were this line, the
+    #: largest single suppressor of output on the desk. Set True the moment
+    #: anything here places its own orders.
+    daily_loss_blocks: bool = False
 
 
 @dataclass
@@ -403,16 +419,23 @@ class RiskState:
 
 def risk_check(sig: CompiledSignal, st: RiskState, lim: RiskLimits) -> tuple[bool, str]:
     """Solvency only. Nothing here refuses a trade for being the Nth today."""
-    if st.day_loss_r <= -lim.max_daily_loss_r:
+    over_daily = st.day_loss_r <= -lim.max_daily_loss_r
+    if over_daily and lim.daily_loss_blocks:
         return False, f"daily loss {st.day_loss_r:.2f}R at ruin limit"
+    # CARRIED, NOT ENFORCED. The note lands in the ledger row, so a signal sent
+    # past the cap stays labelled and separable in every later analysis — which
+    # is the whole reason the number is kept rather than deleted.
+    note = (f" [daily loss {st.day_loss_r:.2f}R past the "
+            f"{lim.max_daily_loss_r:.2f}R advisory cap — ADVISORY on a desk "
+            f"that holds no capital]" if over_daily else "")
     same_dir = sum(1 for d in st.open_directions if d == sig.direction)
     new_risk = 1.0                                   # each trade risks 1R by construction
     effective = sum(st.open_risks) + new_risk * (1.0 + lim.correlation_haircut * same_dir)
     if effective > lim.max_open_risk_r:
         return False, (f"portfolio heat {effective:.2f}R would exceed "
                        f"{lim.max_open_risk_r:.2f}R ({st.open_positions} open, "
-                       f"{same_dir} same-direction)")
-    return True, f"heat {effective:.2f}R of {lim.max_open_risk_r:.2f}R"
+                       f"{same_dir} same-direction)" + note)
+    return True, f"heat {effective:.2f}R of {lim.max_open_risk_r:.2f}R{note}"
 
 
 # --------------------------------------------------------------------------
