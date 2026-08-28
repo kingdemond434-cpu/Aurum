@@ -144,11 +144,34 @@ def check_answer_rate(rows: Sequence[dict], now: Optional[datetime] = None,
                        f"UNMEASURED — {total} wake(s) in {hours:.0f}h, under {MIN_WAKES}")
     frac = len(blind) / total
     if frac > BLIND_FRACTION:
-        return Finding("analyst answering", False,
+        # IS IT STILL HAPPENING? This is a RATE over a window, which is the
+        # right shape for the question it asks -- but a rate cannot tell an
+        # ongoing outage from a resolved one, and for twelve hours after a fix
+        # it reads exactly like the outage. Naming the current state costs one
+        # sentence and stops the report contradicting the desk's own ANALYST
+        # BACK message, which is how a whole report gets distrusted.
+        # TIES BREAK BY LEDGER ORDER, not by whichever row max() happened to
+        # see first. Rows written in the same second are ordinary -- a wake
+        # produces its decision immediately -- and a bare max() on timestamp
+        # picked an ANSWERED row out of a batch that ended in BLIND, reporting a
+        # desk blind on 25 of 25 wakes as recovered. The ledger is append
+        # ordered, so position is the tiebreaker that means anything.
+        latest = (max(enumerate(rec), key=lambda p: ((_ts(p[1]) or now), p[0]))[1]
+                  if rec else None)
+        recovered = (latest is not None and latest.get("kind") != "BLIND"
+                     and not _is_degraded(latest))
+        # ok=recovered, not `not recovered`. Inverted on the first attempt,
+        # which reported a desk blind on 25 of 25 wakes as PASSING.
+        return Finding("analyst answering", recovered,
                        f"{len(blind)}/{total} wakes ({frac:.0%}) got NO answer in "
-                       f"the last {hours:.0f}h. The desk is BLIND on those bars, "
-                       f"not selective — a wedged session, an expired login or a "
-                       f"provider outage all look like this.")
+                       f"the last {hours:.0f}h. "
+                       + ("The MOST RECENT wake answered, so this is a rate over "
+                          "a window containing a RESOLVED outage — not a desk "
+                          "that is blind now."
+                          if recovered else
+                          "The desk is BLIND on those bars, not selective — a "
+                          "wedged session, an expired login or a provider outage "
+                          "all look like this."))
     return Finding("analyst answering", True,
                    f"{len(answered)}/{total} wakes answered ({1 - frac:.0%})")
 
@@ -240,8 +263,9 @@ def check_login(rows: Sequence[dict], now: Optional[datetime] = None,
     the one field nothing was reading.
     """
     now = now or datetime.now(timezone.utc)
+    rec = _recent(rows, now, hours)
     hits = []
-    for r in _recent(rows, now, hours):
+    for r in rec:
         if r.get("kind") != "BLIND":
             continue
         dec = r.get("decision") or {}
@@ -254,15 +278,42 @@ def check_login(rows: Sequence[dict], now: Optional[datetime] = None,
     if not hits:
         return Finding("analyst login", True,
                        f"no login failure in {hours:.0f}h")
+
+    # HAS IT BEEN FIXED SINCE? A window check fires on any matching row in the
+    # last 12 hours, so it stayed BROKEN for twelve hours AFTER a successful
+    # login -- and on 2026-08-28 it did exactly that: Telegram said ANALYST BACK
+    # while this said THE LOGIN HAS EXPIRED, at the same moment, both from the
+    # same ledger. A contradiction like that does not get investigated, it gets
+    # the whole report distrusted.
+    #
+    # Same lesson as check_excursion_survives, one file over: a check that
+    # cannot clear when the thing it names is fixed is not a check. The
+    # discriminator is ORDER -- a real analyst answer AFTER the last login
+    # failure means the credential works now, whatever happened this morning.
+    last_fail = _ts(hits[-1]) or now
+    answered_after = [
+        r for r in rec
+        if str(r.get("kind", "")) in ("SIGNAL", "REFUSAL_MODEL",
+                                      "REFUSAL_COMPILER", "REFUSAL_ROUTER")
+        and not _is_degraded(r) and (_ts(r) or now) > last_fail]
+    if answered_after:
+        back = _ts(answered_after[0])
+        return Finding("analyst login", True,
+                       f"RECOVERED — {len(hits)} login failure(s) earlier in the "
+                       f"window, but the analyst has answered "
+                       f"{len(answered_after)} time(s) since the last one"
+                       + (f" (first at {back:%H:%M}Z)" if back else "")
+                       + ". The credential works now.")
+
     first = _ts(hits[0]) or now
     return Finding("analyst login", False,
                    f"THE LOGIN HAS EXPIRED — {len(hits)} blind wake(s) since "
                    f"{first:%Y-%m-%d %H:%M}Z carry the CLI's own "
-                   f"'OAuth session expired' message. No retry, restart, flag "
-                   f"change or watchdog clears this: run `claude` once "
-                   f"interactively on the box, as the user the scheduled task "
-                   f"runs as, and complete the browser login. Reads resume on "
-                   f"the next wake.")
+                   f"'OAuth session expired' message, and NOTHING has answered "
+                   f"since. No retry, restart, flag change or watchdog clears "
+                   f"this: run `claude setup-token` on the box, as the user the "
+                   f"scheduled task runs as, and complete the browser login. "
+                   f"Reads resume on the next wake.")
 
 
 def audit(rows: Sequence[dict], now: Optional[datetime] = None,

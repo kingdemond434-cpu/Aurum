@@ -284,5 +284,65 @@ def test_the_end_to_end_rows_are_labelled_in_the_ledger():
     assert stamped, "no row records that it came from the fallback"
     assert all(r["decision"]["model"] == "rules-v1" for r in stamped)
 
+
+# --------------------------------------------------------------------------
+# A check that cannot clear is not a check. Learned on excursion, repeated here.
+
+def _r(kind, ts, degraded=False, login=False):
+    dec = {"provider": "claudecode", "model": "claude-opus-5"}
+    if degraded:
+        dec = {"usage": {"degraded": True}}
+    if login:
+        dec = {"cli": {"result": "Failed to authenticate: OAuth session expired"}}
+    return {"t0": ts, "kind": kind, "decision": dec}
+
+
+def test_the_login_check_clears_once_the_analyst_answers_again():
+    """OBSERVED 2026-08-28: Telegram said ANALYST BACK while this said THE LOGIN
+    HAS EXPIRED, at the same moment, from the same ledger. A contradiction like
+    that does not get investigated — it gets the whole report distrusted."""
+    from golddesk.analyst_health import check_login
+    rows = ([_r("BLIND", f"2026-08-28T0{h}:00:00+00:00", login=True) for h in range(1, 9)]
+            + [_r("SIGNAL", "2026-08-28T11:30:00+00:00")])
+    f = check_login(rows, NOW.replace(hour=12))
+    assert f.ok, f.detail
+    assert "RECOVERED" in f.detail
+    assert "credential works now" in f.detail
+
+
+def test_it_still_fires_while_the_login_is_actually_dead():
+    """The clearing must depend on a real answer, not on time passing."""
+    from golddesk.analyst_health import check_login
+    rows = [_r("BLIND", f"2026-08-28T0{h}:00:00+00:00", login=True) for h in range(1, 9)]
+    f = check_login(rows, NOW.replace(hour=12))
+    assert not f.ok
+    assert "NOTHING has answered since" in f.detail
+
+
+def test_a_fallback_read_does_not_clear_the_login_check():
+    """The rule-based arm answering proves nothing about the credential — that
+    is the entire reason degraded reads are stamped."""
+    from golddesk.analyst_health import check_login
+    rows = ([_r("BLIND", "2026-08-28T01:00:00+00:00", login=True)]
+            + [_r("SIGNAL", "2026-08-28T11:30:00+00:00", degraded=True)])
+    assert not check_login(rows, NOW.replace(hour=12)).ok
+
+
+def test_the_answer_rate_says_when_an_outage_is_RESOLVED():
+    rows = ([_r("BLIND", "2026-08-28T0%d:00:00+00:00" % h) for h in range(1, 10)]
+            + [_r("SIGNAL", "2026-08-28T1%d:00:00+00:00" % h) for h in range(0, 2)]
+            + [_r("SIGNAL", "2026-08-28T11:30:00+00:00")]
+            + [_r("REFUSAL_MODEL", "2026-08-28T11:45:00+00:00")] * 9)
+    f = check_answer_rate(rows, NOW.replace(hour=12))
+    assert f.ok
+    assert "RESOLVED outage" in f.detail
+
+
+def test_the_answer_rate_still_fails_while_the_desk_is_blind_now():
+    rows = [_r("BLIND", "2026-08-28T0%d:00:00+00:00" % (h % 10)) for h in range(MIN_WAKES + 5)]
+    f = check_answer_rate(rows, NOW.replace(hour=12))
+    assert not f.ok
+    assert "BLIND on those bars" in f.detail
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
