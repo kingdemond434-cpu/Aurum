@@ -312,6 +312,7 @@ def main(argv=None) -> int:
     from golddesk.ledger import Ledger
     from golddesk.opportunity import build_cohorts
     from golddesk import analyst_health as ah
+    from golddesk import read_quality as rq
     from golddesk import capture as cap
     from golddesk import task_health as th
     from golddesk.remediate import Remediator, plan, render
@@ -345,13 +346,19 @@ def main(argv=None) -> int:
     ah_findings = ah.audit(rows, expected_model=os.environ.get("AURUM_MODEL"))
     print(ah.render(ah_findings))
 
+    # IS THE ANALYST ANY GOOD, not merely responding. Answerable only against
+    # resolved outcomes, so it reports UNMEASURED for as long as that is the
+    # honest answer -- which, with two resolved trades, is weeks yet.
+    rq_findings = rq.audit(rows)
+    print(rq.render(rq_findings))
+
     # WHO WATCHES THE WATCHDOGS. Every check above runs inside a scheduled task,
     # and a stopped check looks exactly like a passing one.
     th_findings = th.audit(_read_task)
     print(th.render(th_findings))
 
     findings = (list(findings) + list(cap_findings) + list(ah_findings)
-                + list(th_findings))
+                + list(rq_findings) + list(th_findings))
 
     remedies, escalations = plan(findings, restart_desk=_restart_desk,
                                  refresh_flows=_refresh_flows,

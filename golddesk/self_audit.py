@@ -341,6 +341,55 @@ def check_macro_is_measured(rows: Sequence[dict]) -> Finding:
     return Finding("macro", True, f"{len(recent) - blind}/{len(recent)} briefs carried macro")
 
 
+def check_desk_started_after_boot(base: Path,
+                                  boot_time: Optional[datetime] = None,
+                                  now: Optional[datetime] = None,
+                                  grace_min: float = 15.0) -> Finding:
+    """Did the desk actually come back up after the machine last booted?
+
+    THE GAP THIS PARTLY CLOSES. Every task runs at LogonType Interactive, so a
+    reboot that never reaches a desktop takes the desk AND every watchdog
+    together, and nothing is left running to notice. That case cannot be caught
+    from inside the box at all.
+
+    What CAN be caught is the near miss: the machine rebooted, something is
+    running again, and the desk is NOT among it -- a logon that happened late, a
+    task that failed to start, an autologon that worked once and stopped. The
+    checkpoint's mtime says when the desk last wrote; the boot time says when
+    the machine last started. A desk whose newest write predates the boot did
+    not come back.
+
+    UNMEASURED when boot time is unavailable, which it is on any box without
+    psutil -- and stated as such rather than passed.
+    """
+    now = now or datetime.now(timezone.utc)
+    if boot_time is None:
+        try:
+            import psutil
+            boot_time = datetime.fromtimestamp(psutil.boot_time(), tz=timezone.utc)
+        except Exception:                              # noqa: BLE001
+            return Finding("came back after boot", True,
+                           "UNMEASURED — boot time unavailable (no psutil). Not "
+                           "the same as healthy.")
+    st = base / "state" / "service_state.json"
+    if not st.exists():
+        return Finding("came back after boot", True, "no checkpoint yet")
+    wrote = datetime.fromtimestamp(st.stat().st_mtime, tz=timezone.utc)
+    if (now - boot_time).total_seconds() / 60.0 < grace_min:
+        return Finding("came back after boot", True,
+                       f"booted {(now - boot_time).total_seconds() / 60:.0f} min "
+                       f"ago — inside the {grace_min:.0f} min grace")
+    if wrote < boot_time:
+        return Finding("came back after boot", False,
+                       f"the machine booted {boot_time.isoformat()} and the desk "
+                       f"has not written since {wrote.isoformat()}. It did not "
+                       f"come back — a late logon, a task that failed to start, "
+                       f"or autologon that stopped working.")
+    return Finding("came back after boot", True,
+                   f"wrote {(now - wrote).total_seconds() / 60:.0f} min ago, after "
+                   f"a boot {(now - boot_time).total_seconds() / 3600:.1f}h ago")
+
+
 def audit(rows: Sequence[dict], cohorts: Optional[dict] = None,
           now: Optional[datetime] = None,
           base: Optional[Path] = None) -> list[Finding]:
@@ -365,6 +414,7 @@ def audit(rows: Sequence[dict], cohorts: Optional[dict] = None,
             check_checkpoint_is_fresh(base, now),
             check_ledger_integrity(base),
             check_disk_headroom(base),
+            check_desk_started_after_boot(base),
         ]
     return out
 

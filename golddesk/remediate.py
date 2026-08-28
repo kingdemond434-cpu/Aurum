@@ -222,6 +222,25 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
                 "login does not, and the attempt cap says which it was",
                 restart_desk))
 
+        elif f.check in ("calibration", "edge", "selection"):
+            # NEVER MECHANICAL, and the most important refusal in this file.
+            #
+            # "The reads resolve negative" is not fixed by restarting anything.
+            # It is fixed by changing what the analyst is asked or by stopping
+            # trading the mechanism, and both are judgement made against
+            # evidence. A process that responded to a bad edge by adjusting its
+            # own inputs would be a desk tuning itself toward a scorecard.
+            escalate.append(f)
+
+        elif f.check == "came back after boot":
+            # MECHANICAL. The desk did not restart after a reboot; starting it
+            # is the whole remedy, and it is the same action the watchdog takes.
+            remedies.append(Remedy(
+                f.check, "restart the desk",
+                "the machine came back and the desk did not; starting it is the "
+                "entire fix, and the attempt cap escalates if it will not stay up",
+                restart_desk))
+
         elif f.check in ("analyst latency", "analyst model"):
             # NOT MECHANICAL. Latency drifting into the budget is a provider
             # capacity question and a model that changed under the desk is a
