@@ -277,6 +277,28 @@ class AnalystRead(BaseModel):
     setup: Setup
     direction: Literal["LONG", "SHORT", "NONE"]
     entry_ref: str = Field(description='Level id, or "MARKET" to enter at the live quote.')
+    #: The level that must TRADE before this idea exists at all, or "NONE".
+    #:
+    #: WHY THIS FIELD HAD TO EXIST. Observed live 2026-08-28, a real signal:
+    #:
+    #:   "a trade through L9 would be the first time this session that the high
+    #:    has been taken ... the first print above L9 forces cover"
+    #:   ENTRY LONG XAUUSD  entry 4614.66  HOW at market
+    #:
+    #: The thesis is a breakout. The order is a market buy placed BEFORE the
+    #: breakout, below the level whose breach the whole argument rests on. Those
+    #: are two different strategies, and the desk recorded the second while
+    #: measuring the first -- so the mechanism's cohort accumulates evidence
+    #: about a trade nobody intended to describe.
+    #:
+    #: Prose could not catch this: the compiler cannot read `why`. Naming the
+    #: trigger as a FIELD makes it checkable, and compile_signal refuses a
+    #: market entry whose own trigger has not printed yet.
+    trigger_ref: str = Field(default="NONE", description=(
+        'Level id that must TRADE before this idea is valid — the event the '
+        'mechanism depends on. "NONE" when the setup is already complete and '
+        'the entry is unconditional. If the thesis is "price breaks X", this '
+        'is X, and entry_ref must be X too — never MARKET.'))
     stop_ref: str = Field(description='Level id the stop sits beyond, or "NONE".')
     tp1_ref: str = Field(description='Level id for the first objective (partial bank), or "NONE".')
     tp2_ref: str = Field(description='Level id for the runner objective, or "NONE".')
@@ -438,6 +460,16 @@ two seem to disagree, the table wins and you say so in `why_not`.
   "MARKET" if the setup is live now.
 - LONG means stop below entry, target above. SHORT is the mirror. The compiler \
   checks this and rejects an inverted structure, so get it right.
+- trigger_ref: THE EVENT YOUR MECHANISM DEPENDS ON.
+  If your reasoning is "price breaks X and that forces cover", or "a trade
+  through X takes the high", then X has not happened yet and the idea does not
+  exist until it does. Put X in trigger_ref AND in entry_ref, so the entry waits
+  at the trigger.
+  Do NOT write entry_ref "MARKET" for an idea whose own argument is about
+  something that has not printed. That is a different trade from the one you
+  described, and the compiler will refuse it and tell you so.
+  Use "NONE" only when the setup is already complete and you would take it at
+  the live quote right now.
 
 ## Confidence
 
@@ -703,6 +735,36 @@ def compile_signal(
     })
     if not route_verdict.permitted:
         return refuse(f"edge router: {route_verdict.reason}")
+
+    # THE TRIGGER MUST HAVE HAPPENED, OR THE ENTRY MUST WAIT AT IT.
+    #
+    # A read whose mechanism depends on an event names that event's level in
+    # trigger_ref. If price has not yet traded through it, the idea does not
+    # exist yet -- and entering at market below it is a different trade from the
+    # one the analyst argued for. Observed live 2026-08-28: "the first print
+    # above L9 forces cover", followed by a market BUY at 4614.66 with L9
+    # untouched. The desk then measured that market entry as evidence about a
+    # breakout mechanism.
+    #
+    # Refused rather than silently rewritten into a stop order: the analyst
+    # stated an entry, and quietly converting it would make the ledger disagree
+    # with the message the operator was sent. The refusal names the fix.
+    if read.trigger_ref not in ("NONE", "", None):
+        trig = brief.level(read.trigger_ref)
+        if trig is None or not trig.confirmed:
+            return refuse(f"trigger_ref {read.trigger_ref!r} is not a confirmed "
+                          f"level — the event this idea depends on cannot be "
+                          f"located, so nothing can say whether it happened")
+        crossed = (brief.mid >= trig.price) if long else (brief.mid <= trig.price)
+        if not crossed and read.entry_ref == "MARKET":
+            return refuse(
+                f"CONDITIONAL IDEA ENTERED UNCONDITIONALLY: the mechanism "
+                f"depends on price trading through {read.trigger_ref} "
+                f"({trig.price:.2f}) and it has not — mid is {brief.mid:.2f}. "
+                f"A market order here is a different trade from the one argued "
+                f"for. Set entry_ref to {read.trigger_ref} so the entry waits "
+                f"at the trigger, or drop trigger_ref if the setup is already "
+                f"complete.")
 
     if read.entry_ref == "MARKET":
         entry = brief.mid
