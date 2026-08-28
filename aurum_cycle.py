@@ -444,21 +444,6 @@ def step_flows(ctx: dict) -> str:
 
 
 def step_stop_autopsy(ctx: dict) -> str:
-    """Was the thesis wrong, or was the stop in the way?
-
-    A stopped-out trade writes -1.0R and nothing else, and that one number
-    cannot separate "stop trading this mechanism" from "give it more room" --
-    two fixes that point in opposite directions. The SIGNAL row already carries
-    the forward excursion the idea achieved INDEPENDENT of the stop; this joins
-    it to the close. Reports only.
-    """
-    from golddesk.stop_autopsy import autopsy, render
-    items = autopsy(ctx.get("rows") or [])
-    ctx["stop_autopsy"] = items
-    return render(items)
-
-
-def step_stop_autopsy(ctx: dict) -> str:
     """Was the thesis wrong, or was the stop simply in the way?
 
     A stopped-out trade writes -1.0R and nothing else, and that one number
@@ -472,6 +457,24 @@ def step_stop_autopsy(ctx: dict) -> str:
     items = autopsy(ctx.get("rows") or [])
     ctx["stop_autopsy"] = items
     return render(items)
+
+
+def step_cohorts(ctx: dict) -> str:
+    """What comparable setups actually did, per mechanism, with intervals.
+
+    THE NUMBERS THAT SET STOPS AND TARGETS, none of which existed. A hit rate
+    says nothing about how far winners travelled AGAINST the entry before
+    working, or whether TP2 arrives often enough to justify keeping a runner --
+    and those decide stop distance and partial policy respectively.
+
+    Every field is UNMEASURED until its own minimum is met. A figure computed
+    from three trades is not a small number, it is a wrong one, and printing it
+    beside a real one launders it.
+    """
+    from golddesk.cohort_stats import build, render_all
+    cohorts = build(ctx.get("rows") or [])
+    ctx["cohort_stats"] = cohorts
+    return render_all(cohorts)
 
 
 def step_missed_money(ctx: dict) -> str:
@@ -630,7 +633,10 @@ STEPS = (
     # the desk's REFUSALS and the value of its management arms are both invisible -- the two
     # numbers most likely to move that ranking. Both scripts existed and were run by nothing.
     ("stop_autopsy", step_stop_autopsy),
-    ("stop_autopsy", step_stop_autopsy),
+    # COHORTS BEFORE missed_money and levers, both of which reason about whether
+    # the desk is taking the right trades -- a question that cannot be answered
+    # before the mechanisms have measured histories to compare against.
+    ("cohorts", step_cohorts),
     ("missed_money", step_missed_money),
     ("mgmt_counterfactual", step_mgmt_counterfactual),
     ("levers", step_levers),
