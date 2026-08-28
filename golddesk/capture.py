@@ -248,12 +248,62 @@ def check_survivors_absorbed(base: Path) -> Finding:
                    f"{survivors} survivor finding(s) of {total}")
 
 
+#: Hours before quant's shadow artifact is stale. It is published every 15
+#: minutes, so anything past a couple of hours means the pipeline stopped.
+SHADOW_STALE_H = 3.0
+
+
+def check_shadow_freshness(base: Path, now: Optional[datetime] = None) -> Finding:
+    """Is quant's shadow evidence still being published?
+
+    OBSERVED 2026-08-28: shadow_health.json in git was 33 HOURS old against a
+    15-minute sync, while MT5-ShadowSync fired every 15 minutes and returned 0.
+    The sync's SKIP branch exited 0 when its source files were absent, so
+    publishing nothing and publishing successfully were byte-identical to every
+    watchdog, to Get-ScheduledTaskInfo, and to anything reading the artifact.
+
+    A STALE ARTIFACT AND A HEALTHY ONE DIFFER ONLY BY A TIMESTAMP NOBODY READ.
+    The numbers inside it stay perfectly plausible -- 16 certified, 4 with
+    forward trades, status OPERATING -- which is precisely why this reads the
+    age and not the contents.
+
+    Checked here, every 15 minutes, and not only at session start: a session
+    hook fires when a human turns up, which is the one moment the problem is
+    already being looked at.
+    """
+    now = now or datetime.now(timezone.utc)
+    for root in (base.parent / "quant", Path("C:/opt/quant"), Path("C:/quant")):
+        f = root / "desks" / "mt5" / "reports" / "shadow" / "shadow_health.json"
+        if f.exists():
+            break
+    else:
+        return Finding("shadow evidence", True,
+                       "no quant checkout visible from here — UNMEASURED, which "
+                       "is not the same as healthy")
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+        age_h = (now - datetime.fromisoformat(d["updated_at"])).total_seconds() / 3600
+    except Exception as e:                             # noqa: BLE001
+        return Finding("shadow evidence", False,
+                       f"shadow_health.json unreadable ({e})")
+    n_fwd = d.get("sleeves_with_forward_trades")
+    if age_h > SHADOW_STALE_H:
+        return Finding("shadow evidence", False,
+                       f"published {age_h:.1f}h ago against a 15-minute sync. "
+                       f"The numbers in it describe {d.get('updated_at')}, NOT "
+                       f"now — and they stay plausible while stale, which is why "
+                       f"nothing else notices.")
+    return Finding("shadow evidence", True,
+                   f"{n_fwd} sleeve(s) accruing, published {age_h:.1f}h ago")
+
+
 def audit(rows: Sequence[dict], now: Optional[datetime] = None,
           base: Optional[Path] = None) -> list[Finding]:
     out = [check_signal_rate(rows, now), check_dominant_gate(rows),
            check_capture(rows)]
     if base is not None:
-        out += [check_quant_inbox(base, now), check_survivors_absorbed(base)]
+        out += [check_quant_inbox(base, now), check_survivors_absorbed(base),
+                check_shadow_freshness(base, now)]
     return out
 
 

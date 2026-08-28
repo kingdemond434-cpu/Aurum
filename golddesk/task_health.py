@@ -48,6 +48,25 @@ EXPECTED: dict[str, tuple[timedelta, str]] = {
     "AurumSignalDesk-Update":     (timedelta(minutes=30),  "pulls and deploys fixes"),
     "AurumSignalDesk-VantageSpread": (timedelta(minutes=20), "execution-venue spread"),
     "AurumSignalDesk-Cycle":      (timedelta(days=1),      "the whole learning loop"),
+    # THE QUANT DESK RUNS ON THE SAME BOX AND NOTHING WATCHED IT.
+    #
+    # Aurum's absorption cannot exceed what quant certifies, so a quant task
+    # that stops firing degrades THIS desk -- silently, because the only symptom
+    # is findings that stop arriving, and "0 new findings" is indistinguishable
+    # from a quant desk that found nothing.
+    #
+    # Only the tasks Aurum actually depends on. Watching all seventeen would put
+    # this desk in the business of policing another one, and a watchdog that
+    # reports faults its owner cannot act on is noise.
+    "MT5-ShadowSync":  (timedelta(minutes=15),
+                        "publishes shadow_health.json -- the ONLY window this "
+                        "desk has into whether quant is accruing evidence"),
+    "MT5-Shadow":      (timedelta(minutes=15), "quant's forward-evidence run"),
+    "MT5-QQuantGatesCertify": (timedelta(days=1),
+                              "certifies survivors; the source of everything "
+                              "Aurum absorbs"),
+    "Aurum-Sync":      (timedelta(days=1),
+                        "carries quant's findings into this desk's inbox"),
 }
 
 #: Multiples of a task's own interval before it is called stale. Three, so an

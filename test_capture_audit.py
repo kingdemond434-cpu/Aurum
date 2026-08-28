@@ -215,3 +215,65 @@ def test_nothing_here_can_change_a_threshold():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# ------------------- quant's evidence pipeline, watched 24/7
+
+def _shadow(tmp_path, updated_at, n_fwd=4):
+    d = tmp_path / "quant" / "desks" / "mt5" / "reports" / "shadow"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "shadow_health.json").write_text(json.dumps({
+        "updated_at": updated_at.isoformat(), "sleeves_with_forward_trades": n_fwd,
+        "certified_sleeves_total": 16, "missing_sleeves": [], "status": "OPERATING"}),
+        encoding="utf-8")
+    (tmp_path / "aurum").mkdir(exist_ok=True)
+    return tmp_path / "aurum"
+
+
+def test_a_stale_shadow_artifact_is_caught(tmp_path):
+    """OBSERVED: 33 hours old against a 15-minute sync, while MT5-ShadowSync
+    fired every 15 minutes and returned 0. Publishing nothing and publishing
+    successfully were byte-identical to every watchdog."""
+    base = _shadow(tmp_path, NOW - timedelta(hours=33))
+    f = _by(audit([], now=NOW, base=base), "shadow evidence")
+    assert not f.ok
+    assert "NOT" in f.detail and "now" in f.detail
+
+
+def test_a_fresh_artifact_passes_and_reports_what_is_accruing(tmp_path):
+    base = _shadow(tmp_path, NOW - timedelta(minutes=10))
+    f = _by(audit([], now=NOW, base=base), "shadow evidence")
+    assert f.ok
+    assert "4 sleeve(s) accruing" in f.detail
+
+
+def test_the_check_reads_the_AGE_not_the_contents(tmp_path):
+    """A stale artifact's numbers stay perfectly plausible — 16 certified, 4
+    accruing, status OPERATING — which is exactly why nothing else notices."""
+    base = _shadow(tmp_path, NOW - timedelta(hours=33), n_fwd=4)
+    assert not _by(audit([], now=NOW, base=base), "shadow evidence").ok
+
+
+def test_no_quant_checkout_reads_UNMEASURED_not_healthy(tmp_path):
+    (tmp_path / "aurum").mkdir()
+    f = _by(audit([], now=NOW, base=tmp_path / "aurum"), "shadow evidence")
+    assert f.ok
+    assert "UNMEASURED" in f.detail and "not the same as healthy" in f.detail
+
+
+def test_the_quant_tasks_aurum_depends_on_are_watched():
+    """Aurum's absorption cannot exceed what quant certifies, so a quant task
+    that stops firing degrades THIS desk — silently, because the only symptom is
+    findings that stop arriving."""
+    from golddesk.task_health import EXPECTED
+    for t in ("MT5-ShadowSync", "MT5-Shadow", "MT5-QQuantGatesCertify", "Aurum-Sync"):
+        assert t in EXPECTED, t
+
+
+def test_only_the_quant_tasks_aurum_depends_on_are_watched():
+    """Watching all seventeen would put this desk in the business of policing
+    another one, and a watchdog reporting faults its owner cannot act on is
+    noise."""
+    from golddesk.task_health import EXPECTED
+    mt5 = [t for t in EXPECTED if t.startswith("MT5-")]
+    assert len(mt5) <= 4, mt5
