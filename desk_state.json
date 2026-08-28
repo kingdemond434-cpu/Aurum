@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "44/79 wakes (56%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "detail": "46/81 wakes (57%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
           "ok": false
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 185h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 186h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -128,16 +128,16 @@
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "NOT REGISTERED \u2014 certifies survivors; the source of everything Aurum absorbs is not running at all. Re-run Install-AurumStartup.ps1; registering a task is not done automatically.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "Aurum-Sync",
-          "detail": "NOT REGISTERED \u2014 carries quant's findings into this desk's inbox is not running at all. Re-run Install-AurumStartup.ps1; registering a task is not done automatically.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         }
       ],
-      "faults": 5
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "109 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "111 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -184,22 +184,22 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.1h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "229 unique decision(s), no tears",
+          "detail": "231 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38933MB free",
+          "detail": "38899MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 14 min ago, after a boot 141.0h ago",
+          "detail": "wrote 7 min ago, after a boot 141.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 109,
-      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"b4a02591-6c67-4674-8007-2e0e22cb4051\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
-      "last": "2026-08-28T16:45:00.995117+00:00",
+      "count": 111,
+      "error": "claude exited 1: {\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"f712e056-2ead-405e-bb83-058853b7f995\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{",
+      "last": "2026-08-28T17:00:00.480901+00:00",
       "stage": "survey",
       "why": {
         "duration_api_ms": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T17:16:06.267166+00:00",
-  "last_row_utc": "2026-08-28T16:45:00.995117+00:00",
-  "ledger_rows": 246,
-  "total_faults": 12
+  "generated_utc": "2026-08-28T17:30:01.125097+00:00",
+  "last_row_utc": "2026-08-28T17:00:00.480901+00:00",
+  "ledger_rows": 248,
+  "total_faults": 10
 }
