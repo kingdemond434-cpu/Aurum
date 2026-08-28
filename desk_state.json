@@ -5,7 +5,7 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "THE LOGIN HAS EXPIRED \u2014 47 blind wake(s) since 2026-08-28 01:00Z carry the CLI's own 'OAuth session expired' message. No retry, restart, flag change or watchdog clears this: run `claude` once interactively on the box, as the user the scheduled task runs as, and complete the browser login. Reads resume on the next wake.",
+          "detail": "THE LOGIN HAS EXPIRED \u2014 48 blind wake(s) since 2026-08-28 01:00Z carry the CLI's own 'OAuth session expired' message. No retry, restart, flag change or watchdog clears this: run `claude` once interactively on the box, as the user the scheduled task runs as, and complete the browser login. Reads resume on the next wake.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "21 sleeve(s) accruing, published 0.5h ago",
+          "detail": "18 sleeve(s) accruing, published 0.1h ago",
           "ok": true
         }
       ],
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "90 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "91 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "1 delivered, 0 failed",
+          "detail": "2 delivered, 0 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.0h ago",
+          "detail": "written 0.2h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "175 unique decision(s), no tears",
+          "detail": "176 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "39332MB free",
+          "detail": "39324MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 2 min ago, after a boot 134.7h ago",
+          "detail": "wrote 14 min ago, after a boot 135.0h ago",
           "ok": true
         }
       ],
@@ -208,11 +208,14 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 90,
-      "error": "claude exited 3221226505: ",
-      "last": "2026-08-28T10:30:04.944843+00:00",
+      "count": 91,
+      "error": "claude cannot authenticate: Failed to authenticate: OAuth session expired and could not be refreshed. THIS IS NOT A FLAG, A RATE LIMIT OR AN OUTAGE, and no retry will clear it -- the desk stays blind until somebody logs in. On the box, as the user the scheduled task runs as, run `claude` once interactively and complete the browser login; reads resume on the next wake with no restart needed.",
+      "last": "2026-08-28T10:45:06.595213+00:00",
       "stage": "survey",
-      "why": {}
+      "why": {
+        "needs_login": true,
+        "reading": "the LOGIN has expired. No retry, restart or flag change clears this -- run `claude` once interactively on the box, as the task's user"
+      }
     },
     "REFUSAL_COMPILER": {
       "count": 43,
@@ -235,8 +238,8 @@
       "last": "2026-08-27T13:45:00.478992+00:00"
     }
   },
-  "generated_utc": "2026-08-28T11:01:48.997232+00:00",
-  "last_row_utc": "2026-08-28T10:30:04.944843+00:00",
-  "ledger_rows": 182,
+  "generated_utc": "2026-08-28T11:19:45.130143+00:00",
+  "last_row_utc": "2026-08-28T10:45:06.595213+00:00",
+  "ledger_rows": 183,
   "total_faults": 9
 }
