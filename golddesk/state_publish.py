@@ -119,8 +119,29 @@ def _summarise_findings(name: str, findings: Sequence[Any]) -> dict:
             "checks": items}
 
 
+def deployed_commit(base: Path, runner=None) -> str:
+    """The commit the box is ACTUALLY running, or "unknown".
+
+    WHY THE ARTIFACT NEEDS THIS. On 2026-08-28 the update task had been exiting
+    1 for a day, so the box sat on an old commit while five fixes were pushed
+    and none deployed -- and the state artifact reported those fixes' symptoms
+    as live faults, because on that box they WERE. Reading it without knowing
+    which code produced it invites exactly the wrong conclusion: "the fix did
+    not work" when the truth is "the fix is not there".
+
+    Cheap, read-only, and "unknown" rather than a guess when git cannot answer.
+    """
+    git = runner or (lambda *a, **kw: _git(base, *a, **kw))
+    try:
+        r = git("rev-parse", "HEAD")
+        return (r.stdout or "").strip()[:12] or "unknown"
+    except Exception:                                  # noqa: BLE001
+        return "unknown"
+
+
 def build_state(rows: Sequence[dict], audits: dict[str, Sequence[Any]],
-                now: Optional[datetime] = None) -> dict:
+                now: Optional[datetime] = None,
+                commit: Optional[str] = None) -> dict:
     """The artifact. Pure -- no git, no filesystem, so it is trivially testable."""
     now = now or datetime.now(timezone.utc)
     by_kind: dict[str, dict] = {}
@@ -143,6 +164,9 @@ def build_state(rows: Sequence[dict], audits: dict[str, Sequence[Any]],
                  (_summarise_findings(n, f) for n, f in audits.items()))
     return {
         "generated_utc": now.isoformat(),
+        # WHICH CODE PRODUCED THIS. Without it, a fault this artifact reports
+        # cannot be told apart from a fault whose fix simply has not deployed.
+        "deployed_commit": commit or "unknown",
         # THE STALENESS CLOCK. The MT5 desk's artifact went 35 hours stale while
         # every number in it kept being read as current; a reader has to be able
         # to date what they are looking at without trusting that it was fresh.
@@ -156,8 +180,26 @@ def build_state(rows: Sequence[dict], audits: dict[str, Sequence[Any]],
 
 def _git(base: Path, *args: str, stdin: Optional[str] = None,
          timeout: int = 120):
-    return subprocess.run(["git", "-C", str(base), *args], input=stdin,
-                          capture_output=True, text=True, timeout=timeout)
+    """Run git. BINARY IN, DECODED OUT -- and that is not a style preference.
+
+    subprocess with text=True wraps stdin in a TextIOWrapper doing universal
+    newline translation, so on WINDOWS every "\n" written becomes "\r\n".
+    `git mktree` reads one record per line as `<mode> <type> <sha>\t<name>`, so
+    the desk published its artifact under the filename "desk_state.json\r" --
+    observed live on 2026-08-28. The file was there, the commit was there, and
+    `git show aurum-state:desk_state.json` said it did not exist.
+
+    Passing bytes bypasses the wrapper entirely. It is the same class of bug as
+    the encoding pass in eb34e70: assuming the platform will not touch the bytes
+    on the way through.
+    """
+    p = subprocess.run(["git", "-C", str(base), *args],
+                       input=stdin.encode("utf-8") if stdin is not None else None,
+                       capture_output=True, timeout=timeout)
+    return subprocess.CompletedProcess(
+        p.args, p.returncode,
+        p.stdout.decode("utf-8", "replace"),
+        p.stderr.decode("utf-8", "replace"))
 
 
 def publish(base: Path, state: dict, *, push: bool = True,

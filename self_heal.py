@@ -506,11 +506,13 @@ def main(argv=None) -> int:
     # in and run something. That cost four hours on 2026-08-28, and it is the
     # difference between a desk that is watched and one that is asked about.
     try:
-        from golddesk.state_publish import build_state, publish
+        from golddesk.state_publish import (build_state, deployed_commit,
+                                            publish)
         state = build_state(rows, {"wiring": findings, "capture": cap_findings,
                                    "analyst": ah_findings,
                                    "read_quality": rq_findings,
-                                   "tasks": th_findings})
+                                   "tasks": th_findings},
+                            commit=deployed_commit(BASE))
         _, how = publish(BASE, state, push=not args.dry_run)
         log.info("desk state: %s", how)
         _report_publish_health(how, args.dry_run)

@@ -314,5 +314,58 @@ def test_publishing_failure_is_reported_not_raised(tmp_path):
     assert "hash-object failed" in msg
 
 
+
+# --------------------------------------------------------------------------
+# Windows put a carriage return in the filename. Twice-learned lesson.
+
+def test_the_artifact_filename_carries_no_carriage_return(tmp_path):
+    """OBSERVED LIVE 2026-08-28. subprocess with text=True wraps stdin in a
+    TextIOWrapper doing universal-newline translation, so on Windows every "\\n"
+    became "\\r\\n". `git mktree` reads `<mode> <type> <sha>\\t<name>` per line,
+    so the desk published under the name "desk_state.json\\r": the file was
+    there, the commit was there, and `git show aurum-state:desk_state.json` said
+    it did not exist.
+
+    Same class as the encoding pass — assuming the platform leaves the bytes
+    alone on the way through."""
+    g = _repo(tmp_path)
+    publish(tmp_path, build_state([], {}, NOW), push=False)
+    names = g("ls-tree", "--name-only", STATE_BRANCH).stdout.splitlines()
+    assert names == [FILENAME], names
+    for n in names:
+        assert "\r" not in n and "\\r" not in n
+
+
+def test_the_commit_message_carries_no_carriage_return(tmp_path):
+    """commit-tree takes its message on stdin too, through the same wrapper."""
+    g = _repo(tmp_path)
+    publish(tmp_path, build_state([], {}, NOW), push=False)
+    msg = g("log", "-1", "--format=%B", STATE_BRANCH).stdout
+    assert "\r" not in msg
+
+
+def test_the_artifact_says_which_commit_produced_it():
+    """Without this, a fault the artifact reports cannot be told apart from a
+    fault whose fix simply has not deployed — which is exactly what happened
+    while the update task sat exiting 1 and five fixes never landed."""
+    s = build_state([], {}, NOW, commit="b7914b1abcd0")
+    assert s["deployed_commit"] == "b7914b1abcd0"
+
+
+def test_an_unknown_commit_is_said_rather_than_guessed():
+    assert build_state([], {}, NOW)["deployed_commit"] == "unknown"
+
+
+def test_the_deployed_commit_is_read_from_the_real_repo(tmp_path):
+    from golddesk.state_publish import deployed_commit
+    g = _repo(tmp_path)
+    head = g("rev-parse", "HEAD").stdout.strip()
+    assert deployed_commit(tmp_path) == head[:12]
+
+
+def test_a_repo_git_cannot_answer_for_reports_unknown(tmp_path):
+    from golddesk.state_publish import deployed_commit
+    assert deployed_commit(tmp_path / "nope") == "unknown"
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
