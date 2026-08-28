@@ -152,16 +152,32 @@ def test_only_allowlisted_cli_fields_are_published():
 # because this is the property a scripted fake is least able to prove.
 
 def _repo(tmp_path):
+    """A throwaway repository, or a SKIP.
+
+    WHY THIS SKIPS RATHER THAN FAILS. Update-AurumDesk.ps1 runs this suite
+    against new code while the old desk is still live and ROLLS BACK ON RED. So
+    a test that fails for an environmental reason -- git missing from the task's
+    PATH, a git too old for `init -b`, a sandbox that forbids subprocesses --
+    would not report a broken publisher: it would silently stop the box from
+    ever deploying anything again. The property under test is worth proving
+    where git exists and worth nothing where it does not.
+    """
     import subprocess
     def g(*a, **kw):
         return subprocess.run(["git", "-C", str(tmp_path), *a],
                               capture_output=True, text=True, **kw)
-    g("init", "-q", "-b", "work")
+    try:
+        init = g("init", "-q", "-b", "work")
+    except (OSError, subprocess.SubprocessError) as e:   # no git at all
+        pytest.skip(f"git unavailable: {e}")
+    if init.returncode != 0:                             # e.g. git < 2.28
+        pytest.skip(f"git init -b unsupported: {(init.stderr or '').strip()[:120]}")
     g("config", "user.email", "t@t")
     g("config", "user.name", "t")
     (tmp_path / "code.py").write_text("x = 1\n")
     g("add", "code.py")
-    g("commit", "-qm", "base")
+    if g("commit", "-qm", "base").returncode != 0:
+        pytest.skip("could not create a base commit in a scratch repo")
     return g
 
 
@@ -230,9 +246,13 @@ def test_it_works_in_a_repo_with_no_git_identity_configured(tmp_path):
     """A deployment box may have none. commit-tree needs one, and writing it
     into the repo config would be a side effect nobody asked for."""
     import subprocess
-    subprocess.run(["git", "-C", str(tmp_path), "init", "-q", "-b", "work"],
-                   capture_output=True)
-    (tmp_path / "code.py").write_text("x = 1\n")
+    try:
+        init = subprocess.run(["git", "-C", str(tmp_path), "init", "-q", "-b", "work"],
+                              capture_output=True, text=True)
+    except (OSError, subprocess.SubprocessError) as e:
+        pytest.skip(f"git unavailable: {e}")
+    if init.returncode != 0:
+        pytest.skip("git init -b unsupported")
     subprocess.run(["git", "-C", str(tmp_path), "-c", "user.email=a@b",
                     "-c", "user.name=a", "commit", "-qm", "base", "--allow-empty"],
                    capture_output=True)
