@@ -5,13 +5,13 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 14 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 13 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "39/100 wakes (39%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
-          "ok": true
+          "detail": "39/100 wakes (39%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "ok": false
         },
         {
           "check": "analyst latency",
@@ -24,7 +24,7 @@
           "ok": true
         }
       ],
-      "faults": 0
+      "faults": 1
     },
     "capture": {
       "axis": "capture",
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "21 sleeve(s) accruing, published 0.2h ago",
+          "detail": "18 sleeve(s) accruing, published 0.3h ago",
           "ok": true
         }
       ],
@@ -93,18 +93,18 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -113,13 +113,13 @@
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "registered and enabled, HAS NOT RUN YET \u2014 normal for a task whose first fire is still ahead",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 1
     },
     "wiring": {
       "axis": "wiring",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "116 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "117 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -184,22 +184,22 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.0h ago",
+          "detail": "written 0.2h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "262 unique decision(s), no tears",
+          "detail": "263 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "38678MB free",
+          "detail": "38669MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 143.5h ago",
+          "detail": "wrote 12 min ago, after a boot 143.7h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 116,
-      "error": "claude returned text that is not a valid AnalystUniverse: 1 validation error for AnalystUniverse\nsurvey\n  String should have at most 800 characters [type=string_too_long, input_value='Worked both directions a...ment makes unreachable.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_too_long; got '{\"candidates\":[{\"setup\":\"TREND_CONTINUATION\",\"direction\"",
-      "last": "2026-08-28T18:00:00.450709+00:00",
+      "count": 117,
+      "error": "claude returned text that is not a valid AnalystUniverse: 1 validation error for AnalystUniverse\ncandidates.0.why\n  String should have at most 500 characters [type=string_too_long, input_value='Hypothesis: longs who bo...sold into a bid dollar.', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_too_long; got '{\"candidates\":[{\"setup\":\"TREND_CONTINUATION\",\"",
+      "last": "2026-08-28T19:30:01.694736+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T19:49:23.298879+00:00",
-  "last_row_utc": "2026-08-28T19:15:00.646587+00:00",
-  "ledger_rows": 279,
-  "total_faults": 9
+  "generated_utc": "2026-08-28T20:06:01.209913+00:00",
+  "last_row_utc": "2026-08-28T19:30:01.694736+00:00",
+  "ledger_rows": 280,
+  "total_faults": 8
 }
