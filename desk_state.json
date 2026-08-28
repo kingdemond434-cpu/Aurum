@@ -5,12 +5,12 @@
       "checks": [
         {
           "check": "analyst login",
-          "detail": "RECOVERED \u2014 10 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
+          "detail": "RECOVERED \u2014 8 login failure(s) earlier in the window, but the analyst has answered 61 time(s) since the last one (first at 11:30Z). The credential works now.",
           "ok": true
         },
         {
           "check": "analyst answering",
-          "detail": "40/101 wakes (40%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
+          "detail": "38/99 wakes (38%) got NO answer in the last 12h. The desk is BLIND on those bars, not selective \u2014 a wedged session, an expired login or a provider outage all look like this.",
           "ok": false
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 0h ago",
+          "detail": "updated 1h ago",
           "ok": true
         },
         {
@@ -128,7 +128,7 @@
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.5h old",
+          "detail": "newest row 0.7h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.5h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "38585MB free",
+          "detail": "38567MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 13 min ago, after a boot 144.7h ago",
+          "detail": "wrote 28 min ago, after a boot 145.0h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T21:00:00.989992+00:00",
+  "generated_utc": "2026-08-28T21:15:00.941265+00:00",
   "last_row_utc": "2026-08-28T20:30:00.951340+00:00",
   "ledger_rows": 284,
   "total_faults": 9
