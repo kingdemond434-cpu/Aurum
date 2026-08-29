@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "3 of 31 wakes in 12h were served by the RULE-BASED FALLBACK and 5 got nothing \u2014 26% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "3 of 23 wakes in 12h were served by the RULE-BASED FALLBACK and 5 got nothing \u2014 35% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 196s of 600s budget (33%) over 26 reads",
+          "detail": "median 196s of 600s budget (33%) over 18 reads",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.2h ago",
+          "detail": "21 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 5.6h old",
+          "detail": "newest row 5.9h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 5.1h ago",
+          "detail": "written 5.3h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32548MB free",
+          "detail": "32547MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 305 min ago, after a boot 5.1h ago",
+          "detail": "wrote 320 min ago, after a boot 5.4h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T06:30:00.090696+00:00",
+  "generated_utc": "2026-08-29T06:45:33.210892+00:00",
   "last_row_utc": "2026-08-29T00:53:16.706689+00:00",
   "ledger_rows": 292,
   "total_faults": 10
