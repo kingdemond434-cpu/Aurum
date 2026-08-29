@@ -1307,6 +1307,14 @@ class LiveDesk:
                       # two numbers here are what let it be settled later instead
                       # of widening a stop on the strength of one afternoon.
                       "stop_regime": self._stop_regime(bars, i, brief, sig),
+                      # THE EVIDENCE BALANCE, counted rather than narrated. The
+                      # analyst already writes good counter-arguments; they were
+                      # prose in a paragraph, weighted by nobody. Recorded so
+                      # "does a negative balance predict a worse outcome" becomes
+                      # answerable -- and if it does, it can earn authority then.
+                      # It scores; it does not gate.
+                      "evidence_balance": self._evidence_balance(sig.direction,
+                                                             brief.context),
                       "vision": self.vision.value, "charts_sent": n_charts,
                       "management_policy": self.active_chooser().name,
                       # WHO will manage this position, and on whose authority.
@@ -1696,6 +1704,15 @@ class LiveDesk:
         if brief.day_state is not None:
             out["prior_ny_session_state"] = brief.day_state.value
         return out
+
+    def _evidence_balance(self, direction: str, st) -> dict:
+        """Measured evidence for and against this direction. Never fatal."""
+        try:
+            from .contradiction import weigh
+            return weigh(direction, st).to_dict()
+        except Exception as e:                        # noqa: BLE001
+            log.debug("evidence balance not recorded: %s", e)
+            return {}
 
     def _stop_regime(self, bars, i, brief, sig) -> dict:
         """The stop's distance measured two ways: trailing ATR, and this bar.
