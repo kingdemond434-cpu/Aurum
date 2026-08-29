@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "3 of 56 wakes in 12h were served by the RULE-BASED FALLBACK and 23 got nothing \u2014 46% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "3 of 54 wakes in 12h were served by the RULE-BASED FALLBACK and 21 got nothing \u2014 44% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "21 sleeve(s) accruing, published 0.2h ago",
+          "detail": "18 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,7 +88,7 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.9h old",
+          "detail": "newest row 2.1h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 1.3h ago",
+          "detail": "written 1.6h ago",
           "ok": true
         },
         {
@@ -199,7 +199,7 @@
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 80 min ago, after a boot 1.4h ago",
+          "detail": "wrote 95 min ago, after a boot 1.6h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T02:45:11.996882+00:00",
+  "generated_utc": "2026-08-29T03:01:42.280324+00:00",
   "last_row_utc": "2026-08-29T00:53:16.706689+00:00",
   "ledger_rows": 292,
   "total_faults": 10
