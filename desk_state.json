@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 7h ago",
+          "detail": "updated 8h ago",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.3h ago",
+          "detail": "18 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -133,7 +133,7 @@
         },
         {
           "check": "Aurum-Sync",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'Aurum-Sync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "ran and delivered NOTHING (exit 3) \u2014 carries quant's findings into this desk's inbox works, but its SOURCE was absent. UNMEASURED, not 'no new findings'; the break is upstream.",
           "ok": true
         }
       ],
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 3.1h old",
+          "detail": "newest row 3.4h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 2.6h ago",
+          "detail": "written 2.8h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32607MB free",
+          "detail": "32605MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 155 min ago, after a boot 2.6h ago",
+          "detail": "wrote 170 min ago, after a boot 2.9h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T04:03:22.095549+00:00",
+  "generated_utc": "2026-08-29T04:14:59.788470+00:00",
   "last_row_utc": "2026-08-29T00:53:16.706689+00:00",
   "ledger_rows": 292,
   "total_faults": 10
