@@ -46,17 +46,17 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 24h ago",
+          "detail": "updated 1h ago",
           "ok": true
         },
         {
           "check": "survivors",
-          "detail": "335 finding(s) arrived and none reports a cell clearing the ten-gate battery. Either nothing has passed yet \u2014 the honest state of a desk with no forward evidence, and no fault here \u2014 or the gates never ran. Answered on the quant side: check reports/QQUANT_GATES.json.",
+          "detail": "601 finding(s) arrived and none reports a cell clearing the ten-gate battery. Either nothing has passed yet \u2014 the honest state of a desk with no forward evidence, and no fault here \u2014 or the gates never ran. Answered on the quant side: check reports/QQUANT_GATES.json.",
           "ok": false
         },
         {
           "check": "shadow evidence",
-          "detail": "19 sleeve(s) accruing, published 0.4h ago",
+          "detail": "19 sleeve(s) accruing, published 1.0h ago",
           "ok": true
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -118,13 +118,13 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-ShadowSync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 2 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 0
+      "faults": 2
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 6.6h old",
+          "detail": "newest row 7.6h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "last written 6.1h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "detail": "last written 7.1h ago \u2014 the desk is not persisting state, so a crash loses everything since",
           "ok": false
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "33426MB free",
+          "detail": "33423MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 364 min ago, after a boot 18.9h ago",
+          "detail": "wrote 424 min ago, after a boot 19.9h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T20:24:34.555433+00:00",
+  "generated_utc": "2026-08-29T21:24:34.706367+00:00",
   "last_row_utc": "2026-08-29T13:38:05.011984+00:00",
   "ledger_rows": 301,
-  "total_faults": 6
+  "total_faults": 8
 }
