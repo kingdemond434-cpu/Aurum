@@ -88,17 +88,17 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -118,26 +118,26 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
-        },
-        {
-          "check": "MT5-Shadow",
           "detail": "enabled, last result 267009",
           "ok": true
         },
         {
+          "check": "MT5-Shadow",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
+        },
+        {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-QQuantGatesCertify', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "Aurum-Sync",
-          "detail": "ran and delivered NOTHING (exit 3) \u2014 carries quant's findings into this desk's inbox works, but its SOURCE was absent. UNMEASURED, not 'no new findings'; the break is upstream.",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'Aurum-Sync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 2
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.9h old",
+          "detail": "newest row 1.1h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.3h ago",
+          "detail": "written 0.6h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "33414MB free",
+          "detail": "33412MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 20 min ago, after a boot 21.4h ago",
+          "detail": "wrote 35 min ago, after a boot 21.6h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T22:45:15.416403+00:00",
+  "generated_utc": "2026-08-29T23:09:14.296031+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
-  "total_faults": 8
+  "total_faults": 7
 }
