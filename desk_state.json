@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "2 of 87 wakes in 12h were served by the RULE-BASED FALLBACK and 27 got nothing \u2014 33% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "2 of 81 wakes in 12h were served by the RULE-BASED FALLBACK and 27 got nothing \u2014 36% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 205s of 600s budget (34%) over 60 reads",
+          "detail": "median 202s of 600s budget (34%) over 54 reads",
           "ok": true
         },
         {
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.0h old",
+          "detail": "newest row 1.2h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.4h ago",
+          "detail": "written 0.7h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "38457MB free",
+          "detail": "38413MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 26 min ago, after a boot 148.0h ago",
+          "detail": "wrote 41 min ago, after a boot 148.2h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T00:15:00.453416+00:00",
+  "generated_utc": "2026-08-29T00:29:59.835584+00:00",
   "last_row_utc": "2026-08-28T23:16:47.444215+00:00",
   "ledger_rows": 290,
-  "total_faults": 11
+  "total_faults": 10
 }
