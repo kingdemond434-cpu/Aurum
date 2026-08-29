@@ -165,6 +165,19 @@ class StructureState:
     prior_swing_low: Optional[Swing]
     trigger_price: Optional[float]
     legs_in_trend: int
+    #: WHICH window `distance_from_session_extreme` was measured over, and how
+    #: that window was derived. These exist because the field above used to be
+    #: computed from `bars[i-24:i+1]` and called "the session's own extremes" --
+    #: six hours on M15, a whole day on H1, five weeks on D1, and aligned with
+    #: no real session on any of them. A label naming one quantity and measuring
+    #: another is worse than a missing one, so the label now travels with its
+    #: basis and the degrade is visible wherever the state is rendered.
+    #:
+    #:   session   a real clock window: NY / LONDON / ASIA / DAY
+    #:   bars-24   the old rolling bar count, used ONLY when no bar carried a
+    #:             usable timestamp inside the window -- and it says so
+    session_window: str = "bars-24"
+    session_basis: str = "bars-24"
 
 
 # Displacement thresholds match the desk's production config.
@@ -270,25 +283,58 @@ def classify(bars: Sequence[Bar], i: int, sw: Sequence[Swing],
             else "MEDIUM" if depth <= 0.618 else "DEEP")
 
     # --- distance from the session's own extremes
-    day = [x for x in bars[max(0, i - 24):i + 1]]
-    d_hi, d_lo = max(x.high for x in day), min(x.low for x in day)
+    #
+    # THE WINDOW IS A CLOCK WINDOW NOW, not `bars[i-24:i+1]`. That slice was 6
+    # hours on the live M15 path, a whole day on H1 and five trading weeks on
+    # D1, and it aligned with no session's open or close on any timeframe -- the
+    # analyst was told "session", reasoned about a session, and was shown a
+    # rolling bar count. See sessions.py for the full account.
+    #
+    # The bar count survives as a FALLBACK for one case only: bars whose
+    # timestamps put nothing inside the window (a synthetic fixture, a feed
+    # hole, a desk started mid-session). It is labelled `bars-24` on the state
+    # when that happens, so a degraded measurement is never mistaken for the
+    # real one.
+    d_hi = d_lo = None
+    win_name, basis = "bars-24", "bars-24"
+    try:
+        from .sessions import current_window, extremes as _extremes
+        w = current_window(b.ts)
+        ex = _extremes(bars, w, upto=i)
+        if ex is not None:
+            d_hi, d_lo, win_name, basis = ex.high, ex.low, w.name, "session"
+    except Exception:                                            # noqa: BLE001
+        d_hi = d_lo = None
+    if d_hi is None or d_lo is None:
+        day = bars[max(0, i - 24):i + 1]
+        d_hi, d_lo = max(x.high for x in day), min(x.low for x in day)
     span = max(d_hi - d_lo, 1e-9)
     near = min(abs(b.close - d_hi), abs(b.close - d_lo)) / span
     dist = "NEAR" if near <= 0.15 else "MID" if near <= 0.4 else "FAR"
 
     return StructureState(direction, health, maturity, vol, disp, sweep, reclaim,
-                          pull, dist, a, sh, sl, psh, psl, trigger, legs)
+                          pull, dist, a, sh, sl, psh, psl, trigger, legs,
+                          win_name, basis)
 
 
 def session_of(ts: datetime) -> str:
-    """UTC -> session. D1 bars open 21:00 UTC (17:00 NY rollover)."""
-    h = ts.astimezone(timezone.utc).hour
-    if 21 <= h or h < 6:
-        return "ASIA"
-    if 6 <= h < 12:
-        return "LONDON"
-    if 12 <= h < 16:
-        return "OVERLAP"
-    if 16 <= h < 20:
-        return "NY"
-    return "ROLLOVER"
+    """UTC -> session, through the tz database. Same vocabulary as before.
+
+    THIS USED TO BE FIXED UTC HOUR BUCKETS, and they were wrong for most of the
+    year. London opens at 08:00 LOCAL — 08:00 UTC in winter, 07:00 in summer —
+    and New York at 13:30 UTC in summer, 14:30 in winter. The buckets said
+    LONDON began at 06:00 UTC in every month, so the boundary was an hour or two
+    out for the roughly eight months either side of the changeovers, and the
+    OVERLAP band — the highest-liquidity span of the gold day — was displaced
+    with it.
+
+    The desk's own economic calendar already resolves New York event times
+    through zoneinfo because DST matters there. Both statements could not be
+    right, and it was the calendar that was right.
+
+    Kept as a thin delegate rather than deleted: it is imported by name in
+    several places, and a module-level rename is a worse diff than a two-line
+    function that says where the arithmetic went.
+    """
+    from .sessions import session_of as _session_of
+    return _session_of(ts)

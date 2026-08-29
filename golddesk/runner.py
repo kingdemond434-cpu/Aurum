@@ -180,11 +180,70 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                             LevelKind.SWING_HIGH if s.kind == "HIGH" else LevelKind.SWING_LOW,
                             round(s.price, 2), timeframe, i - s.idx, True))
         n += 1
-    day = bars[max(0, i - 24):i + 1]
+    # THE SESSION EXTREMES ARE A CLOCK WINDOW, not `bars[i-24:i+1]`.
+    #
+    # That slice was six hours on the live M15 path and five trading weeks on
+    # D1, and the level built from it was labelled SESSION_HIGH on both. The
+    # analyst cited it as a session extreme and it was neither. sessions.py has
+    # the full account; the bar count survives below only as a fallback for bars
+    # whose timestamps put nothing inside the window, and `session_basis` on the
+    # structure state says when that happened.
+    sess_hi = sess_lo = None
+    try:
+        from .sessions import current_window, extremes as _extremes
+        _ex = _extremes(bars, current_window(bars[i].ts), upto=i)
+        if _ex is not None:
+            sess_hi, sess_lo = _ex.high, _ex.low
+    except Exception:                                            # noqa: BLE001
+        sess_hi = sess_lo = None
+    if sess_hi is None or sess_lo is None:
+        day = bars[max(0, i - 24):i + 1]
+        sess_hi, sess_lo = max(b.high for b in day), min(b.low for b in day)
     levels.append(Level(f"L{n}", LevelKind.SESSION_HIGH,
-                        round(max(b.high for b in day), 2), timeframe, 0, True)); n += 1
+                        round(sess_hi, 2), timeframe, 0, True)); n += 1
     levels.append(Level(f"L{n}", LevelKind.SESSION_LOW,
-                        round(min(b.low for b in day), 2), timeframe, 0, True)); n += 1
+                        round(sess_lo, 2), timeframe, 0, True)); n += 1
+
+    # THE SESSIONS THAT HAVE ALREADY CLOSED, which the table never carried.
+    #
+    # Asia's range is the reference London trades around, and London's is the
+    # one New York trades around; both were absent from a table that offered
+    # eight swings and one rolling six-hour window. That is not a small omission
+    # in a market whose whole day is organised around those three handovers --
+    # it removed the most-watched horizontal lines on the instrument from the
+    # only view the analyst has.
+    #
+    # SETTLED ranges, so real observed structure: not projected, may carry a
+    # stop. A window holding no bars contributes NOTHING rather than a level
+    # quietly borrowed from elsewhere.
+    try:
+        from .sessions import extremes as _extremes, previous_complete
+        for _name, _hi_kind, _lo_kind in (
+                ("ASIA", LevelKind.ASIA_HIGH, LevelKind.ASIA_LOW),
+                ("LONDON", LevelKind.LONDON_HIGH, LevelKind.LONDON_LOW),
+                ("NY", LevelKind.NY_HIGH, LevelKind.NY_LOW)):
+            _w = previous_complete(_name, bars[i].ts)
+            _e = _extremes(bars, _w, upto=i)
+            if _e is None or _e.span <= 0:
+                continue
+            levels.append(Level(f"L{n}", _hi_kind, round(_e.high, 2),
+                                timeframe, 0, True)); n += 1
+            levels.append(Level(f"L{n}", _lo_kind, round(_e.low, 2),
+                                timeframe, 0, True)); n += 1
+        # THE WEEK SO FAR. Still forming, and still somewhere price has been --
+        # a running extreme is an observation, not a projection. It is the level
+        # a multi-day swing is measured against, and on a desk whose stops are
+        # sized in hours it is the only reference point with that horizon.
+        from .sessions import week as _week
+        _we = _extremes(bars, _week(bars[i].ts), upto=i)
+        if _we is not None and _we.span > 0:
+            levels.append(Level(f"L{n}", LevelKind.WEEK_HIGH, round(_we.high, 2),
+                                timeframe, 0, True)); n += 1
+            levels.append(Level(f"L{n}", LevelKind.WEEK_LOW, round(_we.low, 2),
+                                timeframe, 0, True)); n += 1
+    except Exception:                                            # noqa: BLE001
+        pass
+
     if st.trigger_price is not None:
         levels.append(Level(f"L{n}", LevelKind.RECLAIM, round(st.trigger_price, 2),
                             timeframe, 0, True)); n += 1
@@ -221,8 +280,6 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
     # projected=True, so compile_signal will refuse them as a stop or an entry.
     atr = st.atr if getattr(st, "atr", None) else 0.0
     if atr > 0:
-        sess_hi = max(b.high for b in day)
-        sess_lo = min(b.low for b in day)
         for mult in (1.0, 2.0):
             levels.append(Level(f"L{n}", LevelKind.ATR_PROJECTION,
                                 round(sess_lo - mult * atr, 2), timeframe, 0,

@@ -60,6 +60,25 @@ class LevelKind(str, Enum):
     SESSION_LOW = "SESSION_LOW"
     PRIOR_DAY_HIGH = "PRIOR_DAY_HIGH"
     PRIOR_DAY_LOW = "PRIOR_DAY_LOW"
+    # ---- THE SESSIONS THAT HAVE ALREADY CLOSED.
+    #
+    # Gold's day is organised around three handovers, and the ranges either
+    # side of them are the most-watched horizontals on the instrument. The
+    # table carried none of them: eight swings, one rolling six-hour window
+    # mislabelled SESSION, and yesterday. Asia's range is what London trades
+    # around and London's is what New York trades around, and the analyst could
+    # see neither.
+    #
+    # SETTLED ranges, so real observed structure -- not projections, and they
+    # may carry a stop.
+    ASIA_HIGH = "ASIA_HIGH"
+    ASIA_LOW = "ASIA_LOW"
+    LONDON_HIGH = "LONDON_HIGH"
+    LONDON_LOW = "LONDON_LOW"
+    NY_HIGH = "NY_HIGH"
+    NY_LOW = "NY_LOW"
+    WEEK_HIGH = "WEEK_HIGH"
+    WEEK_LOW = "WEEK_LOW"
     DISPLACEMENT_OPEN = "DISPLACEMENT_OPEN"
     RECLAIM = "RECLAIM"
     # ---- PROJECTIONS. Everything above is somewhere price has ALREADY BEEN.
