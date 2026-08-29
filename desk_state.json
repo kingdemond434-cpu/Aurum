@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "18 sleeve(s) accruing, published 0.3h ago",
+          "detail": "21 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,7 +88,7 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 2.6h old",
+          "detail": "newest row 2.9h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 2.1h ago",
+          "detail": "written 2.3h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "31687MB free",
+          "detail": "32608MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 125 min ago, after a boot 2.2h ago",
+          "detail": "wrote 140 min ago, after a boot 2.4h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T03:31:46.309288+00:00",
+  "generated_utc": "2026-08-29T03:44:59.995537+00:00",
   "last_row_utc": "2026-08-29T00:53:16.706689+00:00",
   "ledger_rows": 292,
   "total_faults": 11
