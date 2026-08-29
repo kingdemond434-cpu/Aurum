@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "19 sleeve(s) accruing, published 0.2h ago",
+          "detail": "22 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.4h old",
+          "detail": "newest row 1.6h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.8h ago",
+          "detail": "written 1.1h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "33409MB free",
+          "detail": "33412MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 50 min ago, after a boot 21.9h ago",
+          "detail": "wrote 65 min ago, after a boot 22.2h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T23:17:39.851434+00:00",
+  "generated_utc": "2026-08-29T23:31:34.294732+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
-  "total_faults": 9
+  "total_faults": 8
 }
