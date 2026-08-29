@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "2 of 84 wakes in 12h were served by the RULE-BASED FALLBACK and 28 got nothing \u2014 36% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "2 of 88 wakes in 12h were served by the RULE-BASED FALLBACK and 28 got nothing \u2014 34% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 209s of 600s budget (35%) over 56 reads",
+          "detail": "median 205s of 600s budget (34%) over 60 reads",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 148 recent / 0 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 152 recent / 0 prior decisions, under 40 either side",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/131 (21%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/133 (21%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "21 sleeve(s) accruing, published 0.2h ago",
+          "detail": "18 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -77,7 +77,7 @@
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.14R while refusals reached +0.49R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.14R while refusals reached +0.48R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.2h old",
+          "detail": "newest row 0.7h old",
           "ok": true
         },
         {
@@ -179,17 +179,17 @@
         },
         {
           "check": "notifications",
-          "detail": "2 delivered, 0 failed",
+          "detail": "3 delivered, 0 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.7h ago",
+          "detail": "written 0.2h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "269 unique decision(s), no tears",
+          "detail": "273 unique decision(s), no tears",
           "ok": true
         },
         {
@@ -199,7 +199,7 @@
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 43 min ago, after a boot 147.5h ago",
+          "detail": "wrote 11 min ago, after a boot 147.7h ago",
           "ok": true
         }
       ],
@@ -224,12 +224,12 @@
       }
     },
     "REFUSAL_COMPILER": {
-      "count": 78,
-      "last": "2026-08-28T19:15:00.646587+00:00"
+      "count": 79,
+      "last": "2026-08-28T23:16:47.444215+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 53,
-      "last": "2026-08-28T22:32:12.275388+00:00"
+      "count": 54,
+      "last": "2026-08-28T23:16:47.444215+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -240,13 +240,13 @@
       "last": null
     },
     "SIGNAL": {
-      "count": 17,
-      "last": "2026-08-28T14:15:00.149687+00:00"
+      "count": 19,
+      "last": "2026-08-28T23:16:47.444215+00:00"
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-28T23:45:06.780431+00:00",
-  "last_row_utc": "2026-08-28T22:32:12.275388+00:00",
-  "ledger_rows": 286,
+  "generated_utc": "2026-08-29T00:00:00.135142+00:00",
+  "last_row_utc": "2026-08-28T23:16:47.444215+00:00",
+  "ledger_rows": 290,
   "total_faults": 10
 }
