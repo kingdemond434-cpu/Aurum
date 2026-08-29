@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "3 of 39 wakes in 12h were served by the RULE-BASED FALLBACK and 6 got nothing \u2014 23% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "3 of 31 wakes in 12h were served by the RULE-BASED FALLBACK and 5 got nothing \u2014 26% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 194s of 600s budget (32%) over 33 reads",
+          "detail": "median 196s of 600s budget (33%) over 26 reads",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 9h ago",
+          "detail": "updated 10h ago",
           "ok": true
         },
         {
@@ -123,12 +123,12 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-QQuantGatesCertify', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 5.1h old",
+          "detail": "newest row 5.4h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 4.6h ago",
+          "detail": "written 4.8h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32555MB free",
+          "detail": "32554MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 275 min ago, after a boot 4.6h ago",
+          "detail": "wrote 290 min ago, after a boot 4.9h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T05:59:59.553249+00:00",
+  "generated_utc": "2026-08-29T06:18:19.857328+00:00",
   "last_row_utc": "2026-08-29T00:53:16.706689+00:00",
   "ledger_rows": 292,
   "total_faults": 10
