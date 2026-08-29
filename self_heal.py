@@ -36,6 +36,10 @@ BASE = Path(__file__).parent
 STATE = BASE / "state" / "self_heal.json"
 log = logging.getLogger("self_heal")
 
+# ONE list of where quant might be, shared with the nightly cycle. See
+# _QUANT_CANDIDATES below for why two lists was a defect rather than a detail.
+from golddesk.absorb_auto import QUANT_ROOT_CANDIDATES as _AA_CANDIDATES  # noqa: E402
+
 
 def _restart_desk() -> bool:
     """Bounce the desk task. THE ONLY process control this file has.
@@ -215,24 +219,58 @@ def _enable_task(name: str) -> bool:
 #:
 #: An explicit env var wins, because a search is a guess and an operator with a
 #: fifth location should not have to edit this list.
-_QUANT_CANDIDATES = (
-    Path("C:/opt/quant"),
-    Path("C:/quant"),
-    BASE.parent / "quant",
-    Path("/opt/quant"),
-)
+#:
+#: DERIVED FROM THE SHARED LIST, plus this box's own sibling directory. There
+#: used to be two lists — this one and the nightly cycle's — with different
+#: entries and different markers, so the watchdog and the thing it watches could
+#: disagree about whether the checkout exists at all.
+_QUANT_CANDIDATES = tuple(
+    [Path(c) for c in _AA_CANDIDATES] + [BASE.parent / "quant"])
 
 
 def _quant_root():
-    env = os.environ.get("AURUM_QUANT_ROOT")
-    if env and Path(env).exists():
-        return Path(env)
-    for c in _QUANT_CANDIDATES:
-        # The marker is the DESK, not the directory name: a stray folder called
-        # "quant" must not be mistaken for the checkout.
-        if (c / "desks" / "mt5").exists():
-            return c
-    return None
+    """Delegates to absorb_auto so there is ONE answer to "where is quant".
+
+    There used to be two implementations — this one and the nightly cycle's —
+    with different candidate lists and different markers, which meant the
+    watchdog and the thing it watches could disagree about whether the checkout
+    exists at all. A fixer that believes the pipe is fine while the cycle
+    believes it is absent is worse than either belief on its own.
+
+    `_QUANT_CANDIDATES` above is kept only for the log line that names where the
+    search looked; the search itself is no longer here.
+    """
+    from golddesk.absorb_auto import discover_quant_root
+    root, _basis = discover_quant_root(candidates=_QUANT_CANDIDATES)
+    return root
+
+
+def _absorb_now() -> bool:
+    """Pull quant's findings into the inbox right now, in-process.
+
+    Deliberately NOT the PowerShell transport: this runs identically on the
+    Windows box and on any clone, needs no script on disk, and dedupes by
+    content hash downstream, so an out-of-band run appends only what is new and
+    is a no-op otherwise.
+
+    Returns False when no checkout is reachable — the one case a fixer genuinely
+    cannot fix. The attempt cap then escalates it as exactly that, instead of
+    retrying a missing directory forever.
+    """
+    from golddesk.absorb_auto import discover_quant_root, to_inbox
+    root, basis = discover_quant_root()
+    if root is None:
+        log.warning("absorption cannot run: no quant checkout (%s); looked in %s",
+                    basis, [str(c) for c in _QUANT_CANDIDATES])
+        return False
+    try:
+        res = to_inbox(root, BASE / "inbox" / "quant_findings.jsonl")
+        log.info("absorbed %s finding(s) from %s (%s), dropped %s as not gold",
+                 res["written"], root, basis, res["dropped_not_relevant"])
+        return True
+    except Exception as e:                             # noqa: BLE001
+        log.warning("absorption failed: %s", e)
+        return False
 
 
 def _sync_quant() -> bool:
@@ -584,6 +622,7 @@ def main(argv=None) -> int:
                                  refresh_macro=_refresh_macro,
                                  rotate_logs=_rotate_logs,
                                  sync_quant=_sync_quant,
+                                 absorb_now=_absorb_now,
                                  run_update=_run_update,
                                  enable_task=_enable_task)
     if args.dry_run:

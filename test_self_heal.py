@@ -531,22 +531,32 @@ def test_the_quant_root_is_searched_not_hardcoded():
     assert len(cands) > 1, "a single hardcoded path is what this replaced"
 
 
-def test_an_env_var_beats_the_search():
+def test_an_env_var_beats_the_search(tmp_path, monkeypatch):
     """A search is a guess; an operator with a fifth location must not have to
-    edit the list."""
+    edit the list.
+
+    The env var now has to point at something that IS the quant desk. Pointing
+    it at an arbitrary directory used to be accepted, and a scan of the wrong
+    checkout finds nothing and reports exactly what a working pipe reports.
+    """
     import self_heal as SH
-    import os
-    tmp = Path(SH.BASE)
-    os.environ["AURUM_QUANT_ROOT"] = str(tmp)
-    try:
-        assert SH._quant_root() == tmp
-    finally:
-        del os.environ["AURUM_QUANT_ROOT"]
+    (tmp_path / "desks" / "mt5").mkdir(parents=True)
+    monkeypatch.setenv("AURUM_QUANT_ROOT", str(tmp_path))
+    assert SH._quant_root() == tmp_path
+
+
+def test_an_env_var_pointing_at_the_wrong_repo_is_refused(tmp_path, monkeypatch):
+    """Absorbing from a directory that is not quant is silent failure: it finds
+    nothing, and finding nothing is what a healthy quiet week looks like."""
+    import self_heal as SH
+    monkeypatch.setenv("AURUM_QUANT_ROOT", str(tmp_path))
+    assert SH._quant_root() is None
 
 
 def test_a_stray_folder_named_quant_is_not_the_checkout(tmp_path, monkeypatch):
     """The marker is the DESK, not the directory name."""
     import self_heal as SH
+    monkeypatch.delenv("AURUM_QUANT_ROOT", raising=False)
     (tmp_path / "quant").mkdir()
     monkeypatch.setattr(SH, "_QUANT_CANDIDATES", (tmp_path / "quant",))
     assert SH._quant_root() is None

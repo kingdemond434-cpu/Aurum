@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Iterable, Optional
@@ -57,7 +58,8 @@ from .absorb import Absorber, Finding
 
 log = logging.getLogger(__name__)
 
-__all__ = ["GOLD_PATTERNS", "MACHINERY_SOURCES", "scan", "sync", "main"]
+__all__ = ["GOLD_PATTERNS", "MACHINERY_SOURCES", "QUANT_MARKERS",
+           "QUANT_ROOT_CANDIDATES", "discover_quant_root", "scan", "sync", "main"]
 
 #: A cell/statement mentioning any of these is about gold.
 GOLD_PATTERNS = (re.compile(r"\bXAU", re.I), re.compile(r"\bgold\b", re.I),
@@ -169,6 +171,68 @@ def scan(quant_root: Path) -> tuple[list[Finding], int]:
         if p.is_file():
             out.extend(_machinery_findings(p, grade, why))
     return out, dropped
+
+
+#: Where a quant checkout actually lives, tried in order. The env var wins; the
+#: rest are the desk's own deployment reality:
+#:   C:/opt/quant       the Contabo VPS, per Aurum's CLAUDE.md
+#:   ../quant, ~/quant  a box with both desks side by side
+#:   /home/user/quant   an agent clone
+QUANT_ROOT_CANDIDATES = ("C:/opt/quant", "C:/quant", "/opt/quant", "../quant",
+                         "~/quant", "/home/user/quant")
+
+#: Files only the quant desk has. A directory existing is not enough: pointing
+#: the scanner at the wrong repository absorbs nothing and reports exactly the
+#: same "0 new findings" as a working pipe. `desks/mt5` is here because
+#: self_heal used it as its marker, and TWO discovery implementations with
+#: different markers can disagree about whether the checkout exists — which is
+#: the split-brain this desk keeps finding. self_heal now delegates here.
+QUANT_MARKERS = ("docs/MASTER_QUANT_CONSTITUTION.md", "docs/GAP_REGISTER.md",
+                 "libs/research", "desks/mt5")
+
+
+def discover_quant_root(env_value: Optional[str] = None,
+                        candidates: Optional[Iterable] = None
+                        ) -> tuple[Optional[Path], str]:
+    """Find the quant checkout. Returns (path, basis); the basis is never empty.
+
+    WHAT WAS ACTUALLY BROKEN. The pull ran only when AURUM_QUANT_ROOT was set,
+    and when it was not the cycle wrote one line to a log nobody reads while the
+    REPORT said "0 new finding(s) this cycle". That sentence is indistinguishable
+    from "quant produced nothing new", so an unplugged pipe and a quiet week look
+    identical in the only artifact anyone actually looks at. The desk has a name
+    for that failure and it is its most repeated one: absence resolving to a
+    clean answer.
+
+    Discovery has a DEFAULT now, and every outcome carries its basis:
+
+        env         AURUM_QUANT_ROOT, which still wins outright
+        discovered  a conventional location carrying the quant markers
+        absent      nothing found — and the caller must say so LOUDLY
+
+    A directory that exists but carries none of the markers comes back as
+    `wrong-repo` rather than being quietly accepted.
+    """
+    env = (env_value if env_value is not None
+           else os.environ.get("AURUM_QUANT_ROOT", "")).strip()
+    if env:
+        p = Path(env).expanduser()
+        if not p.is_dir():
+            return None, f"env-missing:{p}"
+        if not any((p / m).exists() for m in QUANT_MARKERS):
+            return None, f"env-wrong-repo:{p}"
+        return p, "env"
+    here = Path(__file__).resolve().parent.parent
+    for cand in (candidates if candidates is not None else QUANT_ROOT_CANDIDATES):
+        cand = str(cand)
+        p = (here / cand).resolve() if cand.startswith("..") \
+            else Path(cand).expanduser()
+        try:
+            if p.is_dir() and any((p / m).exists() for m in QUANT_MARKERS):
+                return p, "discovered"
+        except OSError:                                # a network path that is down
+            continue
+    return None, "absent"
 
 
 def to_inbox(quant_root: Path, inbox: Path, dry_run: bool = False) -> dict:

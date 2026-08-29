@@ -122,6 +122,7 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
          refresh_macro: Optional[Callable[[], bool]] = None,
          rotate_logs: Optional[Callable[[], bool]] = None,
          sync_quant: Optional[Callable[[], bool]] = None,
+         absorb_now: Optional[Callable[[], bool]] = None,
          run_update: Optional[Callable[[], bool]] = None,
          enable_task: Optional[Callable[[str], bool]] = None) -> tuple[list[Remedy], list]:
     """Split audit findings into what can be fixed and what must escalate.
@@ -289,6 +290,23 @@ def plan(findings: Sequence, *, restart_desk: Callable[[], bool],
                 "restart on an open position. Running it from a task that works "
                 "changes the trigger, not the risk.",
                 run_update))
+
+        elif f.check == "quant absorption" and absorb_now is not None:
+            # MECHANICAL, and it runs in-process rather than through the
+            # PowerShell transport, so it works identically on the box and on
+            # any clone. Deduped by content hash downstream: a run that is not
+            # needed appends nothing.
+            #
+            # It CANNOT fix a checkout that is not on disk, and it says so by
+            # returning False rather than by pretending — the attempt cap then
+            # escalates "no quant checkout reachable", which is the correct
+            # second answer and needs a human with filesystem access.
+            remedies.append(Remedy(
+                f.check, "absorb quant's findings now",
+                "an in-process scan of the quant checkout into Aurum's inbox; "
+                "a no-op when nothing is new, and powerless if no checkout is "
+                "reachable at all — which is what it reports",
+                absorb_now))
 
         elif f.check == "quant inbox" and sync_quant is not None:
             # MECHANICAL. The transport is a deduped file copy, idempotent on

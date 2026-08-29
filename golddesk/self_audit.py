@@ -306,6 +306,45 @@ def check_spread_profile(base: Path) -> Finding:
                    f"{d.get('calibrated_from', 'unknown venue')}")
 
 
+def check_absorption_is_reaching_quant(base: Path) -> Finding:
+    """Is the pipe from the other desk carrying anything, or merely running?
+
+    THE DISGUISE THIS SEES THROUGH. The nightly cycle pulled from quant only
+    when AURUM_QUANT_ROOT was set, and when it was not it reported "0 new
+    finding(s) this cycle" — the identical sentence a genuinely quiet week
+    produces. A desk that stopped reading the other desk months ago and a desk
+    with nothing new to read were byte-identical in the only artifact anyone
+    opens.
+
+    REACHABLE and PRODUCTIVE are different questions, and only the first is a
+    fault here. Quant is entitled to a quiet week; a monitor that calls that a
+    defect gets ignored inside a month, and then it is furniture.
+
+    Grades the LAST RECORDED CYCLE, which the cycle now writes on every run
+    including the dark ones. Fix the checkout, run a cycle, and this clears —
+    there is no stored timestamp to age past, which is exactly how three earlier
+    checks in this repo got stuck BROKEN after their defects were fixed.
+    """
+    from .absorb_health import DARK_CYCLES_BEFORE_DEFECT
+    from .absorb_health import check as _absorb_check
+    h = _absorb_check(base / "state" / "absorb_health.json")
+    if h.cycles == 0:
+        return Finding("quant absorption", False,
+                       "no absorption health record — the cycle has either not "
+                       "run since this check existed or is not writing one. "
+                       "UNMEASURED, which is not the same as fine")
+    if h.dark_streak >= DARK_CYCLES_BEFORE_DEFECT:
+        return Finding("quant absorption", False,
+                       f"DARK {h.dark_streak} cycle(s) ({h.last_basis}) — last "
+                       f"successful scan {h.last_scan_day or 'never'}. Set "
+                       f"AURUM_QUANT_ROOT or restore the checkout; nothing quant "
+                       f"has learned is reaching this desk")
+    return Finding("quant absorption", True,
+                   f"{h.last_basis} -> {h.last_root}; last new finding "
+                   f"{h.last_finding_day or 'none yet'} (a scan that finds "
+                   f"nothing is quant being quiet, not a fault)")
+
+
 def check_notifications_deliver(base: Path) -> Finding:
     """A desk whose messages do not arrive has no product.
 
@@ -491,6 +530,7 @@ def audit(rows: Sequence[dict], cohorts: Optional[dict] = None,
     if base is not None:
         out += [
             check_spread_profile(base),
+            check_absorption_is_reaching_quant(base),
             check_notifications_deliver(base),
             check_checkpoint_is_fresh(base, now),
             check_ledger_integrity(base),

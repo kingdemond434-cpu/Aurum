@@ -238,7 +238,27 @@ def step_absorb(ctx: dict) -> str:
     # moved or half-written quant checkout must degrade to "no new findings"
     # rather than take down Aurum's nightly cycle. Absorption is a nice-to-have
     # on any given night; the cycle is not.
-    qroot = os.environ.get("AURUM_QUANT_ROOT", "").strip()
+    # DISCOVERY, NOT A REQUIRED ENV VAR. This used to run only when
+    # AURUM_QUANT_ROOT was set, and when it was not the report said "0 new
+    # finding(s) this cycle" -- which reads exactly like "quant produced nothing
+    # new". An unplugged pipe and a quiet week were the same sentence in the only
+    # artifact anyone reads. The env var still wins; absent it, the conventional
+    # locations are tried and the BASIS is reported either way.
+    from golddesk.absorb_auto import QUANT_ROOT_CANDIDATES, discover_quant_root
+    _root, _basis = discover_quant_root()
+    qroot = str(_root) if _root else ""
+    notes: list[str] = []
+    if _root:
+        notes.append(f"quant checkout: {qroot} ({_basis})")
+    else:
+        # LOUD, AND IN THE RETURNED TEXT rather than only in the log. This is the
+        # difference between a defect and a quiet week, and the report is where
+        # it has to be visible.
+        notes.append(
+            f"ABSORPTION DARK -- no quant checkout reachable ({_basis}). Nothing "
+            f"was pulled, so '0 new findings' below means THE PIPE, not the other "
+            f"desk being quiet. Set AURUM_QUANT_ROOT or clone quant to one of: "
+            f"{', '.join(QUANT_ROOT_CANDIDATES)}")
     if qroot:
         # UPDATE THE CHECKOUT BEFORE SCANNING IT. Without this, "absorbs as
         # quant grows" is a lie unless a human remembers to `git pull` the
@@ -265,11 +285,18 @@ def step_absorb(ctx: dict) -> str:
             res = to_inbox(Path(qroot), inbox)
             log(f"  pulled {res['written']} gold-relevant finding(s) from "
                 f"{qroot}, dropped {res['dropped_not_relevant']} as not gold")
+            notes.append(f"scanned: {res['written']} gold-relevant written, "
+                         f"{res['dropped_not_relevant']} dropped as not gold")
+            scanned = True
         except Exception as e:                               # noqa: BLE001
             log(f"  quant pull skipped ({type(e).__name__}: {e}); "
                 f"processing whatever is already in the inbox")
+            notes.append(f"SCAN FAILED ({type(e).__name__}: {e}) -- the inbox was "
+                         f"processed but nothing new was pulled")
+            scanned = False
     else:
-        log("  AURUM_QUANT_ROOT not set — inbox-only mode, nothing pulled")
+        log(f"  no quant checkout ({_basis}) — inbox-only mode, nothing pulled")
+        scanned = False
 
     ab = Absorber.load(STATE_DIR / "absorption.json")
     ctx["absorber"] = ab
@@ -285,7 +312,20 @@ def step_absorb(ctx: dict) -> str:
         if before is None:
             n_new += 1
     ab.save(STATE_DIR / "absorption.json")
-    return f"{n_new} new finding(s) this cycle\n" + ab.report()
+
+    # THE HEALTH RECORD, so "absorption has been dark for a week" is answerable
+    # rather than something someone eventually notices. Written every cycle,
+    # including the cycles where nothing was reachable -- an artifact that only
+    # exists on the good days measures nothing.
+    from golddesk.absorb_health import record
+    health = record(STATE_DIR / "absorb_health.json",
+                    day=ctx.get("as_of") or
+                    datetime.now(timezone.utc).date().isoformat(),
+                    root=qroot or None, basis=_basis, scanned=scanned,
+                    n_new=n_new)
+    ctx["absorb_health"] = health
+    return "\n".join(notes + [f"{n_new} new finding(s) this cycle",
+                              health.render(), ab.report()])
 
 
 def step_channel(ctx: dict) -> str:
