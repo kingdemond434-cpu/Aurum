@@ -133,7 +133,7 @@
         },
         {
           "check": "Aurum-Sync",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'Aurum-Sync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "ran and delivered NOTHING (exit 3) \u2014 carries quant's findings into this desk's inbox works, but its SOURCE was absent. UNMEASURED, not 'no new findings'; the break is upstream.",
           "ok": true
         }
       ],
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 6.4h old",
+          "detail": "newest row 6.6h old",
           "ok": true
         },
         {
@@ -184,8 +184,8 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 5.8h ago",
-          "ok": true
+          "detail": "last written 6.1h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "ok": false
         },
         {
           "check": "ledger integrity",
@@ -194,16 +194,16 @@
         },
         {
           "check": "disk",
-          "detail": "32541MB free",
+          "detail": "32539MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 350 min ago, after a boot 5.9h ago",
+          "detail": "wrote 365 min ago, after a boot 6.1h ago",
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     }
   },
   "decisions": {
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T07:17:39.696277+00:00",
+  "generated_utc": "2026-08-29T07:30:00.695995+00:00",
   "last_row_utc": "2026-08-29T00:53:16.706689+00:00",
   "ledger_rows": 292,
-  "total_faults": 9
+  "total_faults": 10
 }
