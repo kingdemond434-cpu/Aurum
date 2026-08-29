@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 23h ago",
+          "detail": "updated 24h ago",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "19 sleeve(s) accruing, published 0.5h ago",
+          "detail": "19 sleeve(s) accruing, published 0.4h ago",
           "ok": true
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -103,28 +103,28 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-VantageSpread', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-ShadowSync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -133,11 +133,11 @@
         },
         {
           "check": "Aurum-Sync",
-          "detail": "ran and delivered NOTHING (exit 3) \u2014 carries quant's findings into this desk's inbox works, but its SOURCE was absent. UNMEASURED, not 'no new findings'; the break is upstream.",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'Aurum-Sync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 0
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 6.1h old",
+          "detail": "newest row 6.6h old",
           "ok": true
         },
         {
@@ -184,8 +184,8 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 5.6h ago",
-          "ok": true
+          "detail": "last written 6.1h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "ok": false
         },
         {
           "check": "ledger integrity",
@@ -194,16 +194,16 @@
         },
         {
           "check": "disk",
-          "detail": "33429MB free",
+          "detail": "33426MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 334 min ago, after a boot 18.4h ago",
+          "detail": "wrote 364 min ago, after a boot 18.9h ago",
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     }
   },
   "decisions": {
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-29T19:50:51.598929+00:00",
+  "generated_utc": "2026-08-29T20:24:34.555433+00:00",
   "last_row_utc": "2026-08-29T13:38:05.011984+00:00",
   "ledger_rows": 301,
-  "total_faults": 9
+  "total_faults": 6
 }
