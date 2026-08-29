@@ -490,6 +490,32 @@ def step_cohorts(ctx: dict) -> str:
     return render_all(cohorts)
 
 
+def step_ranker(ctx: dict) -> str:
+    """Which recorded feature actually predicts realised R -- re-measured today.
+
+    THE FAULT THIS ANSWERS is the desk's own measurement: taken trades resolve
+    -0.14R while refusals reached +0.56R. Out of a set that contained better, it
+    kept reaching for worse. That is ORDERING, and ordering was the one decision
+    the desk had no measured basis for -- the tiebreak among unmeasured
+    candidates was net R:R, which is a preference, and it is declared as one.
+
+    IT PUBLISHES; IT DOES NOT TUNE. Nothing here moves a threshold or a gate --
+    the cycle is forbidden from that and rightly so. It writes state/ranker.json
+    and the live sort key reads it. A feature that has cleared sample, Holm
+    across everything tested that day, the sample's own median cost, and three
+    consecutive days at the same sign is worth ONE VOTE in the ordering.
+    Everything else is worth nothing -- which is what every feature is worth
+    today, and will be for weeks, and the report says so in that word.
+    """
+    from golddesk.ranker import advance, measure, publish, read_artifact, render
+    rep = measure(ctx.get("rows") or [])
+    day = ctx.get("as_of") or datetime.now(timezone.utc).date().isoformat()
+    art = advance(read_artifact(), rep, day)
+    publish(art)
+    ctx["ranker"] = art
+    return render(art)
+
+
 def step_missed_money(ctx: dict) -> str:
     """What the refusals actually cost -- counting only money that was GETTABLE.
 
@@ -651,6 +677,12 @@ STEPS = (
     # before the mechanisms have measured histories to compare against.
     ("cohorts", step_cohorts),
     ("stop_regime", step_stop_regime),
+    # AFTER cohorts and stop_regime, BEFORE missed_money and levers. The ranker
+    # is the reply to what missed_money keeps finding -- that the refusals beat
+    # the takes -- so it must be re-measured before anything reasons about how
+    # much selection is costing, and it needs the resolved record the two steps
+    # above have already loaded.
+    ("ranker", step_ranker),
     ("missed_money", step_missed_money),
     ("mgmt_counterfactual", step_mgmt_counterfactual),
     ("levers", step_levers),

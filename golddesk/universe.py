@@ -193,6 +193,15 @@ class Candidate:
     disposition: Disposition = "PENDING"
     disposition_reason: str = ""
     risk_consumed_r: float = 0.0
+    #: The scoreable features of this proposition, in the same units the ledger
+    #: records them in. Populated by compile_universe; empty when no context was
+    #: available, which is a real state rather than a set of zeros.
+    rank_features: dict = field(default_factory=dict)
+    #: Votes from `ranker`: +1 for each feature that has DEMONSTRATED it predicts
+    #: realised R and on whose better side this candidate falls. Zero whenever
+    #: nothing has been demonstrated — which is the desk's state today and will
+    #: be for weeks — and in that state ordering is byte-identical to before.
+    rank_votes: int = 0
 
     @property
     def viable(self) -> bool:
@@ -235,6 +244,13 @@ class Candidate:
              "ev_r": None if self.ev_r is None or math.isnan(self.ev_r) else round(self.ev_r, 4),
              "ev_basis": self.ev_basis,
              "analyst_read": self.read.model_dump(),
+             # THE VOTES AND WHAT THEY WERE COMPUTED FROM, on the row itself. A
+             # ranking that reordered candidates and left no trace would be
+             # unfalsifiable — "did the ordering help" is only answerable if the
+             # score each candidate carried is in the record beside what it did.
+             "rank_votes": self.rank_votes,
+             "rank_features": {k: v for k, v in sorted(self.rank_features.items())
+                               if v is not None},
              "universe_version": UNIVERSE_VERSION}
         if self.compiled:
             c = self.compiled
@@ -258,6 +274,8 @@ def compile_universe(brief: MarketBrief, universe: AnalystUniverse,
     first viable candidate would restore exactly the blindness this module
     exists to remove.
     """
+    from .ranker import features_for
+
     out: list[Candidate] = []
     for k, read in enumerate(universe.candidates):
         if read.setup is Setup.NO_SETUP or read.direction == "NONE":
@@ -274,7 +292,14 @@ def compile_universe(brief: MarketBrief, universe: AnalystUniverse,
                     fallback_min_rr=thresholds.fallback_min_rr,
                     min_ev_r=thresholds.min_ev_r, shadow=shadow)
         ev = None if (v.ev_r is None or math.isnan(v.ev_r)) else v.ev_r
-        out.append(Candidate(k, read, res, None, ev, v.basis))
+        c = Candidate(k, read, res, None, ev, v.basis)
+        # THE SAME ARITHMETIC THE LEDGER RECORDS, computed here so that what
+        # gets measured and what gets ranked are the same quantity. Attached to
+        # every compiled candidate whether or not anything currently uses it:
+        # a feature nobody scores today is still journalled, which is what makes
+        # "did the votes predict anything" answerable later instead of never.
+        c.rank_features = features_for(read, res, getattr(brief, "context", None))
+        out.append(c)
     return out
 
 
@@ -332,6 +357,8 @@ class Selection:
     taken: list[Candidate] = field(default_factory=list)
     budget_bound: bool = False
     tiebreak_used: bool = False
+    ranking_used: bool = False
+    ranking_version: str = ""
     truncated: bool = False
     analyst_had_more: bool = False
     notes: list[str] = field(default_factory=list)
@@ -357,6 +384,11 @@ class Selection:
         else:
             lines.append("  Budget did not bind: nothing was dropped for ranking "
                          "below something else.")
+        if self.ranking_used:
+            lines.append(f"  MEASURED RANKING WAS LOAD-BEARING ({self.ranking_version}) "
+                         f"— candidates were ordered by features that have "
+                         f"demonstrated they predict realised R, and the order "
+                         f"decided an allocation. Registered as entry.rank_votes.")
         if self.tiebreak_used:
             lines.append("  TIEBREAK WAS LOAD-BEARING — an unmeasured preference "
                          "decided a real allocation. Registered as "
@@ -378,30 +410,45 @@ class Selection:
                 "taken": len(self.taken),
                 "budget_bound": self.budget_bound,
                 "tiebreak_used": self.tiebreak_used,
+                "ranking_used": self.ranking_used,
+                "ranking_version": self.ranking_version,
                 "cap_binding": self.truncated,
                 "analyst_had_more": self.analyst_had_more,
                 "candidates": [c.to_journal() for c in self.candidates]}
 
 
 def _sort_key(c: Candidate) -> tuple:
-    """Ordering for the greedy pass. EV first; the declared tiebreak after.
+    """Ordering for the greedy pass. EV, then measured votes, then the declared
+    tiebreak.
 
     Measured EV always outranks an unmeasured candidate — not because novelty is
     bad, but because an unknown quantity cannot be shown to beat a known
     positive one, and allocating scarce risk on the strength of the unknown is a
     claim the evidence does not support.
 
-    Among unmeasured candidates the order is net R:R after cost. That is the
-    DECLARED tiebreak. It is a preference, not a measurement: R:R is half an
-    expectancy calculation and this module says so everywhere else. It is used
-    only when a budget binds, it is flagged when it is load-bearing, and the
-    candidates it defers are journalled with geometry so its cost is recoverable
-    from the forward record.
+    THEN `rank_votes`, and its position is the point of the whole ranker. The
+    desk's measured fault is SELECTION — taken trades resolved -0.14R while its
+    refusals reached +0.56R — which is a statement about ORDER, not about
+    volume or about gates. Votes sit below EV because a per-mechanism expectancy
+    is a direct measurement of the same quantity, and above R:R because a
+    feature that has cleared sample, Holm, cost and stability has demonstrated
+    something R:R never has. Every vote is worth exactly one; there are no
+    coefficients here to overfit.
+
+    Among candidates the votes cannot separate, the order is net R:R after cost.
+    That is the DECLARED tiebreak. It is a preference, not a measurement: R:R is
+    half an expectancy calculation and this module says so everywhere else. It
+    is used only when a budget binds, it is flagged when it is load-bearing, and
+    the candidates it defers are journalled with geometry so its cost is
+    recoverable from the forward record.
+
+    WITH NO PUBLISHED RANKING every `rank_votes` is 0, the term is constant, and
+    this key is byte-identical to the one that existed before the ranker did.
     """
     measured = c.ev_r is not None
     ev = c.ev_r if measured else float("-inf")
     rr = c.compiled.rr_tp2 if c.compiled else 0.0
-    return (0 if measured else 1, -ev, -rr, c.mechanism)
+    return (0 if measured else 1, -ev, -c.rank_votes, -rr, c.mechanism)
 
 
 def select(candidates: Sequence[Candidate], heat: Heat,
@@ -412,7 +459,8 @@ def select(candidates: Sequence[Candidate], heat: Heat,
            risk_per_trade_r: float = 1.0,
            min_overlap: float = 0.6,
            cap_filled: bool = False,
-           analyst_had_more: bool = False) -> Selection:
+           analyst_had_more: bool = False,
+           ranking=None) -> Selection:
     """Choose which enumerated propositions get risk.
 
     Order of operations matters and is deliberate:
@@ -433,6 +481,18 @@ def select(candidates: Sequence[Candidate], heat: Heat,
     sel = Selection(list(candidates), truncated=cap_filled or analyst_had_more,
                     analyst_had_more=analyst_had_more)
 
+    # SCORE BEFORE SORTING, and read the ranking from disk unless one was passed.
+    # Resolved here rather than in the signature default because a default
+    # argument is evaluated once at import: the desk runs for days and the cycle
+    # republishes nightly, so a captured default would freeze the ordering at
+    # whatever was on disk when the process booted.
+    if ranking is None:
+        from .ranker import load as _load_ranking
+        ranking = _load_ranking()
+    sel.ranking_version = getattr(ranking, "version", "")
+    for c in sel.candidates:
+        c.rank_votes = ranking.score(c.rank_features) if c.rank_features else 0
+
     pool = [c for c in sel.candidates if c.viable]
     for c in pool:
         if c.ev_r is not None and c.ev_r <= 0:
@@ -443,6 +503,7 @@ def select(candidates: Sequence[Candidate], heat: Heat,
     pool.sort(key=_sort_key)
 
     unmeasured_in_contention = sum(1 for c in pool if c.ev_r is None)
+    votes_split = len({c.rank_votes for c in pool}) > 1
     taken_risks = list(open_risks)
     taken_dirs = list(open_directions)
 
@@ -502,6 +563,11 @@ def select(candidates: Sequence[Candidate], heat: Heat,
     # positive was taken, the sort order changed nothing and claiming otherwise
     # would overstate how much unmeasured preference is in the system.
     sel.tiebreak_used = bool(sel.budget_bound and unmeasured_in_contention >= 2)
+    # The MEASURED ordering was load-bearing only if a budget bound AND the
+    # votes actually differed between candidates. A ranking that scored every
+    # candidate identically decided nothing, and recording it as decisive would
+    # bill the ranker for an outcome the sort order did not produce.
+    sel.ranking_used = bool(sel.budget_bound and votes_split)
 
     if not sel.taken and sel.candidates:
         sel.notes.append("nothing taken — every candidate was refused by a gate "

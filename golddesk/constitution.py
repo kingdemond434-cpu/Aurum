@@ -226,6 +226,19 @@ REGISTRY: list[Restriction] = [
                 "the candidates it defers keep their geometry so its cost is "
                 "recoverable from the forward record",
                 review_days=14),
+    Restriction("entry.rank_votes", "ranker:score", Kind.DISCRETIONARY,
+                "candidates ordered behind others by measured features when risk "
+                "is scarce",
+                "the desk's measured fault is SELECTION — taken trades resolved "
+                "-0.14R while its refusals reached +0.56R — which is a fault of "
+                "ORDER, not of volume, so the answer is ranking rather than a "
+                "further gate. A feature earns a vote only after clearing "
+                "sample, Holm across everything tested that day, the sample's "
+                "own median cost, and three consecutive days at the same sign; "
+                "until then it is worth zero and the sort key is unchanged. It "
+                "ranks and never refuses, so it can never cost a signal — only "
+                "a place in the queue, and only when a budget binds",
+                status=Status.ADVISORY, review_days=14),
     Restriction("entry.universe_redundancy", "universe:redundancy", Kind.DISCRETIONARY,
                 "a second candidate whose band overlaps one already taken",
                 "same-direction overlap is one idea sized twice while the ledger "
