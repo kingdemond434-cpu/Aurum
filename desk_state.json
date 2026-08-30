@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 161 recent / 5 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 160 recent / 6 prior decisions, under 40 either side",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 8h ago",
+          "detail": "updated 9h ago",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 7.1h old",
+          "detail": "newest row 7.4h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "last written 6.6h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "detail": "last written 6.8h ago \u2014 the desk is not persisting state, so a crash loses everything since",
           "ok": false
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32456MB free",
+          "detail": "32453MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 395 min ago, after a boot 27.6h ago",
+          "detail": "wrote 410 min ago, after a boot 27.9h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T05:00:00.683110+00:00",
+  "generated_utc": "2026-08-30T05:15:00.813202+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
   "total_faults": 9
