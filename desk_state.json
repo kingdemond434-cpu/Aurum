@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "UNMEASURED \u2014 5 wake(s) in 12h, under 20",
+          "detail": "UNMEASURED \u2014 8 wake(s) in 12h, under 20",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "UNMEASURED \u2014 5 stamped read(s), under 10",
+          "detail": "UNMEASURED \u2014 8 stamped read(s), under 10",
           "ok": true
         },
         {
@@ -31,17 +31,17 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "23.0% recent vs 8.2% prior",
+          "detail": "24.4% recent vs 8.2% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/145 (19%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/146 (19%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
           "check": "capture",
-          "detail": "88% of MFE kept over 9 winners",
+          "detail": "89% of MFE kept over 10 winners",
           "ok": true
         },
         {
@@ -67,17 +67,17 @@
       "checks": [
         {
           "check": "calibration",
-          "detail": "UNMEASURED \u2014 23 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
+          "detail": "UNMEASURED \u2014 0 high-confidence and 18 low-confidence resolved trades; the comparison needs both tails",
           "ok": true
         },
         {
           "check": "edge",
-          "detail": "UNMEASURED \u2014 23 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
+          "detail": "UNMEASURED \u2014 25 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
           "ok": true
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.21R while refusals reached +0.45R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.20R while refusals reached +0.45R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -88,23 +88,23 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -113,13 +113,13 @@
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "enabled, last result 267014",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
@@ -137,14 +137,14 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 1
     },
     "wiring": {
       "axis": "wiring",
       "checks": [
         {
           "check": "cohorts",
-          "detail": "22 mechanism(s) loaded from 23 resolved trades",
+          "detail": "23 mechanism(s) loaded from 25 resolved trades",
           "ok": true
         },
         {
@@ -154,7 +154,7 @@
         },
         {
           "check": "excursion",
-          "detail": "3 of 22 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
+          "detail": "3 of 24 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
           "ok": false
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.5h old",
+          "detail": "newest row 0.2h old",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "16 delivered, 2 failed",
+          "detail": "18 delivered, 5 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.1h ago",
+          "detail": "written 0.2h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "293 unique decision(s), no tears",
+          "detail": "296 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "20442MB free",
+          "detail": "20438MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 8 min ago, after a boot 45.1h ago",
+          "detail": "wrote 12 min ago, after a boot 45.4h ago",
           "ok": true
         }
       ],
@@ -228,8 +228,8 @@
       "last": "2026-08-30T13:47:05.598294+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 61,
-      "last": "2026-08-30T22:00:00.838661+00:00"
+      "count": 62,
+      "last": "2026-08-30T22:15:00.484121+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -240,13 +240,13 @@
       "last": null
     },
     "SIGNAL": {
-      "count": 27,
-      "last": "2026-08-30T13:47:05.598294+00:00"
+      "count": 29,
+      "last": "2026-08-30T22:15:00.484121+00:00"
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T22:31:01.687320+00:00",
-  "last_row_utc": "2026-08-30T22:00:00.838661+00:00",
-  "ledger_rows": 316,
-  "total_faults": 9
+  "generated_utc": "2026-08-30T22:51:32.089138+00:00",
+  "last_row_utc": "2026-08-30T22:33:26.096270+00:00",
+  "ledger_rows": 321,
+  "total_faults": 7
 }
