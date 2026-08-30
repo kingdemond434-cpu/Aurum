@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "UNMEASURED \u2014 8 wake(s) in 12h, under 20",
+          "detail": "UNMEASURED \u2014 10 wake(s) in 12h, under 20",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "UNMEASURED \u2014 8 stamped read(s), under 10",
+          "detail": "median 170s of 600s budget (28%) over 10 reads",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "24.4% recent vs 8.2% prior",
+          "detail": "23.9% recent vs 8.2% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/146 (19%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/148 (19%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -88,23 +88,23 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -113,17 +113,17 @@
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267014",
           "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 1
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.4h old",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "18 delivered, 5 failed",
+          "detail": "19 delivered, 5 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.1h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "296 unique decision(s), no tears",
+          "detail": "298 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "20438MB free",
+          "detail": "20424MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 12 min ago, after a boot 45.4h ago",
+          "detail": "wrote 5 min ago, after a boot 45.6h ago",
           "ok": true
         }
       ],
@@ -228,8 +228,8 @@
       "last": "2026-08-30T13:47:05.598294+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 62,
-      "last": "2026-08-30T22:15:00.484121+00:00"
+      "count": 64,
+      "last": "2026-08-30T22:30:10.406359+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T22:51:32.089138+00:00",
-  "last_row_utc": "2026-08-30T22:33:26.096270+00:00",
-  "ledger_rows": 321,
-  "total_faults": 7
+  "generated_utc": "2026-08-30T23:03:33.741554+00:00",
+  "last_row_utc": "2026-08-30T22:30:10.406359+00:00",
+  "ledger_rows": 323,
+  "total_faults": 9
 }
