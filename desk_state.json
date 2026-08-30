@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 19h ago",
+          "detail": "updated 20h ago",
           "ok": true
         },
         {
@@ -128,7 +128,7 @@
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-QQuantGatesCertify', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 2.2h old",
+          "detail": "newest row 2.5h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 1.7h ago",
+          "detail": "written 1.9h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "23719MB free",
+          "detail": "23715MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 101 min ago, after a boot 38.6h ago",
+          "detail": "wrote 116 min ago, after a boot 38.9h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T16:01:40.727392+00:00",
+  "generated_utc": "2026-08-30T16:15:01.151231+00:00",
   "last_row_utc": "2026-08-30T13:47:05.598294+00:00",
   "ledger_rows": 313,
   "total_faults": 9
