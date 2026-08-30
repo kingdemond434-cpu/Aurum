@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "16 sleeve(s) accruing, published 0.2h ago",
+          "detail": "19 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.7h old",
+          "detail": "newest row 1.0h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.4h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "27601MB free",
+          "detail": "27608MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 11 min ago, after a boot 37.2h ago",
+          "detail": "wrote 26 min ago, after a boot 37.4h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T14:31:20.016659+00:00",
+  "generated_utc": "2026-08-30T14:45:01.198900+00:00",
   "last_row_utc": "2026-08-30T13:47:05.598294+00:00",
   "ledger_rows": 313,
   "total_faults": 10
