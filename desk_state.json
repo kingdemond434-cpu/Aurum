@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 6.9h old",
+          "detail": "newest row 7.1h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "last written 6.3h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "detail": "last written 6.6h ago \u2014 the desk is not persisting state, so a crash loses everything since",
           "ok": false
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32457MB free",
+          "detail": "32456MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 380 min ago, after a boot 27.4h ago",
+          "detail": "wrote 395 min ago, after a boot 27.6h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T04:45:00.812213+00:00",
+  "generated_utc": "2026-08-30T05:00:00.683110+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
   "total_faults": 9
