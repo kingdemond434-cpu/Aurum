@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "15.4% recent vs 13.6% prior",
+          "detail": "15.0% recent vs 14.9% prior",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "16 sleeve(s) accruing, published 0.2h ago",
+          "detail": "19 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,42 +88,42 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-VantageSpread', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-ShadowSync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 0
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 6.0h old",
+          "detail": "newest row 6.5h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 5.4h ago",
+          "detail": "written 5.9h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "28291MB free",
+          "detail": "27608MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 326 min ago, after a boot 35.9h ago",
+          "detail": "wrote 355 min ago, after a boot 36.4h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T13:24:49.496530+00:00",
+  "generated_utc": "2026-08-30T13:45:08.534730+00:00",
   "last_row_utc": "2026-08-30T07:16:30.580985+00:00",
   "ledger_rows": 309,
-  "total_faults": 5
+  "total_faults": 8
 }
