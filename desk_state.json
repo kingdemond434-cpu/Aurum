@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "UNMEASURED \u2014 9 wake(s) in 12h, under 20",
+          "detail": "UNMEASURED \u2014 5 wake(s) in 12h, under 20",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "UNMEASURED \u2014 9 stamped read(s), under 10",
+          "detail": "UNMEASURED \u2014 5 stamped read(s), under 10",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "19 sleeve(s) accruing, published 0.5h ago",
+          "detail": "19 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,7 +88,7 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 3.6h old",
+          "detail": "newest row 3.9h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 3.1h ago",
+          "detail": "written 3.3h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "33381MB free",
+          "detail": "33377MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 185 min ago, after a boot 24.2h ago",
+          "detail": "wrote 200 min ago, after a boot 24.4h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T01:31:54.479504+00:00",
+  "generated_utc": "2026-08-30T01:45:01.236427+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
-  "total_faults": 9
+  "total_faults": 8
 }
