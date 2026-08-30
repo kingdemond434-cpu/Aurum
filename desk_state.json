@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 152 recent / 15 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 151 recent / 16 prior decisions, under 40 either side",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "16 sleeve(s) accruing, published 0.2h ago",
+          "detail": "19 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 2.2h old",
+          "detail": "newest row 2.5h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 1.7h ago",
+          "detail": "written 1.9h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "31754MB free",
+          "detail": "31761MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 100 min ago, after a boot 32.1h ago",
+          "detail": "wrote 116 min ago, after a boot 32.4h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T09:29:59.945135+00:00",
+  "generated_utc": "2026-08-30T09:48:26.838536+00:00",
   "last_row_utc": "2026-08-30T07:16:30.580985+00:00",
   "ledger_rows": 309,
   "total_faults": 9
