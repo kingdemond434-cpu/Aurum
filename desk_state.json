@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 5h ago",
+          "detail": "updated 6h ago",
           "ok": true
         },
         {
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 4.1h old",
+          "detail": "newest row 4.4h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 3.6h ago",
+          "detail": "written 3.8h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "33381MB free",
+          "detail": "32407MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 215 min ago, after a boot 24.6h ago",
+          "detail": "wrote 230 min ago, after a boot 24.9h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T02:00:42.648436+00:00",
+  "generated_utc": "2026-08-30T02:15:01.327565+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
   "total_faults": 8
