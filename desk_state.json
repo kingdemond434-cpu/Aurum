@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 163 recent / 3 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 162 recent / 4 prior decisions, under 40 either side",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 5.9h old",
+          "detail": "newest row 6.1h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 5.3h ago",
+          "detail": "written 5.6h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32443MB free",
+          "detail": "32441MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 320 min ago, after a boot 26.4h ago",
+          "detail": "wrote 335 min ago, after a boot 26.6h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T03:45:12.016059+00:00",
+  "generated_utc": "2026-08-30T04:00:00.482578+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
   "total_faults": 8
