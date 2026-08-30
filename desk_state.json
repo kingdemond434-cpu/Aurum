@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 2
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.0h old",
+          "detail": "newest row 1.2h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.4h ago",
+          "detail": "written 0.7h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32410MB free",
+          "detail": "30860MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 25 min ago, after a boot 30.9h ago",
+          "detail": "wrote 40 min ago, after a boot 31.1h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T08:17:34.549274+00:00",
+  "generated_utc": "2026-08-30T08:30:06.191116+00:00",
   "last_row_utc": "2026-08-30T07:16:30.580985+00:00",
   "ledger_rows": 309,
-  "total_faults": 9
+  "total_faults": 8
 }
