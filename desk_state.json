@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 12h ago",
+          "detail": "updated 13h ago",
           "ok": true
         },
         {
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.7h old",
+          "detail": "newest row 2.0h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 1.2h ago",
+          "detail": "written 1.4h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "31759MB free",
+          "detail": "31756MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 70 min ago, after a boot 31.6h ago",
+          "detail": "wrote 85 min ago, after a boot 31.9h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T09:00:02.956296+00:00",
+  "generated_utc": "2026-08-30T09:14:59.885158+00:00",
   "last_row_utc": "2026-08-30T07:16:30.580985+00:00",
   "ledger_rows": 309,
-  "total_faults": 8
+  "total_faults": 9
 }
