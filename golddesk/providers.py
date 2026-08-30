@@ -18,8 +18,10 @@ import base64
 import json
 import logging
 import os
+import tempfile
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from .analyst import (ANALYST_SCHEMA, ANALYST_SYSTEM, AnalystRead, MarketBrief)
@@ -1034,9 +1036,159 @@ class ClaudeCodeAnalyst(AnalystProvider):
         return pr, uni
 
 
+class CodexCliAnalyst(AnalystProvider):
+    """Local ChatGPT subscription failover through an ephemeral Codex run."""
+
+    name = "codex"
+
+    def __init__(self, model: str = "gpt-5.6-sol", binary: str = "codex",
+                 timeout_s: float = 600.0, runner: Any = None,
+                 billed: Optional[bool] = None, effort: str = "high"):
+        self.model, self.binary, self.timeout_s = model, binary, timeout_s
+        self._runner, self._billed, self.effort = runner, billed, effort
+
+    def billed(self) -> bool:
+        if self._billed is not None:
+            return self._billed
+        return bool((os.environ.get("OPENAI_API_KEY") or "").strip())
+
+    def _env(self) -> dict:
+        env = dict(os.environ)
+        if not self.billed():
+            env.pop("OPENAI_API_KEY", None)
+        return env
+
+    def _argv(self, workspace: str, schema_path: str, output_path: str,
+              image_paths: Sequence[str] = ()) -> list[str]:
+        argv = [self.binary, "exec", "--ephemeral", "--sandbox", "read-only",
+                "--skip-git-repo-check", "--cd", workspace,
+                "--output-schema", schema_path,
+                "--output-last-message", output_path,
+                "--model", self.model,
+                "-c", f'model_reasoning_effort="{self.effort}"']
+        for path in image_paths:
+            argv += ["--image", path]
+        argv.append("-")
+        return argv
+
+    def _invoke(self, argv: list[str], prompt: str, output_path: Path) -> str:
+        if self._runner is not None:
+            result = self._runner(argv, prompt)
+            if isinstance(result, str):
+                return result
+            if isinstance(result, dict):
+                return str(result.get("result") or result.get("output") or "")
+            return str(result or "")
+        import shutil
+        import subprocess
+        resolved = shutil.which(argv[0])
+        if resolved:
+            argv = [resolved, *argv[1:]]
+        try:
+            p = subprocess.run(argv, input=prompt, env=self._env(),
+                               capture_output=True, text=True,
+                               timeout=self.timeout_s)
+        except FileNotFoundError as e:
+            raise AnalystError(
+                f"{self.binary!r} not found. Install/login to the Codex CLI or "
+                "remove 'codex' from the analyst fallback chain.") from e
+        except subprocess.TimeoutExpired as e:
+            raise AnalystError(f"codex timed out after {self.timeout_s}s") from e
+        if p.returncode != 0:
+            raise AnalystError(f"codex exited {p.returncode}: "
+                               f"{(p.stderr or p.stdout)[:300]}")
+        if not output_path.exists():
+            raise AnalystError("codex completed without writing its final message")
+        return output_path.read_text(encoding="utf-8")
+
+    def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        prompt = (ANALYST_SYSTEM + "\n\nReturn only JSON conforming to this "
+                  "schema; do not inspect files or run commands:\n" +
+                  json.dumps(ANALYST_SCHEMA, sort_keys=True) + "\n\n" +
+                  brief.render())
+        t0 = time.monotonic()
+        with tempfile.TemporaryDirectory(prefix="aurum-codex-analyst-") as td:
+            root = Path(td)
+            schema_path = root / "analyst-schema.json"
+            output_path = root / "answer.json"
+            schema_path.write_text(json.dumps(ANALYST_SCHEMA), encoding="utf-8")
+            images = []
+            for i, chart in enumerate(charts):
+                path = root / f"chart-{i}-{chart.timeframe}.png"
+                path.write_bytes(chart.png)
+                images.append(str(path))
+            text = self._invoke(
+                self._argv(str(root), str(schema_path), str(output_path), images),
+                prompt, output_path)
+        dt = (time.monotonic() - t0) * 1000
+        try:
+            read = AnalystRead.model_validate_json(text.strip())
+        except Exception as e:                            # noqa: BLE001
+            raise AnalystError(f"codex returned text that is not a valid "
+                               f"AnalystRead: {e}; got {text[:300]!r}") from e
+        return ProviderRead(read, self.name, self.model, dt,
+                            {"billed": self.billed(), "cost_usd": None,
+                             "source": "codex exec --ephemeral",
+                             "reasoning_effort": self.effort})
+
+
+class FailoverAnalyst(AnalystProvider):
+    """Try providers in order; a valid refusal never triggers failover.
+
+    Claude Code has no image argument. In a chart-enabled chain it receives the
+    full numeric brief while later image-capable providers retain the charts.
+    Thus Claude remains primary and GPT receives live charts if Claude fails.
+    """
+
+    name = "failover"
+
+    def __init__(self, providers: Sequence[AnalystProvider]):
+        self.providers = list(providers)
+        if not self.providers:
+            raise ValueError("failover chain is empty")
+        self.model = " -> ".join(
+            f"{p.name}:{getattr(p, 'model', '')}" for p in self.providers)
+
+    def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        errors = []
+        for i, provider in enumerate(self.providers):
+            try:
+                provider_charts = () if provider.name == "claudecode" else charts
+                result = provider.read(brief, provider_charts)
+                usage = dict(result.usage)
+                usage.update({
+                    "failover_index": i,
+                    "failover_attempts": [p.name for p in self.providers[:i + 1]],
+                    "failover_errors": errors,
+                    "charts_available": len(charts),
+                    "charts_sent": len(provider_charts),
+                })
+                return ProviderRead(result.read, result.provider, result.model,
+                                    result.latency_ms, usage)
+            except Exception as e:                       # noqa: BLE001
+                errors.append(f"{provider.name}: {type(e).__name__}: {e}")
+                log.warning("analyst provider %s failed; trying fallback: %s",
+                            provider.name, e)
+        raise AnalystError("all analyst providers failed: " + " | ".join(errors))
+
+    def choose_option(self, system: str, prompt: str,
+                      option_ids: Sequence[str]) -> str:
+        errors = []
+        for provider in self.providers:
+            if type(provider).choose_option is AnalystProvider.choose_option:
+                continue
+            try:
+                return provider.choose_option(system, prompt, option_ids)
+            except Exception as e:                       # noqa: BLE001
+                errors.append(f"{provider.name}: {e}")
+        raise AnalystError("no management-capable provider succeeded: " +
+                           " | ".join(errors))
+
+
 PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
              "deterministic": DeterministicProvider,
-             "claudecode": ClaudeCodeAnalyst}
+             "claudecode": ClaudeCodeAnalyst,
+             "codex": CodexCliAnalyst}
 
 
 def build_provider(spec: str, **kw) -> AnalystProvider:
@@ -1062,3 +1214,12 @@ def build_provider(spec: str, **kw) -> AnalystProvider:
         raise ValueError(
             f"provider {name!r} does not accept one of these arguments: "
             f"{sorted(kw)}. Original error: {e}") from e
+
+
+def build_provider_chain(primary_spec: str, fallback_specs: Sequence[str] = (),
+                         fallback_kw: Optional[dict] = None,
+                         **kw) -> AnalystProvider:
+    providers = [build_provider(primary_spec, **kw)]
+    providers.extend(build_provider(spec, **(fallback_kw or {}))
+                     for spec in fallback_specs if spec)
+    return providers[0] if len(providers) == 1 else FailoverAnalyst(providers)

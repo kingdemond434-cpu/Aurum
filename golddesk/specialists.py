@@ -60,10 +60,10 @@ has never once altered an outcome.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Callable, Optional, Protocol, Sequence
+from dataclasses import dataclass, field, replace
+from typing import Callable, Mapping, Optional, Protocol, Sequence
 
-SPECIALIST_VERSION = "spec-2026-08-18-a"
+SPECIALIST_VERSION = "spec-2026-08-30-a"
 
 #: Changed decisions below this and there is no verdict. Not a p-value threshold
 #: — a floor on the sample the question is actually asked over.
@@ -72,6 +72,33 @@ MIN_CHANGED = 25
 #: Charged to every decision the specialist flips: the round-trip the desk would
 #: not otherwise have paid. Stated in R and overridable, never silently zero.
 DEFAULT_CHANGE_COST_R = 0.05
+
+
+@dataclass(frozen=True)
+class DeskRole:
+    """A named seat with one narrow responsibility.
+
+    The names make the desk legible to an operator; they do not create agents,
+    authority, or votes.  A seat without an implementation remains explicitly
+    UNAVAILABLE rather than being filled by a decorative heuristic.
+    """
+    key: str
+    name: str
+    responsibility: str
+
+
+DESK_ROLES: tuple[DeskRole, ...] = (
+    DeskRole("atlas", "Atlas", "macro context"),
+    DeskRole("lumen", "Lumen", "technical setup scouting"),
+    DeskRole("apollo", "Apollo", "events and session context"),
+    DeskRole("argus", "Argus", "visual structure"),
+    DeskRole("chronos", "Chronos", "sequence and path dependence"),
+    DeskRole("orion", "Orion", "COMEX and positioning context"),
+    DeskRole("mnemosyne", "Mnemosyne", "analogues and decision memory"),
+    DeskRole("hephaestus", "Hephaestus", "data and operational health"),
+)
+
+ROLE_BY_KEY = {r.key: r for r in DESK_ROLES}
 
 
 @dataclass(frozen=True)
@@ -90,15 +117,34 @@ class SpecialistRead:
     why: str = ""
     available: bool = True
     meta: dict = field(default_factory=dict)
+    role: str = ""
+    #: Probability that the horizon return is positive. Optional because most
+    #: seats have not earned calibrated probabilities; scorecards derive a
+    #: deliberately coarse value from direction/strength when it is absent.
+    probability_up: Optional[float] = None
 
     def __post_init__(self):
         if self.direction not in ("LONG", "SHORT", "FLAT"):
             raise ValueError(f"direction {self.direction!r} is not LONG/SHORT/FLAT")
         object.__setattr__(self, "strength", max(0.0, min(1.0, float(self.strength))))
+        if self.horizon_bars < 1:
+            raise ValueError("horizon_bars must be positive")
+        if self.probability_up is not None:
+            p = float(self.probability_up)
+            if not math.isfinite(p):
+                raise ValueError("probability_up must be finite")
+            object.__setattr__(self, "probability_up", max(0.0, min(1.0, p)))
 
     @property
     def signed(self) -> float:
         return {"LONG": 1.0, "SHORT": -1.0, "FLAT": 0.0}[self.direction] * self.strength
+
+    @property
+    def p_up(self) -> float:
+        """A scoreable probability without pretending to extra precision."""
+        if self.probability_up is not None:
+            return self.probability_up
+        return max(0.0, min(1.0, 0.5 + self.signed / 2.0))
 
     def render(self) -> str:
         if not self.available:
@@ -114,6 +160,21 @@ class Specialist(Protocol):
 
 
 @dataclass
+class SeatSpecialist:
+    """Give an injected implementation the desk seat's stable identity."""
+    name: str
+    role: str
+    implementation: Specialist
+
+    def read(self, snapshot) -> SpecialistRead:
+        read = self.implementation.read(snapshot)
+        meta = dict(read.meta)
+        meta.setdefault("implementation", str(getattr(
+            self.implementation, "name", type(self.implementation).__name__)))
+        return replace(read, name=self.name, role=self.role, meta=meta)
+
+
+@dataclass
 class UnavailableSpecialist:
     """The honest absence. A specialist with no model is not a FLAT opinion.
 
@@ -125,10 +186,11 @@ class UnavailableSpecialist:
     """
     name: str
     reason: str = "no model configured"
+    role: str = ""
 
     def read(self, snapshot) -> SpecialistRead:
         return SpecialistRead(self.name, "FLAT", 0.0, why=self.reason,
-                              available=False)
+                              available=False, role=self.role)
 
 
 @dataclass
@@ -146,6 +208,7 @@ class SequenceSpecialist:
     horizon_bars: int = 4
     key_prefix: str = "m15"
     min_bars: int = 20
+    role: str = "sequence and path dependence"
 
     def _bars(self, snapshot) -> list[list[float]]:
         """Closed bars out of the snapshot, oldest first.
@@ -211,7 +274,36 @@ class Council:
     specialists: list = field(default_factory=list)
 
     def read(self, snapshot) -> list[SpecialistRead]:
-        return [s.read(snapshot) for s in self.specialists]
+        """Read every seat independently against one immutable state.
+
+        Failure isolation belongs here, not in individual implementations.  A
+        third-party specialist cannot be trusted to catch its own exception or
+        to return a valid SpecialistRead, and one broken seat must never blind
+        the other seven or stop the desk.
+        """
+        state_id, content_hash = snapshot.state_id, snapshot.content_hash
+        reads: list[SpecialistRead] = []
+        for specialist in self.specialists:
+            name = str(getattr(specialist, "name", type(specialist).__name__))
+            role = str(getattr(specialist, "role", ""))
+            try:
+                read = specialist.read(snapshot)
+                if not isinstance(read, SpecialistRead):
+                    raise TypeError(
+                        f"returned {type(read).__name__}, expected SpecialistRead")
+                if snapshot.state_id != state_id or snapshot.content_hash != content_hash:
+                    raise RuntimeError("mutated the frozen causal snapshot")
+                meta = dict(read.meta)
+                meta.update({"state_id": state_id, "content_hash": content_hash})
+                reads.append(replace(read, name=name, role=read.role or role,
+                                     meta=meta))
+            except Exception as e:                       # noqa: BLE001
+                reads.append(SpecialistRead(
+                    name, "FLAT", 0.0, available=False, role=role,
+                    why=f"isolated {type(e).__name__}: {e}",
+                    meta={"state_id": state_id, "content_hash": content_hash,
+                          "failure_isolated": True}))
+        return reads
 
     def report(self, snapshot) -> dict:
         reads = self.read(snapshot)
@@ -219,6 +311,8 @@ class Council:
         dirs = {r.direction for r in live if r.direction != "FLAT"}
         return {
             "version": SPECIALIST_VERSION,
+            "state_id": snapshot.state_id,
+            "content_hash": snapshot.content_hash,
             "reads": reads,
             "available": len(live),
             "unavailable": [r.name for r in reads if not r.available],
@@ -235,6 +329,34 @@ class Council:
                      "structural agreement and erases the divergence that was "
                      "the only interesting output."),
         }
+
+
+def build_desk_council(
+    overrides: Optional[Mapping[str, Specialist]] = None,
+) -> Council:
+    """Build all eight named seats, leaving unconfigured ones unavailable.
+
+    `overrides` is keyed by the stable lower-case role key.  Supplying an
+    implementation is configuration, not promotion: its verdicts are still
+    shadowed and must earn standing from paired outcomes before the analyst is
+    shown them.
+    """
+    supplied = dict(overrides or {})
+    unknown = set(supplied) - set(ROLE_BY_KEY)
+    if unknown:
+        raise ValueError(f"unknown specialist roles: {sorted(unknown)}")
+    seats = []
+    for role in DESK_ROLES:
+        specialist = supplied.get(role.key)
+        if specialist is None:
+            specialist = UnavailableSpecialist(
+                role.name, "no implementation configured for this seat",
+                role.responsibility)
+        else:
+            specialist = SeatSpecialist(role.name, role.responsibility,
+                                         specialist)
+        seats.append(specialist)
+    return Council(seats)
 
 
 # -------------------------------------------------- what is a specialist worth?

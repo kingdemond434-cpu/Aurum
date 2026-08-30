@@ -166,6 +166,8 @@ def test_the_delivery_test_uses_the_desks_own_sink(telegram, tmp_path):
     assert telegram.sent[-1]["chat_id"] == "42"
 
 
+@pytest.mark.skipif(os.name != "posix",
+                    reason="Windows stat modes do not represent directory ACLs")
 def test_secrets_are_not_world_readable(telegram, tmp_path):
     telegram.updates = [_update(7)]
     sec = tmp_path / "secrets"

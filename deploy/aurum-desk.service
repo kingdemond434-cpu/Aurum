@@ -34,6 +34,8 @@ User=aurum
 Group=aurum
 WorkingDirectory=/opt/aurum
 EnvironmentFile=/opt/aurum/.env
+Environment=HOME=/opt/aurum
+Environment=CODEX_HOME=/opt/aurum/secrets/codex
 # --min-stop is YOUR broker's stops_level * point, read once from MT5.
 # --management is an EXPLICIT production decision, not a default to forget:
 # heuristic manages, contextual shadows, so Claude management has to prove it
@@ -44,7 +46,9 @@ EnvironmentFile=/opt/aurum/.env
 # --declared-spread is YOUR broker's, and on the yahoo feed it is REQUIRED.
 ExecStart=/opt/aurum/.venv/bin/python /opt/aurum/run_desk.py \
     --shadow --feed yahoo --declared-spread 0.45 --min-stop 0.50 \
-    --management heuristic --shadow-management
+    --management heuristic --shadow-management \
+    --provider anthropic:claude-opus-5 \
+    --fallback-provider codex:gpt-5.6-sol
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -56,7 +60,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/aurum/state /opt/aurum/logs
+ReadWritePaths=/opt/aurum/state /opt/aurum/logs /opt/aurum/secrets/codex
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true

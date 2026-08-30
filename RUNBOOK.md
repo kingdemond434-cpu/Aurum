@@ -15,10 +15,10 @@ what to do when it fails.
 
 | | |
 |---|---|
-| **What it does** | Watches XAUUSD 24/5, sends you Telegram signals |
+| **What it does** | Runs continuously, watches XAUUSD whenever its 24/5 venue is open, sends you Telegram signals |
 | **What it does NOT do** | Place orders. There is no broker order code anywhere, and preflight AST-scans for it and refuses to boot if any appears |
 | **You execute** | Manually, from the Telegram message |
-| **Entry judgement** | Claude |
+| **Entry judgement** | Claude, with `gpt-5.6-sol` high-reasoning ChatGPT failover |
 | **Arithmetic, risk, cost** | Deterministic code — always, never the model |
 | **Trade management** | A heuristic, **not** Claude (see step 8 — this is a decision you are making) |
 | **Evidence so far** | −7.8R over 20 trades, one arm, backtest only. **Zero live-forward trades.** Deploy in `--shadow` |
@@ -120,7 +120,7 @@ which is optional.
 
 ```bash
 # on the VPS
-git clone -b claude/aurum-check-kqwpy6 https://github.com/kingdemond434-cpu/Aurum.git
+git clone https://github.com/kingdemond434-cpu/Aurum.git
 cd Aurum
 sudo ./deploy/install.sh
 ```
@@ -179,6 +179,24 @@ To point the desk at a different chat later, run the same command again with
 `--provider` chooses this, and it is the single largest running cost in the
 whole desk. The earlier "$3–8/day" estimate in this runbook was **too low**; the
 numbers below are measured, not assumed.
+
+The deployed chain is explicit: Claude is primary, and only a timeout, provider
+error, or schema-invalid answer falls through to `gpt-5.6-sol` at high
+reasoning. Both receive the same numeric brief and synchronized chart images.
+A valid `NO_SETUP` is a completed decision and never triggers failover.
+
+Log the service account into ChatGPT once after installation:
+
+```bash
+sudo -u aurum env HOME=/opt/aurum CODEX_HOME=/opt/aurum/secrets/codex \
+  codex login --device-auth
+sudo -u aurum env HOME=/opt/aurum CODEX_HOME=/opt/aurum/secrets/codex \
+  codex login status
+```
+
+The systemd unit points the fallback at this private credential directory and
+allows writes only there, to the ledger/state directory, and to logs. Each
+analyst run itself remains ephemeral and read-only.
 
 **One read, measured** (Claude Code 2.1.235, a real `MarketBrief`): 5,737 fresh
 input + 22,914 cache-read + **6,798 output** tokens. Priced at `budget.py`'s

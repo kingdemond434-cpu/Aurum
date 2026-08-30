@@ -1,4 +1,4 @@
-"""The 24/5 desk process. Components existing is not a deployed desk.
+"""The continuously supervised desk process (24/7 process, 24/5 gold venue).
 
 This is the thing that actually runs: a supervised loop that holds a live MT5
 connection, drives LiveDesk.on_tick() continuously and LiveDesk.on_bar() on each
@@ -730,7 +730,9 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   declared_spread: Optional[float] = None,
                   broker_limits: Optional[BrokerLimits] = None,
                   enable_macro: bool = True,
-                  wake_on_bar_close: bool = False) -> DeskService:
+                  wake_on_bar_close: bool = False,
+                  fallback_provider_specs: Sequence[str] = ("codex:gpt-5.6-sol",),
+                  specialists: Optional[dict] = None) -> DeskService:
     """Wire the real client, feed, desk and sink. One call, one deployed desk.
 
     `feed_backend` selects where PERCEPTION comes from. It does not select where
@@ -738,7 +740,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     execute on, and `broker_limits` carries them explicitly precisely so a
     non-MT5 feed cannot quietly supply its own.
     """
-    from .providers import build_provider
+    from .providers import build_provider_chain
+    from .specialists import build_desk_council
     cfg = cfg or ServiceConfig(symbol=symbol)
     if feed_backend == "oanda":
         from .feed_oanda import OandaClient
@@ -921,8 +924,14 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
             return None
         return collect(client, gold_price=getattr(desk, "last_bid", None)).render()
 
-    desk = LiveDesk(build_provider(provider_spec, effort=provider_effort)
-                    if provider_effort is not None else build_provider(provider_spec),
+    provider_kw = {"effort": provider_effort} if provider_effort is not None else {}
+    primary_name = provider_spec.partition(":")[0]
+    fallbacks = (() if primary_name in {"deterministic", "replay", "codex"}
+                 else tuple(fallback_provider_specs))
+    provider = build_provider_chain(provider_spec, fallbacks,
+                                    fallback_kw={"effort": "high"},
+                                    **provider_kw)
+    desk = LiveDesk(provider,
                     Ledger(cfg.ledger_path),
                     sink, shadow=shadow, vision=vision, broker=broker,
                     cost_model=cost_model,
@@ -933,7 +942,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                     crossmarket_provider=crossmarket_fn,
                     calendar=calendar, regime_history=history,
                     macro_provider=macro_fn,
-                    wake_on_bar_close=wake_on_bar_close)
+                    wake_on_bar_close=wake_on_bar_close,
+                    specialist_council=build_desk_council(specialists))
 
     # WHO HAS AUTHORITY over the open position. An explicit production decision:
     # the desk ships with Claude forming the entry judgement and a deterministic

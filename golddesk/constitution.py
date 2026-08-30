@@ -392,7 +392,12 @@ def measure(rows: Sequence[dict], reason_to_id: Optional[dict] = None,
         if not str(r.get("kind", "")).startswith("REFUSAL"):
             continue
         reason = str(r.get("reason", ""))
-        rid = next((v for k, v in mapping.items() if k in reason), None)
+        # New rows carry the stable gate id at decision time. Reason matching is
+        # retained only for old ledgers; prose is not a durable join key and a
+        # wording edit must not split a restriction's accountability history.
+        rid = (r.get("decision") or {}).get("gate_id")
+        if rid is None:
+            rid = next((v for k, v in mapping.items() if k in reason), None)
         if rid is None:
             continue
         out = r.get("outcome") or {}
@@ -420,6 +425,7 @@ def measure(rows: Sequence[dict], reason_to_id: Optional[dict] = None,
 
 
 DEFAULT_REASON_MAP = {
+    "analyst: NO_SETUP": "analyst.no_setup",
     "expectancy gate": "entry.expectancy_gate",
     "no resolved history": "entry.fallback_min_rr",
     "inverted": "entry.geometry",

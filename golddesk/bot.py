@@ -254,7 +254,8 @@ def cmd_refusals(cfg: BotConfig, n: int = 10) -> str:
     """The false-negative ledger. The charter calls these the point, so they get
     a first-class command rather than living only in a nightly report."""
     rows = [r for r in _tail_ledger(cfg.ledger_path)
-            if _kind(r) in ("NO_SETUP", "REFUSED", "REFUSAL", "VETO", "BLOCKED")]
+            if (_kind(r).startswith("REFUSAL") or
+                _kind(r) in ("NO_SETUP", "REFUSED", "VETO", "BLOCKED"))]
     if not rows:
         return "no refusals in the recent ledger."
     out = [f"LAST {min(n, len(rows))} REFUSALS"]
@@ -265,6 +266,15 @@ def cmd_refusals(cfg: BotConfig, n: int = 10) -> str:
         cost = f"  forgone {fwd:+.2f}R" if isinstance(fwd, (int, float)) else ""
         out.append(f"{ts}  {why}{cost}")
     return "\n".join(out)
+
+
+def cmd_desk(cfg: BotConfig) -> str:
+    """Named seats, earned standing, and veto value from the real ledger."""
+    rows = _tail_ledger(cfg.ledger_path, n=50000)
+    if not rows:
+        return "specialist desk has no verdict history yet."
+    from golddesk.specialist_accountability import render_dashboard
+    return render_dashboard(rows)
 
 
 def cmd_pnl(cfg: BotConfig) -> str:
@@ -351,6 +361,7 @@ def cmd_help(cfg: BotConfig) -> str:
         "/refusals    last 10 refusals and what they cost",
         "/pnl         resolved R, hit rate",
         "/growth      risk per trade and heat, derived from the ledger",
+        "/desk        specialist standing and gate accountability",
         "/why         the reasoning behind the last decision",
         "/halt        ask the desk to stand down",
         "/resume      clear the halt",
@@ -374,6 +385,7 @@ COMMANDS: dict[str, Callable[[BotConfig], str]] = {
     "/refusals": cmd_refusals,
     "/pnl": cmd_pnl,
     "/growth": cmd_growth,
+    "/desk": cmd_desk,
     "/why": cmd_why,
     "/halt": cmd_halt,
     "/resume": cmd_resume,

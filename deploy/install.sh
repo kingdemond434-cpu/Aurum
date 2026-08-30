@@ -23,7 +23,9 @@ fi
 
 echo "==> system packages"
 apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip rsync
+apt-get install -y -qq python3 python3-venv python3-pip rsync nodejs npm
+npm install -g @openai/codex
+echo "    Codex CLI installed for the ChatGPT analyst failover"
 
 echo "==> service account: $AURUM_USER"
 # --system: no login shell, no password, no home mail. The desk never needs an
@@ -33,7 +35,7 @@ id -u "$AURUM_USER" &>/dev/null || \
             --shell /usr/sbin/nologin "$AURUM_USER"
 
 echo "==> layout: $AURUM_HOME"
-mkdir -p "$AURUM_HOME"/{state,logs,secrets,external,data}
+mkdir -p "$AURUM_HOME"/{state,logs,secrets/codex,external,data}
 if [[ "$SRC" != "$AURUM_HOME" ]]; then
     rsync -a --delete \
         --exclude '.git' --exclude '__pycache__' --exclude '.venv' \
@@ -103,6 +105,7 @@ echo "       $AURUM_HOME/.venv/bin/python $AURUM_HOME/deploy/telegram_setup.py \
 echo "       --stdin --secrets $AURUM_HOME/secrets"
 echo
 echo "2. Prove it is configured:"
+echo "     sudo -u $AURUM_USER env HOME=$AURUM_HOME CODEX_HOME=$AURUM_HOME/secrets/codex codex login --device-auth"
 echo "     sudo -u $AURUM_USER $AURUM_HOME/.venv/bin/python $AURUM_HOME/run_desk.py --preflight"
 echo
 echo "3. Only once preflight passes:"

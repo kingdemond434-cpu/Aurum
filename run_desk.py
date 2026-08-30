@@ -130,6 +130,25 @@ def check_analyst_backend(provider_spec: str) -> Check:
                 "subscription mode — no metered bill. Verify the CLI is logged "
                 "in: `claude -p hello`")
         return Check("analyst backend", True, f"claudecode at {exe}; {note}")
+    if name == "codex":
+        import shutil
+        import subprocess
+        exe = shutil.which("codex")
+        if not exe:
+            return Check("analyst backend", False,
+                         "GPT fallback needs the Codex CLI on PATH; install it "
+                         "and run `codex login`, or disable the fallback")
+        try:
+            status = subprocess.run([exe, "login", "status"], capture_output=True,
+                                    text=True, timeout=10)
+            detail = (status.stdout or status.stderr).strip()
+        except Exception as e:                         # noqa: BLE001
+            return Check("analyst backend", False,
+                         f"Codex CLI found at {exe}, but login status failed: {e}")
+        return Check("analyst backend", status.returncode == 0,
+                     (f"GPT through Codex CLI at {exe}; {detail}; read-only"
+                      if status.returncode == 0 else
+                      f"Codex CLI found but not logged in: {detail}"))
     key = os.environ.get("ANTHROPIC_API_KEY")
     return Check("ANTHROPIC_API_KEY", bool(key),
                  f"set ({len(key)} chars) — reads are BILLED per token"
@@ -143,11 +162,23 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
               feed: str = "mt5", min_stop: float = 0.0,
               declared_spread: float = 0.0,
               provider_spec: str = "anthropic:claude-opus-5",
-              numeric_only: bool = False, expect_broker: str = "") -> list[Check]:
+              numeric_only: bool = False, expect_broker: str = "",
+              fallback_provider_spec: str = "") -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
-    checks.append(check_analyst_backend(provider_spec))
+    primary = check_analyst_backend(provider_spec)
+    if fallback_provider_spec:
+        fallback = check_analyst_backend(fallback_provider_spec)
+        primary.name, primary.fatal = "primary analyst", False
+        fallback.name, fallback.fatal = "GPT fallback", False
+        checks += [primary, fallback, Check(
+            "analyst availability", primary.ok or fallback.ok,
+            ("primary ready" if primary.ok else
+             "primary unavailable; GPT fallback will take the same brief")
+            if fallback.ok else "no analyst backend is ready")]
+    else:
+        checks.append(primary)
 
     # THE FAILURE THIS CATCHES: a desk that starts clean, ticks, warms bars,
     # and refuses every single analyst call forever, because 'claudecode' has
@@ -157,7 +188,8 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
     # reading the live log line by line. check_analyst_backend proves the
     # provider WORKS; this proves it works for the vision mode it is about to
     # be asked to serve, which is the thing that actually matters at 3am.
-    if provider_spec.partition(":")[0] == "claudecode" and not numeric_only:
+    if (provider_spec.partition(":")[0] == "claudecode" and not numeric_only
+            and fallback_provider_spec.partition(":")[0] != "codex"):
         checks.append(Check(
             "provider/vision match", False,
             "provider 'claudecode' cannot send charts (the CLI takes no image "
@@ -296,6 +328,9 @@ def main() -> int:
     ap.add_argument("--numeric-only", action="store_true",
                     help="skip charts (cheaper; changes which arm you are running)")
     ap.add_argument("--max-hours", type=float, default=None)
+    ap.add_argument("--open-poll-seconds", type=float, default=1.0)
+    ap.add_argument("--flat-poll-seconds", type=float, default=15.0)
+    ap.add_argument("--closed-poll-seconds", type=float, default=60.0)
     ap.add_argument("--feed", default="mt5", choices=("mt5", "oanda", "yahoo"),
                     help="where PERCEPTION comes from. oanda runs on Linux with "
                          "no terminal; yahoo needs NO ACCOUNT AT ALL but has no "
@@ -347,6 +382,9 @@ def main() -> int:
                          "start without it, rather than ticking with every "
                          "analyst call silently refused. 'deterministic' is the "
                          "rule-based baseline and costs nothing at all.")
+    ap.add_argument("--fallback-provider", default="codex:gpt-5.6-sol",
+                    help="local ChatGPT fallback used only after a real primary "
+                         "failure; defaults to gpt-5.6-sol at high reasoning")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
@@ -377,6 +415,12 @@ def main() -> int:
                          "free quality upgrade.")
     args = ap.parse_args()
 
+    for label, value in (("--open-poll-seconds", args.open_poll_seconds),
+                         ("--flat-poll-seconds", args.flat_poll_seconds),
+                         ("--closed-poll-seconds", args.closed_poll_seconds)):
+        if value <= 0:
+            ap.error(f"{label} must be greater than zero")
+
     # STDOUT, NOT THE DEFAULT STDERR. logging.basicConfig() writes to stderr unless told
     # otherwise, while the startup banner just above uses plain print() (stdout) -- an arbitrary
     # split between two halves of the same output that has burned an operator checking "is this
@@ -396,7 +440,8 @@ def main() -> int:
                        declared_spread=args.declared_spread or 0.0,
                        provider_spec=args.provider,
                        numeric_only=args.numeric_only,
-                       expect_broker=args.expect_broker)
+                       expect_broker=args.expect_broker,
+                       fallback_provider_spec=args.fallback_provider)
     for c in checks:
         print(c.render())
     fatal = [c for c in checks if c.fatal and not c.ok]
@@ -432,6 +477,11 @@ def main() -> int:
              if args.shadow_contextual else "  (contextual excluded — costs money)"))
     print(f"  opportunity set  : {'universe (all propositions)' if args.universe else 'single read'}")
     print(f"  reasoning effort : {args.effort or '(provider default)'}")
+    fallback_name, _, fallback_model = args.fallback_provider.partition(":")
+    fallback_label = (f"{fallback_model or 'gpt-5.6-sol'} (high) via local "
+                      "Codex/ChatGPT login" if fallback_name == "codex" else
+                      args.fallback_provider or "disabled")
+    print(f"  analyst failover : {fallback_label}")
     if args.declared_spread:
         print(f"  COST basis       : your venue, ${args.declared_spread:.2f} declared")
     else:
@@ -447,7 +497,10 @@ def main() -> int:
 
     from golddesk.management import BrokerLimits
     svc = build_service(symbol=args.symbol, shadow=shadow, vision=vision,
-                        cfg=ServiceConfig(symbol=args.symbol),
+                        cfg=ServiceConfig(symbol=args.symbol,
+                                          poll_seconds=args.open_poll_seconds,
+                                          idle_poll_seconds=args.flat_poll_seconds,
+                                          closed_poll_seconds=args.closed_poll_seconds),
                         secrets_dir=args.secrets, feed_backend=args.feed,
                         provider_spec=args.provider,
                         provider_effort=args.effort,
@@ -458,6 +511,8 @@ def main() -> int:
                         universe_mode=args.universe,
                         enable_macro=not args.no_macro,
                         wake_on_bar_close=args.wake_every_bar,
+                        fallback_provider_specs=((args.fallback_provider,)
+                                                 if args.fallback_provider else ()),
                         broker_limits=(BrokerLimits(min_stop_distance=args.min_stop)
                                        if args.min_stop else None))
     try:
