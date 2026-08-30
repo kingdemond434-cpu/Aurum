@@ -10,33 +10,33 @@
         },
         {
           "check": "analyst answering",
-          "detail": "UNMEASURED \u2014 4 wake(s) in 12h, under 20",
+          "detail": "UNMEASURED \u2014 5 wake(s) in 12h, under 20",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "UNMEASURED \u2014 4 stamped read(s), under 10",
+          "detail": "UNMEASURED \u2014 5 stamped read(s), under 10",
           "ok": true
         },
         {
           "check": "analyst model",
-          "detail": "all reads answered as claude-opus-5",
-          "ok": true
+          "detail": "2 different models answered in 12h (['claude-opus-5', 'rules-v1']) \u2014 reads from different models are not comparable evidence and land in the same cohort.",
+          "ok": false
         }
       ],
-      "faults": 0
+      "faults": 1
     },
     "capture": {
       "axis": "capture",
       "checks": [
         {
           "check": "signal rate",
-          "detail": "23.3% recent vs 8.2% prior",
+          "detail": "23.0% recent vs 8.2% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/144 (19%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/145 (19%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -88,17 +88,17 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -128,7 +128,7 @@
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.5h old",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "15 delivered, 2 failed",
+          "detail": "16 delivered, 2 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.0h ago",
+          "detail": "written 0.1h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "292 unique decision(s), no tears",
+          "detail": "293 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "20439MB free",
+          "detail": "20442MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 44.9h ago",
+          "detail": "wrote 8 min ago, after a boot 45.1h ago",
           "ok": true
         }
       ],
@@ -228,8 +228,8 @@
       "last": "2026-08-30T13:47:05.598294+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 60,
-      "last": "2026-08-30T13:47:05.598294+00:00"
+      "count": 61,
+      "last": "2026-08-30T22:00:00.838661+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T22:19:31.594684+00:00",
-  "last_row_utc": "2026-08-30T22:01:11.965482+00:00",
-  "ledger_rows": 315,
-  "total_faults": 8
+  "generated_utc": "2026-08-30T22:31:01.687320+00:00",
+  "last_row_utc": "2026-08-30T22:00:00.838661+00:00",
+  "ledger_rows": 316,
+  "total_faults": 9
 }
