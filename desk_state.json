@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 157 recent / 9 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 156 recent / 10 prior decisions, under 40 either side",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "19 sleeve(s) accruing, published 0.2h ago",
+          "detail": "16 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 8.9h old",
+          "detail": "newest row 9.1h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "last written 8.3h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "detail": "last written 8.6h ago \u2014 the desk is not persisting state, so a crash loses everything since",
           "ok": false
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32406MB free",
+          "detail": "32413MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 500 min ago, after a boot 29.4h ago",
+          "detail": "wrote 515 min ago, after a boot 29.6h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T06:44:59.803744+00:00",
+  "generated_utc": "2026-08-30T07:00:00.980941+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
-  "total_faults": 10
+  "total_faults": 9
 }
