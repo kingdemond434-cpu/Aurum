@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "UNMEASURED \u2014 10 wake(s) in 12h, under 20",
+          "detail": "UNMEASURED \u2014 15 wake(s) in 12h, under 20",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 170s of 600s budget (28%) over 10 reads",
+          "detail": "median 193s of 600s budget (32%) over 15 reads",
           "ok": true
         },
         {
@@ -31,22 +31,22 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "23.9% recent vs 8.2% prior",
+          "detail": "24.7% recent vs 8.2% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/148 (19%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/151 (19%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
           "check": "capture",
-          "detail": "89% of MFE kept over 10 winners",
+          "detail": "89% of MFE kept over 11 winners",
           "ok": true
         },
         {
           "check": "quant inbox",
-          "detail": "updated 26h ago",
+          "detail": "updated 27h ago",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "16 sleeve(s) accruing, published 0.2h ago",
+          "detail": "19 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -72,12 +72,12 @@
         },
         {
           "check": "edge",
-          "detail": "UNMEASURED \u2014 25 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
+          "detail": "UNMEASURED \u2014 27 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
           "ok": true
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.20R while refusals reached +0.45R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.22R while refusals reached +0.44R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -144,7 +144,7 @@
       "checks": [
         {
           "check": "cohorts",
-          "detail": "23 mechanism(s) loaded from 25 resolved trades",
+          "detail": "25 mechanism(s) loaded from 27 resolved trades",
           "ok": true
         },
         {
@@ -154,7 +154,7 @@
         },
         {
           "check": "excursion",
-          "detail": "3 of 24 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
+          "detail": "4 of 26 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
           "ok": false
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.4h old",
+          "detail": "newest row 0.2h old",
           "ok": true
         },
         {
@@ -179,27 +179,27 @@
         },
         {
           "check": "notifications",
-          "detail": "19 delivered, 5 failed",
+          "detail": "23 delivered, 6 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.1h ago",
+          "detail": "written 0.2h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "298 unique decision(s), no tears",
+          "detail": "303 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "20424MB free",
+          "detail": "20422MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 5 min ago, after a boot 45.6h ago",
+          "detail": "wrote 12 min ago, after a boot 45.9h ago",
           "ok": true
         }
       ],
@@ -224,12 +224,12 @@
       }
     },
     "REFUSAL_COMPILER": {
-      "count": 84,
-      "last": "2026-08-30T13:47:05.598294+00:00"
+      "count": 86,
+      "last": "2026-08-30T22:45:00.388387+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 64,
-      "last": "2026-08-30T22:30:10.406359+00:00"
+      "count": 65,
+      "last": "2026-08-30T22:45:00.388387+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -240,13 +240,13 @@
       "last": null
     },
     "SIGNAL": {
-      "count": 29,
-      "last": "2026-08-30T22:15:00.484121+00:00"
+      "count": 31,
+      "last": "2026-08-30T22:45:00.388387+00:00"
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T23:03:33.741554+00:00",
-  "last_row_utc": "2026-08-30T22:30:10.406359+00:00",
-  "ledger_rows": 323,
+  "generated_utc": "2026-08-30T23:16:35.525365+00:00",
+  "last_row_utc": "2026-08-30T23:03:29.610639+00:00",
+  "ledger_rows": 330,
   "total_faults": 9
 }
