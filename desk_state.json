@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "22 sleeve(s) accruing, published 0.3h ago",
+          "detail": "19 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 2.6h old",
+          "detail": "newest row 2.9h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 2.1h ago",
+          "detail": "written 2.3h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "33388MB free",
+          "detail": "33387MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 126 min ago, after a boot 23.2h ago",
+          "detail": "wrote 140 min ago, after a boot 23.4h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T00:31:49.406812+00:00",
+  "generated_utc": "2026-08-30T00:45:00.951414+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
   "total_faults": 8
