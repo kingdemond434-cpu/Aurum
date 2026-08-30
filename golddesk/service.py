@@ -1,4 +1,4 @@
-"""The 24/5 desk process. Components existing is not a deployed desk.
+"""The continuously supervised desk process (24/7 process, 24/5 gold venue).
 
 This is the thing that actually runs: a supervised loop that holds a live MT5
 connection, drives LiveDesk.on_tick() continuously and LiveDesk.on_bar() on each
@@ -72,6 +72,9 @@ class ServiceConfig:
     entry_tf: str = ENTRY_TF
     htf: str = HTF
     history_bars: int = 600
+    # Maximum-frequency management means observing an open position every
+    # second by default. Entries remain closed-bar decisions: polling faster
+    # cannot create new causal information and must not duplicate a signal.
     poll_seconds: float = 1.0
     # Reconnect backoff, bounded so a long outage does not become a long sleep.
     backoff_initial_s: float = 2.0
@@ -309,8 +312,8 @@ class DeskService:
                 log.info("max_seconds reached — exiting cleanly")
                 break
             try:
-                if not self.feed.connect():
-                    raise FeedError("connect() returned falsy")
+                self.feed.connect()
+                self.feed.quote()          # seeds the server clock from a live tick
                 backoff = self.cfg.backoff_initial_s
                 self._warm()
                 self.rehydrate()
@@ -654,7 +657,10 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   calendar=None,
                   spread_profile_path: str = "config/spread_profile.json",
                   declared_spread: Optional[float] = None,
-                  broker_limits: Optional[BrokerLimits] = None) -> DeskService:
+                  broker_limits: Optional[BrokerLimits] = None,
+                  provider_effort: Optional[str] = None,
+                  fallback_provider_specs: Sequence[str] = ("codex:gpt-5.6-sol",),
+                  specialists: Optional[dict] = None) -> DeskService:
     """Wire the real client, feed, desk and sink. One call, one deployed desk.
 
     `feed_backend` selects where PERCEPTION comes from. It does not select where
@@ -662,7 +668,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     execute on, and `broker_limits` carries them explicitly precisely so a
     non-MT5 feed cannot quietly supply its own.
     """
-    from .providers import build_provider
+    from .providers import build_provider_chain
+    from .specialists import build_desk_council
     cfg = cfg or ServiceConfig(symbol=symbol)
     if feed_backend == "oanda":
         from .feed_oanda import OandaClient
@@ -745,13 +752,21 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     except Exception as e:
         log.info("no regime history yet (%s) — novelty will read UNKNOWN", e)
 
-    desk = LiveDesk(build_provider(provider_spec), Ledger(cfg.ledger_path),
+    provider_kw = {"effort": provider_effort} if provider_effort else {}
+    primary_name = provider_spec.partition(":")[0]
+    fallbacks = (() if primary_name in {"deterministic", "replay", "codex"}
+                 else tuple(fallback_provider_specs))
+    provider = build_provider_chain(provider_spec, fallbacks,
+                                    fallback_kw={"effort": "high"},
+                                    **provider_kw)
+    desk = LiveDesk(provider, Ledger(cfg.ledger_path),
                     sink, shadow=shadow, vision=vision, broker=broker,
                     cost_model=cost_model,
                     shadow_management=shadow_management,
                     shadow_contextual=shadow_contextual,
                     universe_mode=universe_mode,
-                    calendar=calendar, regime_history=history)
+                    calendar=calendar, regime_history=history,
+                    specialist_council=build_desk_council(specialists))
 
     # WHO HAS AUTHORITY over the open position. An explicit production decision:
     # the desk ships with Claude forming the entry judgement and a deterministic

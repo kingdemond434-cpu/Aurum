@@ -58,8 +58,13 @@ def test_no_evidence_yields_no_size_rather_than_a_default(desk):
     assert "watched long enough" in out
 
 
-def test_missing_drivers_read_UNAVAILABLE_not_neutral(desk):
+def test_missing_drivers_read_UNAVAILABLE_not_neutral(desk, monkeypatch):
     """Saying 'no drivers moved' asserts something nobody measured."""
+    from golddesk.drivers_free import DriverPoint
+    monkeypatch.setattr(
+        "golddesk.drivers_free.build_drivers",
+        lambda *a, **k: {"dxy": DriverPoint(
+            "dxy", None, None, None, "UNAVAILABLE")})
     out = C.step_attribution({})
     assert "UNAVAILABLE" in out
     assert "not the same as 'nothing was driving gold'" in out

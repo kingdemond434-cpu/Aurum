@@ -10,8 +10,8 @@ import pytest
 
 from golddesk.snapshot import SnapshotBuilder
 from golddesk.specialists import (
-    MIN_CHANGED, Council, SequenceSpecialist, SpecialistRead,
-    UnavailableSpecialist, marginal_value)
+    DESK_ROLES, MIN_CHANGED, Council, SequenceSpecialist, SpecialistRead,
+    UnavailableSpecialist, build_desk_council, marginal_value)
 
 UTC = timezone.utc
 T0 = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
@@ -146,6 +146,45 @@ def test_unavailable_specialists_do_not_count_toward_agreement():
 
 def test_an_empty_council_says_NONE_rather_than_agreeing_with_itself():
     assert Council([]).report(snap())["agreement"] == "NONE"
+
+
+def test_one_broken_specialist_cannot_blind_the_rest():
+    class Broken:
+        name = "broken"
+        role = "fault injection"
+        def read(self, snapshot):
+            raise RuntimeError("checkpoint corrupt")
+    rep = Council([Broken(), _fixed("healthy", "LONG")]).report(snap())
+    assert len(rep["reads"]) == 2
+    assert not rep["reads"][0].available
+    assert rep["reads"][0].meta["failure_isolated"] is True
+    assert rep["reads"][1].available and rep["reads"][1].direction == "LONG"
+
+
+def test_every_specialist_receives_the_same_snapshot_object():
+    seen = []
+    class S:
+        def __init__(self, name): self.name = name
+        def read(self, snapshot):
+            seen.append((id(snapshot), snapshot.state_id, snapshot.content_hash))
+            return SpecialistRead(self.name, "FLAT")
+    Council([S("a"), S("b")]).read(snap())
+    assert len({x[0] for x in seen}) == 1
+    assert len({x[1:] for x in seen}) == 1
+
+
+def test_named_desk_has_all_eight_honestly_unavailable_seats():
+    rep = build_desk_council().report(snap())
+    assert [r.name for r in rep["reads"]] == [r.name for r in DESK_ROLES]
+    assert rep["available"] == 0
+    assert all(not r.available for r in rep["reads"])
+
+
+def test_report_is_stamped_with_the_frozen_snapshot_identity():
+    s = snap()
+    rep = Council([_fixed("a", "LONG")]).report(s)
+    assert rep["state_id"] == s.state_id
+    assert rep["content_hash"] == s.content_hash
 
 
 def _fixed(name, direction):

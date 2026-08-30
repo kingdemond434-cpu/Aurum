@@ -54,7 +54,7 @@ def assert_no_orders(pkg: Path = Path("golddesk")) -> Check:
     hits: list[str] = []
     for f in sorted(pkg.glob("*.py")):
         try:
-            tree = ast.parse(f.read_text())
+            tree = ast.parse(f.read_text(encoding="utf-8"))
         except SyntaxError:
             continue
         for n in ast.walk(tree):
@@ -130,6 +130,27 @@ def check_analyst_backend(provider_spec: str) -> Check:
                 "subscription mode — no metered bill. Verify the CLI is logged "
                 "in: `claude -p hello`")
         return Check("analyst backend", True, f"claudecode at {exe}; {note}")
+    if name == "codex":
+        import shutil
+        import subprocess
+        exe = shutil.which("codex")
+        if not exe:
+            return Check(
+                "analyst backend", False,
+                "GPT fallback needs the Codex CLI on PATH. Install it and run "
+                "`codex login`, or disable --fallback-provider.")
+        try:
+            status = subprocess.run([exe, "login", "status"], capture_output=True,
+                                    text=True, timeout=10)
+            detail = (status.stdout or status.stderr).strip()
+        except Exception as e:                         # noqa: BLE001
+            return Check("analyst backend", False,
+                         f"Codex CLI found at {exe}, but login status failed: {e}")
+        return Check(
+            "analyst backend", status.returncode == 0,
+            (f"GPT through Codex CLI at {exe}; {detail}; analyst runs read-only"
+             if status.returncode == 0 else
+             f"Codex CLI found but not logged in: {detail or 'run `codex login`'}"))
     key = os.environ.get("ANTHROPIC_API_KEY")
     return Check("ANTHROPIC_API_KEY", bool(key),
                  f"set ({len(key)} chars) — reads are BILLED per token"
@@ -142,11 +163,31 @@ def check_analyst_backend(provider_spec: str) -> Check:
 def preflight(symbol: str, want_telegram: bool, secrets: Path,
               feed: str = "mt5", min_stop: float = 0.0,
               declared_spread: float = 0.0,
-              provider_spec: str = "anthropic:claude-opus-5", expect_broker: str = "") -> list[Check]:
+              provider_spec: str = "anthropic:claude-opus-5",
+              fallback_provider_spec: str = "",
+              expect_broker: str = "") -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
-    checks.append(check_analyst_backend(provider_spec))
+    primary = check_analyst_backend(provider_spec)
+    if fallback_provider_spec:
+        fallback = check_analyst_backend(fallback_provider_spec)
+        primary.name = "primary analyst"
+        fallback.name = "GPT fallback" if fallback_provider_spec.partition(":")[0] == "codex" \
+            else "analyst fallback"
+        # A failed primary is exactly what the fallback exists to survive. The
+        # combined availability check is fatal; each individual backend is an
+        # observable warning so the operator knows which arm will actually run.
+        primary.fatal = False
+        fallback.fatal = False
+        checks += [primary, fallback, Check(
+            "analyst availability", primary.ok or fallback.ok,
+            ("primary ready" if primary.ok else
+             "primary unavailable; GPT fallback will take the same brief")
+            if fallback.ok else
+            "no analyst backend is ready — both primary and fallback failed")]
+    else:
+        checks.append(primary)
 
     # --- feed ------------------------------------------------------------
     if feed == "yahoo":
@@ -225,33 +266,20 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
                                 f"{getattr(acct,'company','?')} / {getattr(acct,'server','?')} "
                                 f"(read-only use; nothing is ever sent)"
                                 if acct else "no account info", fatal=False))
-            # WHICH TERMINAL DID WE ACTUALLY GET? `mt5.initialize()` is called with path=None,
-            # so it attaches to whatever terminal is ALREADY RUNNING. With two brokers installed
-            # on one box — Vantage for this desk, Fusion for the quant desk — that is a coin
-            # flip decided by which window happened to be open.
-            #
-            # The check above prints the broker and PASSES either way, so a desk reading the
-            # wrong feed looks identical to one reading the right feed. Every price, spread and
-            # signal would be the other broker's while carrying this desk's name: the same
-            # silent-substitution shape the promotion protocol records as its defect #3.
-            #
-            # --expect-broker turns that from observable into enforced. Absent, this stays a
-            # non-fatal note rather than a new refusal nobody asked for.
-            if acct is not None and expect_broker:
-                got = f"{getattr(acct, 'company', '')} {getattr(acct, 'server', '')}".lower()
-                checks.append(Check(
-                    "expected broker", expect_broker.lower() in got,
-                    f"connected to {getattr(acct, 'company', '?')} / "
-                    f"{getattr(acct, 'server', '?')}, expected {expect_broker!r}. "
-                    "mt5.initialize(path=None) attaches to whatever terminal is open — with two "
-                    "brokers installed, close the wrong one or pass its path"))
-            elif acct is not None:
-                checks.append(Check(
-                    "expected broker", True,
-                    "NOT PINNED — mt5.initialize(path=None) attached to whatever terminal was "
-                    f"open, which happened to be {getattr(acct, 'company', '?')}. Pass "
-                    "--expect-broker to make that a requirement rather than a coincidence",
-                    fatal=False))
+            if expect_broker:
+                # Multiple MT5 terminals can be installed side by side, and
+                # initialize() with no path/login attaches to whichever one it
+                # finds — silently. Priced signals against the wrong broker's
+                # spread are worse than no signals: they look real.
+                company = getattr(acct, "company", "") or "" if acct else ""
+                matched = acct is not None and expect_broker.lower() in company.lower()
+                checks.append(Check("broker match", matched,
+                                    f"connected to {company!r}, matches "
+                                    f"--expect-broker {expect_broker!r}"
+                                    if matched else
+                                    f"connected to {(company or '<no account>')!r} but "
+                                    f"expected a broker matching {expect_broker!r} — "
+                                    f"initialize() attached to the wrong terminal"))
     except ImportError:
         checks.append(Check("MT5 terminal", False,
                             "MetaTrader5 not installed — pip install MetaTrader5 "
@@ -269,20 +297,16 @@ def main() -> int:
     ap.add_argument("--live", action="store_true", help="run; untagged advisory signals")
     ap.add_argument("--secrets", default="secrets")
     ap.add_argument("--no-telegram", action="store_true")
-    ap.add_argument("--expect-broker", default="",
-                    help="Refuse to start unless the connected MT5 account's company or server "
-                         "contains this string (e.g. Vantage). mt5.initialize() attaches to "
-                         "whatever terminal is open, so with two brokers installed this is the "
-                         "difference between reading the right feed and reading a coin flip.")
-    ap.add_argument("--provider", default="anthropic:claude-opus-5",
-                    help="'anthropic:claude-opus-5' (needs ANTHROPIC_API_KEY) or "
-                         "'claudecode:claude-opus-5' (routes through the Claude "
-                         "Code CLI so your subscription pays instead -- run "
-                         "`claude` once first to log in; vision must be "
-                         "--numeric-only with this provider)")
     ap.add_argument("--numeric-only", action="store_true",
                     help="skip charts (cheaper; changes which arm you are running)")
     ap.add_argument("--max-hours", type=float, default=None)
+    ap.add_argument("--open-poll-seconds", type=float, default=1.0,
+                    help="quote cadence while a position is open (default 1s)")
+    ap.add_argument("--flat-poll-seconds", type=float, default=15.0,
+                    help="quote cadence while flat; entries still run exactly "
+                         "once per closed M15 bar (default 15s)")
+    ap.add_argument("--closed-poll-seconds", type=float, default=60.0,
+                    help="quote cadence while the gold venue is shut (default 60s)")
     ap.add_argument("--feed", default="mt5", choices=("mt5", "oanda", "yahoo"),
                     help="where PERCEPTION comes from. oanda runs on Linux with "
                          "no terminal; yahoo needs NO ACCOUNT AT ALL but has no "
@@ -321,6 +345,12 @@ def main() -> int:
                          "the FEED's spread — a cost you will not pay, and "
                          "usually a smaller one, so marginal trades look better "
                          "than they are")
+    ap.add_argument("--expect-broker", default=None,
+                    help="require the connected MT5 account's company name to "
+                         "contain this substring (case-insensitive) before "
+                         "starting — guards against initialize() silently "
+                         "attaching to the wrong terminal when more than one "
+                         "is installed. mt5 feed only.")
     ap.add_argument("--provider", default="anthropic:claude-opus-5",
                     help="analyst backend. 'anthropic:<model>' bills per token. "
                          "'claudecode:<model>' runs the same model through the "
@@ -329,11 +359,29 @@ def main() -> int:
                          "subscription quota and a read takes ~78s rather than "
                          "~8s, so pair it with a low wake rate. 'deterministic' "
                          "is the rule-based baseline and costs nothing at all.")
+    ap.add_argument("--fallback-provider", default="codex:gpt-5.6-sol",
+                    help="analyst backend used only when the primary is unavailable. "
+                         "Default 'codex:gpt-5.6-sol' runs a high-reasoning, "
+                         "schema-validated, ephemeral, read-only local Codex "
+                         "CLI call authenticated by ChatGPT. Use an empty value to "
+                         "disable failover.")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
                          "ARM — not a free improvement")
+    ap.add_argument("--effort", default=None,
+                    choices=("low", "medium", "high", "xhigh", "max"),
+                    help="primary analyst reasoning effort. Unset uses the "
+                         "provider default. The gpt-5.6-sol failover remains "
+                         "pinned to high. Higher effort costs more quota and "
+                         "latency per read.")
     args = ap.parse_args()
+
+    for label, value in (("--open-poll-seconds", args.open_poll_seconds),
+                         ("--flat-poll-seconds", args.flat_poll_seconds),
+                         ("--closed-poll-seconds", args.closed_poll_seconds)):
+        if value <= 0:
+            ap.error(f"{label} must be greater than zero")
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
@@ -346,7 +394,8 @@ def main() -> int:
                        feed=args.feed, min_stop=args.min_stop,
                        declared_spread=args.declared_spread or 0.0,
                        provider_spec=args.provider,
-                       expect_broker=args.expect_broker)
+                       fallback_provider_spec=args.fallback_provider,
+                       expect_broker=args.expect_broker or "")
     for c in checks:
         print(c.render())
     fatal = [c for c in checks if c.fatal and not c.ok]
@@ -381,6 +430,12 @@ def main() -> int:
           + ("  (contextual included — this calls the API per step)"
              if args.shadow_contextual else "  (contextual excluded — costs money)"))
     print(f"  opportunity set  : {'universe (all propositions)' if args.universe else 'single read'}")
+    fallback_name, _, fallback_model = args.fallback_provider.partition(":")
+    fallback_label = (f"{fallback_model or 'gpt-5.6-sol'} (high) via local "
+                      "Codex/ChatGPT login"
+                      if fallback_name == "codex" else
+                      args.fallback_provider or "disabled")
+    print(f"  analyst failover : {fallback_label}")
     if args.declared_spread:
         print(f"  COST basis       : your venue, ${args.declared_spread:.2f} declared")
     else:
@@ -397,16 +452,22 @@ def main() -> int:
     from golddesk.management import BrokerLimits
     svc = build_service(symbol=args.symbol, shadow=shadow, vision=vision,
                         provider_spec=args.provider,
-                        cfg=ServiceConfig(symbol=args.symbol),
+                        cfg=ServiceConfig(
+                            symbol=args.symbol,
+                            poll_seconds=args.open_poll_seconds,
+                            idle_poll_seconds=args.flat_poll_seconds,
+                            closed_poll_seconds=args.closed_poll_seconds),
                         secrets_dir=args.secrets, feed_backend=args.feed,
-                        provider_spec=args.provider,
                         management=args.management,
                         declared_spread=args.declared_spread,
                         shadow_management=args.shadow_management,
                         shadow_contextual=args.shadow_contextual,
                         universe_mode=args.universe,
                         broker_limits=(BrokerLimits(min_stop_distance=args.min_stop)
-                                       if args.min_stop else None))
+                                       if args.min_stop else None),
+                        provider_effort=args.effort,
+                        fallback_provider_specs=((args.fallback_provider,)
+                                                 if args.fallback_provider else ()))
     try:
         st = svc.run(max_seconds=(args.max_hours * 3600) if args.max_hours else None)
     except KeyboardInterrupt:

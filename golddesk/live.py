@@ -40,7 +40,7 @@ management. That is enforced by _notify() below, not by hope.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
@@ -62,6 +62,7 @@ from .policy_state import PolicyState
 from .providers import AnalystError, AnalystProvider, ProviderRead
 from .reentry import PriorTrade
 from .runner import RiskLimits, RiskState, build_brief, risk_check
+from .specialists import Council, build_desk_council
 from .watcher import Watcher
 
 log = logging.getLogger(__name__)
@@ -240,6 +241,7 @@ class LiveDesk:
                  universe_mode: bool = False,
                  calendar=None,
                  regime_history=None,
+                 specialist_council: Optional[Council] = None,
                  entry_urgency: float = 0.5,
                  forward_bars: int = 480):
         self.provider, self.ledger = provider, ledger
@@ -321,6 +323,12 @@ class LiveDesk:
         # Resolved history to compare the current state against. None means
         # novelty is unmeasurable, reported as UNKNOWN for the same reason.
         self.regime_history = regime_history
+        # Eight named, isolated seats. Unconfigured seats are durable
+        # UNAVAILABLE verdicts, never fake FLAT opinions. Their reads are
+        # shadow evidence only; earned reads may be shown to the analyst but
+        # never acquire compiler or risk authority.
+        self.specialist_council = specialist_council or build_desk_council()
+        self._pending_specialist_report: Optional[dict] = None
         # How fast the edge decays, for the execution planner. An INPUT, not a
         # constant discovered by preference — it is stamped on every plan so its
         # value can be audited against what fills actually happened.
@@ -572,6 +580,17 @@ class LiveDesk:
         self.last_spread = max(0.0, ask - bid)
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             timeframe=ENTRY_TF)
+        # Prior analogues are selected from trades that had already closed at
+        # this exact as-of time. The pack reaches the same brief as the charts;
+        # an unresolved case is excluded rather than allowed to leak its future.
+        ledger_rows = self.ledger.read_all()
+        try:
+            from .memory_pack import build_memory_pack
+            memory_block = build_memory_pack(ledger_rows, brief).render()
+            if memory_block:
+                brief = replace(brief, blocks=tuple(brief.blocks) + (memory_block,))
+        except Exception as e:                         # evidence cannot halt trading
+            log.warning("memory pack skipped at %s: %s", ts, e)
         # THE CAUSAL SNAPSHOT OF THIS DECISION MOMENT, built before anything
         # decides. It is what makes the model league real rather than
         # theoretical: a competitor -- another model, a rule, the user -- can be
@@ -580,10 +599,30 @@ class LiveDesk:
         # was knowable" after the fact is precisely the reconstruction that
         # leaks. Never fatal: a snapshot failure must not cost a trade.
         self._pending_snapshot = None
+        self._pending_specialist_report = None
         try:
             self._pending_snapshot = self._snapshot(bars, i, brief)
         except Exception as e:                        # noqa: BLE001
             log.warning("snapshot skipped at %s: %s", ts, e)
+
+        # All specialists receive the exact same immutable object. Council
+        # isolates each seat's failure; this outer guard isolates persistence
+        # and scorecard rendering so accountability can never cost a trade.
+        if self._pending_snapshot is not None:
+            try:
+                from .specialist_accountability import (
+                    earned_brief_block, record_verdicts, scorecards)
+                self._pending_specialist_report = self.specialist_council.report(
+                    self._pending_snapshot)
+                record_verdicts(self.ledger, self._pending_snapshot,
+                                self._pending_specialist_report, ledger_rows)
+                block = earned_brief_block(
+                    self._pending_specialist_report,
+                    scorecards(ledger_rows))
+                if block:
+                    brief = replace(brief, blocks=tuple(brief.blocks) + (block,))
+            except Exception as e:                    # noqa: BLE001
+                log.warning("specialist accountability skipped at %s: %s", ts, e)
 
         try:
             imgs = self._render_charts(bars, i)
@@ -1251,6 +1290,16 @@ class LiveDesk:
             if val is not None:
                 b.add(key, float(val), as_of, source="feed")
         b.add("session", brief.session, as_of, source="calendar")
+        for key, val in brief.context.__dict__.items():
+            b.add(f"context.{key}", val, as_of, source="features")
+        if brief.trigger_price is not None:
+            b.add("trigger.price", float(brief.trigger_price), as_of,
+                  source="structure")
+        for j, item in enumerate(brief.timeline):
+            b.add(f"timeline.{j}", str(item), as_of, source="desk-memory")
+        for j, block in enumerate(brief.blocks):
+            b.add(f"brief.block.{j}", str(block), as_of,
+                  source="deterministic-brief")
         for lv in getattr(brief, "levels", ()) or ():
             price = getattr(lv, "price", None)
             if price is not None:
@@ -1298,6 +1347,15 @@ class LiveDesk:
         if getattr(self, "_pending_snapshot", None) is not None:
             s = self._pending_snapshot
             snap_keys = {"state_id": s.state_id, "content_hash": s.content_hash}
+        from .specialist_accountability import decision_stamp, gate_id
+        decision = dict(decision)
+        decision.update(snap_keys)
+        decision.update(decision_stamp(
+            getattr(self, "_pending_specialist_report", None)))
+        decision["outcome_direction"] = direction
+        gid = gate_id(kind, reason, decision)
+        if gid:
+            decision["gate_id"] = gid
         self.ledger.append(DecisionRecord(
             decision_id=did, kind=kind,
             t0=bars[i].ts, symbol=brief.symbol,
