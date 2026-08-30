@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 7h ago",
+          "detail": "updated 8h ago",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 6.1h old",
+          "detail": "newest row 6.4h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 5.6h ago",
+          "detail": "written 5.8h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32441MB free",
+          "detail": "32447MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 335 min ago, after a boot 26.6h ago",
+          "detail": "wrote 350 min ago, after a boot 26.9h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T04:00:00.482578+00:00",
+  "generated_utc": "2026-08-30T04:15:00.622730+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
   "total_faults": 8
