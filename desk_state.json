@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 159 recent / 7 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 158 recent / 8 prior decisions, under 40 either side",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 9h ago",
+          "detail": "updated 10h ago",
           "ok": true
         },
         {
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 8.1h old",
+          "detail": "newest row 8.4h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "last written 7.6h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "detail": "last written 7.8h ago \u2014 the desk is not persisting state, so a crash loses everything since",
           "ok": false
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "32412MB free",
+          "detail": "32411MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 455 min ago, after a boot 28.6h ago",
+          "detail": "wrote 470 min ago, after a boot 28.9h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T05:59:59.274275+00:00",
+  "generated_utc": "2026-08-30T06:18:40.458187+00:00",
   "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
   "ledger_rows": 307,
   "total_faults": 9
