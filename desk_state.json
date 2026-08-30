@@ -10,33 +10,33 @@
         },
         {
           "check": "analyst answering",
-          "detail": "UNMEASURED \u2014 5 wake(s) in 12h, under 20",
+          "detail": "UNMEASURED \u2014 6 wake(s) in 12h, under 20",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "UNMEASURED \u2014 5 stamped read(s), under 10",
+          "detail": "UNMEASURED \u2014 6 stamped read(s), under 10",
           "ok": true
         },
         {
           "check": "analyst model",
-          "detail": "all reads answered as claude-opus-5",
-          "ok": true
+          "detail": "2 different models answered in 12h (['claude-opus-5', 'rules-v1']) \u2014 reads from different models are not comparable evidence and land in the same cohort.",
+          "ok": false
         }
       ],
-      "faults": 0
+      "faults": 1
     },
     "capture": {
       "axis": "capture",
       "checks": [
         {
           "check": "signal rate",
-          "detail": "UNMEASURED \u2014 155 recent / 11 prior decisions, under 40 either side",
+          "detail": "UNMEASURED \u2014 155 recent / 12 prior decisions, under 40 either side",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/141 (20%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/142 (20%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "19 sleeve(s) accruing, published 0.2h ago",
+          "detail": "16 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -67,17 +67,17 @@
       "checks": [
         {
           "check": "calibration",
-          "detail": "UNMEASURED \u2014 20 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
+          "detail": "UNMEASURED \u2014 21 resolved trade(s) carry a stated confidence, under 25. A calibration curve over this many is arithmetic, not evidence.",
           "ok": true
         },
         {
           "check": "edge",
-          "detail": "UNMEASURED \u2014 20 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
+          "detail": "UNMEASURED \u2014 21 resolved trade(s), under 30. Whether this desk has an edge is the one question it exists to answer, and it is NOT answered yet.",
           "ok": true
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.20R while refusals reached +0.46R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.22R while refusals reached +0.46R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,14 +137,14 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
       "checks": [
         {
           "check": "cohorts",
-          "detail": "19 mechanism(s) loaded from 20 resolved trades",
+          "detail": "20 mechanism(s) loaded from 21 resolved trades",
           "ok": true
         },
         {
@@ -154,7 +154,7 @@
         },
         {
           "check": "excursion",
-          "detail": "2 of 19 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
+          "detail": "2 of 20 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
           "ok": false
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 9.9h old",
+          "detail": "newest row 0.7h old",
           "ok": true
         },
         {
@@ -179,31 +179,31 @@
         },
         {
           "check": "notifications",
-          "detail": "4 delivered, 1 failed",
+          "detail": "3 delivered, 1 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "last written 9.3h ago \u2014 the desk is not persisting state, so a crash loses everything since",
-          "ok": false
+          "detail": "written 0.2h ago",
+          "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "287 unique decision(s), no tears",
+          "detail": "288 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "32409MB free",
+          "detail": "32410MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 560 min ago, after a boot 30.4h ago",
+          "detail": "wrote 10 min ago, after a boot 30.6h ago",
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     }
   },
   "decisions": {
@@ -228,8 +228,8 @@
       "last": "2026-08-29T21:52:12.919952+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 58,
-      "last": "2026-08-29T21:52:12.919952+00:00"
+      "count": 59,
+      "last": "2026-08-30T07:16:30.580985+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-30T07:45:00.385512+00:00",
-  "last_row_utc": "2026-08-29T21:52:12.919952+00:00",
-  "ledger_rows": 307,
-  "total_faults": 10
+  "generated_utc": "2026-08-30T07:59:59.603520+00:00",
+  "last_row_utc": "2026-08-30T07:16:30.580985+00:00",
+  "ledger_rows": 309,
+  "total_faults": 9
 }
