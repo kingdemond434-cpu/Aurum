@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "31 sleeve(s) accruing, published 0.2h ago",
+          "detail": "30 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "last run exited 1 \u2014 the desk itself is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 3.2h old",
+          "detail": "newest row 3.4h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 3.2h ago",
+          "detail": "written 3.4h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "19434MB free",
+          "detail": "19418MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 190 min ago, after a boot 54.6h ago",
+          "detail": "wrote 205 min ago, after a boot 54.9h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "081f1f7b1c94",
-  "generated_utc": "2026-08-31T08:00:12.560299+00:00",
+  "generated_utc": "2026-08-31T08:15:06.573254+00:00",
   "last_row_utc": "2026-08-31T04:48:22.329095+00:00",
   "ledger_rows": 377,
-  "total_faults": 11
+  "total_faults": 10
 }
