@@ -415,6 +415,12 @@ def main() -> int:
                          "free quality upgrade.")
     args = ap.parse_args()
 
+    # Scheduled Task argument serialization cannot reliably preserve an empty
+    # string. Accept an explicit sentinel so a GPT-primary task can disable a
+    # duplicate fallback without leaving `--fallback-provider` value-less.
+    if args.fallback_provider.strip().lower() in {"none", "off", "disabled"}:
+        args.fallback_provider = ""
+
     for label, value in (("--open-poll-seconds", args.open_poll_seconds),
                          ("--flat-poll-seconds", args.flat_poll_seconds),
                          ("--closed-poll-seconds", args.closed_poll_seconds)):

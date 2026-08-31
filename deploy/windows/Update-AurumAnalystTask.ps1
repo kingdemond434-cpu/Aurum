@@ -26,7 +26,7 @@ if ($GptPrimary) {
     # not probe a provider that has already reported its reset time on every
     # bar; route directly to the healthy subscription instead.
     $deskArgs += @("--provider", "codex:gpt-5.6-sol",
-                   "--fallback-provider", "")
+                   "--fallback-provider", "none")
 } else {
     $deskArgs += @("--provider", "claudecode:claude-opus-5",
                    "--fallback-provider", "codex:gpt-5.6-sol")
