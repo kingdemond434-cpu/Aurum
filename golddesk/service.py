@@ -438,6 +438,13 @@ class DeskService:
         self._notify(f"*DESK STOPPED* {self.state.bars_processed} bars, "
                      f"{self.state.ticks_seen} ticks, "
                      f"{self.state.reconnects} reconnect(s)")
+        # Do not leave the subscription worker alive after a deliberate desk
+        # stop. cancel_futures drops a queued stale packet; an already-running
+        # CLI call is allowed to finish without blocking the MT5 shutdown path.
+        # Without shutdown(), Python's executor atexit hook kept short service
+        # runs and supervisor restarts alive indefinitely after run() returned.
+        self._analysis_pending = None
+        self._analysis_pool.shutdown(wait=False, cancel_futures=True)
         return self.state
 
     def _inner_loop(self, started: float, max_seconds: Optional[float]) -> None:

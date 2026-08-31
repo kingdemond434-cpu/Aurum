@@ -1199,15 +1199,22 @@ class LiveDesk:
         # structure still uses closed bars only. Every chart is synchronized by
         # being fetched in the same decision packet immediately before the call.
         if self._live_frames:
-            for label in ("M1", "M5", "M15", "H1", "H4"):
+            required = ("M1", "M5", "M15", "H1", "H4")
+            missing = [label for label in required
+                       if len(self._live_frames.get(label) or ()) < 30]
+            if missing:
+                raise AnalystError(
+                    "live chart packet incomplete — missing/stunted "
+                    + ", ".join(missing)
+                    + "; refusing rather than letting the analyst infer from a "
+                      "partial or stale visual world")
+            for label in required:
                 frame = self._live_frames.get(label) or ()
                 win = list(frame)[-120:]
-                if len(win) >= 30:
-                    out.append(render_clean_chart(
-                        [CB(b.open, b.high, b.low, b.close) for b in win],
-                        f"{label}-LIVE-last-candle-forming"))
-            if out:
-                return tuple(out)
+                out.append(render_clean_chart(
+                    [CB(b.open, b.high, b.low, b.close) for b in win],
+                    f"{label}-LIVE-last-candle-forming"))
+            return tuple(out)
         # TRUE higher-timeframe aggregation. The previous version sliced every
         # 16th M15 bar, which produces fifteen-minute candles spaced four hours
         # apart and labels them H4 — misstating the higher timeframe's range,
