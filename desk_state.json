@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "9 of 21 wakes in 12h were served by the RULE-BASED FALLBACK and 2 got nothing \u2014 52% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "8 of 24 wakes in 12h were served by the RULE-BASED FALLBACK and 6 got nothing \u2014 58% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 99s of 600s budget (17%) over 19 reads",
+          "detail": "median 99s of 600s budget (17%) over 18 reads",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "20.9% recent vs 12.7% prior",
+          "detail": "20.0% recent vs 14.0% prior",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "33 sleeve(s) accruing, published 0.2h ago",
+          "detail": "22 sleeve(s) accruing, published 0.1h ago",
           "ok": true
         }
       ],
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -123,12 +123,12 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-QQuantGatesCertify', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "123 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "127 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.3h old",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "340 unique decision(s), no tears",
+          "detail": "344 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "19116MB free",
+          "detail": "19100MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 59.9h ago",
+          "detail": "wrote 0 min ago, after a boot 60.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 123,
-      "error": "codex exited 1: ity 1.00  mechanism=failed-breakdown-reclaim\n  2026-08-27T12:15  LONG  NOVEL              -1.01R  similarity 1.00  mechanism=session-high-short-squeeze\n  2026-08-28T13:30  SHORT NOVEL              -1.01R  similarity 0.83  mechanism=descending-high-supply-revisit\n  2026-08-28T13:30  LONG  SWING_REVERSAL     +0.65R  similarity 0.83  mechanism=session-low-sweep-reclaim\n  2026-08-27T13",
-      "last": "2026-08-31T13:05:06.158076+00:00",
+      "count": 127,
+      "error": "codex exited 1:   EVIDENCE ONLY \u2014 no vote on direction, never overrides structure.\n\nPRIOR CLOSED DECISIONS MOST LIKE THIS STATE\nCausal only: 5 shown from 26 eligible; mean -0.43R, wins 2/5. Similarity is context matching, not a vote or forecast.\n  2026-08-31T12:30  SHORT NOVEL              -1.01R  similarity 1.00  mechanism=cluster-floor-liquidation\n  2026-08-31T12:30  LONG  NOVEL              -1.",
+      "last": "2026-08-31T13:00:02.271293+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "1104fecf062a",
-  "generated_utc": "2026-08-31T13:22:22.696073+00:00",
+  "generated_utc": "2026-08-31T13:31:59.625841+00:00",
   "last_row_utc": null,
-  "ledger_rows": 421,
-  "total_faults": 10
+  "ledger_rows": 465,
+  "total_faults": 11
 }
