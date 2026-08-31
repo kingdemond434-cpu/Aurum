@@ -10,21 +10,21 @@
         },
         {
           "check": "analyst answering",
-          "detail": "1 of 38 wakes in 12h were served by the RULE-BASED FALLBACK and 27 got nothing \u2014 74% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
-          "ok": false
+          "detail": "30/40 wakes (75%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 112s of 600s budget (19%) over 11 reads",
+          "detail": "median 165s of 600s budget (27%) over 10 reads",
           "ok": true
         },
         {
           "check": "analyst model",
-          "detail": "2 different models answered in 12h (['gpt-5.6-sol', 'rules-v1']) \u2014 reads from different models are not comparable evidence and land in the same cohort.",
-          "ok": false
+          "detail": "all reads answered as gpt-5.6-sol",
+          "ok": true
         }
       ],
-      "faults": 2
+      "faults": 0
     },
     "capture": {
       "axis": "capture",
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "33 sleeve(s) accruing, published 0.1h ago",
+          "detail": "22 sleeve(s) accruing, published 0.0h ago",
           "ok": true
         }
       ],
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "148 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "151 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "365 unique decision(s), no tears",
+          "detail": "368 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "19032MB free",
+          "detail": "19028MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 62.2h ago",
+          "detail": "wrote 1 min ago, after a boot 62.4h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 148,
-      "error": "codex exited 1:  here at all.\n  EVIDENCE ONLY \u2014 no vote on direction, never overrides structure.\n\nPRIOR CLOSED DECISIONS MOST LIKE THIS STATE\nCausal only: 5 shown from 30 eligible; mean -0.37R, wins 2/5. Similarity is context matching, not a vote or forecast.\n  2026-08-30T23:15  LONG  SWING_REVERSAL     -0.67R  similarity 0.50  mechanism=shelf-break-stop-run\n  2026-08-30T22:45  LONG  SWING_REVERSA",
-      "last": "2026-08-31T15:15:00.695387+00:00",
+      "count": 151,
+      "error": "codex exited 1: not here at all.\n  EVIDENCE ONLY \u2014 no vote on direction, never overrides structure.\n\nPRIOR CLOSED DECISIONS MOST LIKE THIS STATE\nCausal only: 5 shown from 31 eligible; mean -0.73R, wins 1/5. Similarity is context matching, not a vote or forecast.\n  2026-08-31T04:30  SHORT TREND_CONTINUATION -1.00R  similarity 0.83  mechanism=broken-shelf-liquidation\n  2026-08-31T04:30  LONG  SWING_",
+      "last": "2026-08-31T15:15:01.036014+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "1104fecf062a",
-  "generated_utc": "2026-08-31T15:31:14.526760+00:00",
-  "last_row_utc": null,
-  "ledger_rows": 654,
-  "total_faults": 10
+  "generated_utc": "2026-08-31T15:45:21.095612+00:00",
+  "last_row_utc": "2026-08-31T15:15:01.036014+00:00",
+  "ledger_rows": 673,
+  "total_faults": 9
 }
