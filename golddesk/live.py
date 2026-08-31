@@ -39,6 +39,7 @@ management. That is enforced by _notify() below, not by hope.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
@@ -46,7 +47,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Sequence
 
-from .analyst import CompiledSignal, Refusal, Thresholds, compile_signal
+from .analyst import CompiledSignal, Refusal, Setup, Thresholds, compile_signal
 from .costs import CostModel
 from .features import Bar, StructureState, atr, classify, session_of, swings
 from .hypothesis import HypothesisBook
@@ -59,13 +60,70 @@ from .observer import TradeObserver, Trigger, Wake, resolve_intrabar
 from .policies import (ContextualChooser, HeuristicChooser, ManagementChooser,
                        PassiveChooser, ReentryPolicy)
 from .policy_state import PolicyState
-from .providers import AnalystError, AnalystProvider, ProviderRead
+from .providers import (AnalystError, AnalystProvider, ClaudeCodeAnalyst,
+                        ProviderRead)
+from .quant_findings import strength_bucket
 from .reentry import PriorTrade
 from .runner import RiskLimits, RiskState, build_brief, risk_check
 from .specialists import Council, build_desk_council
 from .watcher import Watcher
 
 log = logging.getLogger(__name__)
+
+
+def _explain_analyst_error(err: Exception) -> dict:
+    """Pull the CLI's own verdict out of its JSON error payload.
+
+    The Claude Code CLI reports failure as a JSON blob, and the informative
+    fields (`subtype`, `result`, and the token counts that say whether the API
+    was ever reached) sit at arbitrary offsets inside it. Blind truncation of
+    the whole string reliably keeps the useless half.
+
+    Returns {} when there is no JSON to read -- an absent explanation, never a
+    guessed one.
+    """
+    text = str(err)
+    # THE LOGIN IS CHECKED FIRST AND OUTSIDE THE JSON. When the provider
+    # recognises an expired OAuth session it raises a plain sentence with the
+    # remedy in it and no JSON payload at all, so a JSON-first reader would have
+    # returned {} for the one failure whose cause is fully known. It is also
+    # checked on the raw text rather than a parsed field because the CLI reports
+    # this with subtype "success" and api_error_status null -- `result` is the
+    # only field that says anything true.
+    if ClaudeCodeAnalyst._auth_failure(text, "") is not None:
+        needs_login = {"needs_login": True,
+                       "reading": ("the LOGIN has expired. No retry, restart or "
+                                   "flag change clears this -- run `claude` once "
+                                   "interactively on the box, as the task's user")}
+    else:
+        needs_login = {}
+    i, j = text.find("{"), text.rfind("}")
+    if i < 0 or j <= i:
+        return needs_login
+    try:
+        d = json.loads(text[i:j + 1])
+    except Exception:                                  # noqa: BLE001
+        return needs_login
+    if not isinstance(d, dict):
+        return needs_login
+    usage = d.get("usage") or {}
+    out = {k: d[k] for k in ("subtype", "result", "stop_reason", "is_error",
+                             "num_turns", "duration_api_ms") if k in d}
+    for k in ("input_tokens", "output_tokens"):
+        if k in usage:
+            out[k] = usage[k]
+    # THE DISCRIMINATOR. Zero tokens AND zero API time means the CLI failed
+    # before it ever called the API -- which rules out a rate limit, a model
+    # outage and a timeout, and rules IN something local: the input it was
+    # handed, the login, or the binary itself.
+    if out.get("duration_api_ms") == 0 and not out.get("input_tokens"):
+        out["reading"] = ("the API was never called -- this is a LOCAL failure "
+                          "(input, login or binary), not a limit or an outage")
+    # A KNOWN cause overrides the generic one. "local failure (input, login or
+    # binary)" is three suspects; "the login expired" is a fix. Written last so
+    # it wins.
+    out.update(needs_login)
+    return out
 
 
 def _downsample_path(path: Sequence, cap: int = 400) -> list:
@@ -95,6 +153,14 @@ HTF = "H4"
 
 SLOT_MGMT = "management_chooser"
 SLOT_REENTRY = "reentry_policy"
+
+#: Consecutive unanswered wakes before the desk says out loud that it is blind.
+#: THREE, not one: a single timeout is ordinary and alerting on it trains the
+#: operator to ignore the channel. Three consecutive on M15 is ~45 minutes of a
+#: desk that cannot see, which is no longer a blip. Not higher, because the
+#: whole point is to catch an outage in the hour it starts rather than at the
+#: end-of-day cycle.
+BLIND_ALARM_AFTER = 3
 
 
 class Vision(str, Enum):
@@ -152,6 +218,11 @@ class OpenTrade:
     opened_idx: int
     observer: TradeObserver
     partials: list[tuple[float, float]] = field(default_factory=list)
+    #: Set once the TP1 partial has been banked, so it fires exactly once per
+    #: trade. Distinct from `partials` because the risk-free partial in
+    #: management.options() also appends there, and re-banking at TP1 on every
+    #: subsequent tick would suffocate the runner.
+    tp1_banked: bool = False
     notified_lock: bool = False
     mgmt_log: list[dict] = field(default_factory=list)
     # carried from the entry so the close row is self-describing and the
@@ -192,6 +263,10 @@ class LiveStats:
     states: int = 0
     wakes: int = 0
     reads: int = 0
+    #: Reads served by the rule-based fallback because the analyst was
+    #: unreachable. Counted SEPARATELY from `reads` on purpose -- folding them
+    #: in would make the desk look busiest exactly while its analyst was dead.
+    fallback_reads: int = 0
     analyst_errors: int = 0
     entries: int = 0
     exits: int = 0
@@ -211,6 +286,13 @@ class LiveStats:
     exits_managed: int = 0
     hypothesis_vetoes: int = 0
     states_blocked_position_open: int = 0
+    #: Consecutive wakes on which the analyst did not answer; reset by any
+    #: successful read. This is the number that separates "gold is quiet" from
+    #: "the desk is blind", and nothing tracked it. `analyst_errors` counted the
+    #: total and was READ BY NOBODY (III.16 — a counter one caller increments
+    #: and none reports is not measurement, it is bookkeeping).
+    consecutive_blind: int = 0
+    longest_blind_streak: int = 0
 
 
 class LiveDesk:
@@ -239,26 +321,37 @@ class LiveDesk:
                  measure_position_constraint: bool = True,
                  concurrency_ceiling: Optional[int] = None,
                  universe_mode: bool = False,
+                 crossmarket_provider=None,
                  calendar=None,
                  regime_history=None,
-                 specialist_council: Optional[Council] = None,
                  entry_urgency: float = 0.5,
                  forward_bars: int = 480,
-                 entry_tf: str = ENTRY_TF):
+                 macro_provider=None,
+                 macro_refresh: timedelta = timedelta(hours=6),
+                 macro_timeout_s: float = 25.0,
+                 wake_on_bar_close: bool = False,
+                 specialist_council: Optional[Council] = None,
+                 entry_tf: str = ENTRY_TF, quote_provider=None,
+                 max_decision_drift_atr: float = 0.75):
         self.provider, self.ledger = provider, ledger
+        self.quote_provider = quote_provider
+        self.max_decision_drift_atr = max(0.1, float(max_decision_drift_atr))
         self.sink = sink or build_sink(None)
         self.shadow = shadow
         self.thresholds, self.cost_model = thresholds, cost_model
         self.limits, self.policy = limits, policy
-        self.watcher = Watcher(heartbeat=heartbeat, min_gap=min_gap)
-        # One watcher PER ARM: an M5 state must not be diffed against an H1
-        # state, or every arm change wakes every other arm.
-        self.watchers: dict[str, Watcher] = {ENTRY_TF: self.watcher}
+        # MAXIMUM FREQUENCY. See Watcher.__init__ for why this is defensible
+        # under a subscription and what it still costs.
+        self.watcher = Watcher(heartbeat=heartbeat, min_gap=min_gap,
+                               wake_on_bar_close=wake_on_bar_close)
+        self.watchers: dict[str, Watcher] = {entry_tf: self.watcher}
         self.vision, self.cohorts = vision, cohorts
         self.book = book
         self.obs_heartbeat = observer_heartbeat
         self.shadow_management = shadow_management
         self.shadow_contextual = shadow_contextual
+        self.specialist_council = specialist_council or build_desk_council()
+        self._pending_specialist_report: Optional[dict] = None
 
         # Competing policies. The contextual arm is only constructible when the
         # provider can actually choose; registering it otherwise would let a
@@ -302,7 +395,34 @@ class LiveDesk:
         # How many entry-timeframe bars make one HTF candle. 16 M15 = H4.
         # Used for TRUE OHLC aggregation, never for sampling.
         self.htf_factor = htf_factor
+        self.entry_tf = entry_tf
+        self._current_tf: Optional[str] = None
+        self._current_htf_factor: Optional[int] = None
+        self._current_htf_name: Optional[str] = None
+        self._live_frames: dict[str, Sequence[Bar]] = {}
         self.measure_position_constraint = measure_position_constraint
+        # MACRO. A zero-arg callable returning a MacroContext -- normally
+        # macro_context.from_drivers(build_drivers(...)). None means no feed and
+        # every brief then renders MACRO CONTEXT: UNMEASURED rather than
+        # quietly omitting the section.
+        #
+        # REFRESHED ON A CADENCE, NOT PER BAR: every driver behind it is DAILY,
+        # so a per-bar fetch would hammer two free feeds for a number that
+        # cannot have moved, and would put an external HTTP call inside the
+        # decision path where a slow response becomes a missed bar.
+        #
+        # A FAILED REFRESH KEEPS THE PREVIOUS READ. Losing macro is a
+        # degradation, not an outage, and MacroContext reports its own age --
+        # so a kept value says "72h old" where a cleared one would say "absent"
+        # and throw away the fact that the fetch ever worked.
+        self.macro_provider = macro_provider
+        self.macro_refresh = macro_refresh
+        # Deadline for ONE refresh attempt. 25s comfortably covers the FRED
+        # leg's own 15s timeout plus a slow Yahoo response, and is far below any
+        # bar interval, so a stuck fetch can never delay a decision past its bar.
+        self.macro_timeout_s = macro_timeout_s
+        self._macro = None
+        self._macro_at = None
         # A hard ceiling on simultaneous theses, independent of heat. Not a
         # quota on opportunity: heat is the economic limit and normally binds
         # first. This only stops a pathological state opening dozens.
@@ -320,6 +440,31 @@ class LiveDesk:
         # wraps a single read into a one-candidate universe — so switching arms
         # never changes which providers are available.
         self.universe_mode = universe_mode
+        # CROSS-MARKET, read from the terminal that is already connected.
+        # Injected as a callable for the same reason macro_provider is: the desk
+        # stays testable with no MetaTrader5 installed, and build_brief stays
+        # pure. Refreshed on the SAME cadence as macro -- an hourly change
+        # figure does not move between two M15 bars, and pulling four symbols on
+        # every wake would put four network round trips in front of a decision.
+        self.crossmarket_provider = crossmarket_provider
+        self._crossmarket: Optional[str] = None
+        self._crossmarket_at = None
+        #: Size of the brief handed to the analyst on the last wake. Recorded on
+        #: BLIND rows because it is the one input that VARIES between a wake that
+        #: answers and one that does not -- and a CLI failure with zero tokens
+        #: and zero API time is a local rejection, where size is the first
+        #: hypothesis to rule in or out.
+        self._last_prompt_chars: Optional[int] = None
+        #: One login alarm per outage. Separate from consecutive_blind because
+        #: the two fire on different rules -- this one on the FIRST failure,
+        #: since an expired login is known immediately and cannot self-clear.
+        self._login_alarm_sent = False
+        #: One degraded-mode alert per outage, and one recovery notice.
+        self._degraded_notified = False
+        #: The rule-based reader, built on first use. A desk whose analyst
+        #: cannot be reached currently produces NOTHING, and nothing is the one
+        #: output that is certainly worthless -- see _fallback_read.
+        self._fallback: Optional[AnalystProvider] = None
         # Event proximity. None means the calendar is not wired, which the
         # uncertainty decomposition reports as UNKNOWN rather than as "no event"
         # — those are different claims and only one of them is true.
@@ -327,12 +472,6 @@ class LiveDesk:
         # Resolved history to compare the current state against. None means
         # novelty is unmeasurable, reported as UNKNOWN for the same reason.
         self.regime_history = regime_history
-        # Eight named, isolated seats. Unconfigured seats are durable
-        # UNAVAILABLE verdicts, never fake FLAT opinions. Their reads are
-        # shadow evidence only; earned reads may be shown to the analyst but
-        # never acquire compiler or risk authority.
-        self.specialist_council = specialist_council or build_desk_council()
-        self._pending_specialist_report: Optional[dict] = None
         # How fast the edge decays, for the execution planner. An INPUT, not a
         # constant discovered by preference — it is stamped on every plan so its
         # value can be audited against what fills actually happened.
@@ -342,20 +481,9 @@ class LiveDesk:
         self._last_state: Optional[StructureState] = None
         self._last_bars: Optional[Sequence[Bar]] = None
         self._last_idx: int = 0
-        # The desk's home timeframe (labels, snapshot, path refs). With the
-        # multi-timeframe loop each evaluation carries its OWN timeframe, which
-        # is what makes M5/M15/H1/H4 separate causal arms rather than one arm
-        # evaluated at four rhythms. `self.tf` is the arm currently deciding;
-        # it defaults to the home timeframe so every single-TF caller — and
-        # every existing test — behaves exactly as before.
-        self.entry_tf = entry_tf
-        self._current_tf: Optional[str] = None
-        self._current_htf_factor: Optional[int] = None
-        self._current_htf_name: Optional[str] = None
 
     @property
     def tf(self) -> str:
-        """The timeframe of the evaluation in progress (or the last one)."""
         return self._current_tf or self.entry_tf
 
     # -- open positions ---------------------------------------------------
@@ -393,9 +521,26 @@ class LiveDesk:
         who wants one. If it ever binds it is logged as an anomaly, because a
         count binding before heat means something is wrong with the risk maths,
         not that the desk found too many opportunities.
+
+        SHADOW. Same deadlock as entry.fallback_min_rr, in a second place. This
+        count demotes only when review() prices its counterfactual, review()
+        needs resolved outcomes, and the count blocks the trades that would
+        produce them -- so it never demotes. Observed 2026-08-27: the desk's
+        first-ever signal fired at 11:15 and the next FOUR opportunities, three
+        of them in one bar, were refused with "a trade is already open".
+
+        In advisory mode nothing is allocated, so a count limiting concurrent
+        exposure limits no exposure -- it only limits what the operator gets to
+        SEE and what the ledger gets to measure. And removing it here is not
+        removing the limiter: portfolio heat still binds at max_open_risk_r with
+        the correlation haircut, which by this docstring's own arithmetic
+        already refuses a second same-direction thesis. What becomes possible is
+        an INDEPENDENT one -- the opposite-direction and uncorrelated setups
+        that were being discarded unmeasured. Armed, the count enforces exactly
+        as before.
         """
         from .constitution import is_enforcing
-        if is_enforcing("risk.one_position"):
+        if is_enforcing("risk.one_position") and not self.shadow:
             return 1
         if self.concurrency_ceiling is None:
             return 1 << 30            # unlimited; heat is the only real limit
@@ -524,6 +669,36 @@ class LiveDesk:
                         self._last_state, Resolution.TICK_OBSERVED, t=t)
             return "EXIT_TARGET"
 
+        # TP1 PARTIAL BANK.
+        #
+        # `tp1` is computed by the compiler under the comment "partial bank",
+        # journalled on the SIGNAL row, and printed on the message the operator
+        # acts on -- and NOTHING in this package ever compared it to price. It
+        # was decoration. `grep -rn "\.tp1" golddesk/` found four sites: compute,
+        # journal, render, and the universe mirror. Zero comparisons.
+        #
+        # The cost is not theoretical. 2026-08-27: a short reached +1.88R with
+        # TP1 at +1.78R, price traded THROUGH it, nothing banked, a trail then
+        # locked +0.29R, and the pullback took that. 15% of MFE captured on a
+        # call that was right.
+        #
+        # THE MECHANISM of the leak is that the risk-free partial in
+        # management.options() is offered ONLY while `guaranteed_now < 0`. A
+        # trail that reaches risk-free permanently removes the partial from the
+        # option set, after which the entire position rides one stop.
+        #
+        # Deterministic here rather than an option for the chooser, exactly like
+        # the tp2 exit immediately above: reaching a NAMED OBJECTIVE is a price
+        # event, not a policy preference -- and an option the chooser may
+        # decline is precisely how this got lost. Invariants still bind: the
+        # bank goes through apply_option, so I3 (locked profit cannot fall) and
+        # I4 (a runner must survive) are enforced exactly as for any partial.
+        if (not t.tp1_banked and t.signal.tp1 is not None
+                and ((exit_px >= t.signal.tp1) if long else (exit_px <= t.signal.tp1))):
+            t.tp1_banked = True          # set BEFORE applying: a rejected bank
+                                         # must not retry on every subsequent tick
+            self._bank_tp1(t, price, ts)
+
         wake = t.observer.observe(price, ts, heartbeat=self.obs_heartbeat,
                                   bar_closed=bar_closed)
         if wake is None:
@@ -543,15 +718,13 @@ class LiveDesk:
                htf_state: Optional[StructureState],
                quote: tuple[float, float, float], timeline: Sequence[str],
                intrabar: Optional[Sequence[tuple[datetime, float]]] = None,
-               tf: Optional[str] = None,
-               htf_factor: Optional[int] = None,
-               htf_name: Optional[str] = None) -> None:
-        # WHICH ARM IS DECIDING. Stamped on everything this evaluation
-        # produces — brief, levels, snapshot, ledger row — so an M5 signal and
-        # an H4 signal are never aggregated as if they were the same strategy.
+               tf: Optional[str] = None, htf_factor: Optional[int] = None,
+               htf_name: Optional[str] = None,
+               live_frames: Optional[dict[str, Sequence[Bar]]] = None) -> None:
         self._current_tf = tf or self.entry_tf
         self._current_htf_factor = htf_factor or self.htf_factor
         self._current_htf_name = htf_name or HTF
+        self._live_frames = dict(live_frames or {})
         st = classify(bars, i, sw, atrs)
         if st is None:
             return
@@ -579,7 +752,8 @@ class LiveDesk:
                 bid, ask, age = quote
                 try:
                     b2 = build_brief(bars, i, st, sw, bid, ask, age, htf_state,
-                                     timeline, timeframe=self.tf)
+                                     timeline, timeframe=self.tf,
+                                     macro=self._macro)
                     self._record(bars, i, b2, DecisionKind.REFUSAL_COMPILER, "POLICY",
                                  {"declined": "UNEVALUATED",
                                   "constraint": "one_position"},
@@ -590,10 +764,10 @@ class LiveDesk:
                     log.debug("could not journal position-constraint cost: %s", e)
             return
 
-        w = (self.watchers.setdefault(
-                self.tf, Watcher(heartbeat=self.watcher.heartbeat,
-                                 min_gap=self.watcher.min_gap))
-             .observe(st, session_of(ts), ts))
+        w = self.watchers.setdefault(
+            self.tf, Watcher(heartbeat=self.watcher.heartbeat,
+                             min_gap=self.watcher.min_gap)).observe(
+                                 st, session_of(ts), ts)
         if not w.wake:
             return
         self.stats.wakes += 1
@@ -609,11 +783,25 @@ class LiveDesk:
         bid, ask, age = quote
         self.last_bid, self.last_ask = bid, ask
         self.last_spread = max(0.0, ask - bid)
+        self._refresh_macro(ts)
+        self._refresh_crossmarket(ts)
+
+        live_tape = []
+        for name in ("M1", "M5", "M15", "H1", "H4"):
+            frame = self._live_frames.get(name) or ()
+            if not frame:
+                continue
+            b = frame[-1]
+            rng = max(b.high - b.low, 1e-9)
+            live_tape.append(
+                f"{name} FORMING @{b.ts.isoformat()} O {b.open:.2f} H {b.high:.2f} "
+                f"L {b.low:.2f} NOW {b.close:.2f} close_pos "
+                f"{(b.close-b.low)/rng:.2f} range {rng:.2f}")
+        live_tape.append(f"LIVE QUOTE bid {bid:.2f} ask {ask:.2f} age {age:.1f}s")
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
-                            timeframe=self.tf)
-        # Prior analogues are selected from trades that had already closed at
-        # this exact as-of time. The pack reaches the same brief as the charts;
-        # an unresolved case is excluded rather than allowed to leak its future.
+                            macro=self._macro,
+                            crossmarket=self._crossmarket,
+                            timeframe=self.tf, live_tape=live_tape)
         ledger_rows = self.ledger.read_all()
         try:
             from .memory_pack import build_memory_pack
@@ -622,6 +810,11 @@ class LiveDesk:
                 brief = replace(brief, blocks=tuple(brief.blocks) + (memory_block,))
         except Exception as e:                         # evidence cannot halt trading
             log.warning("memory pack skipped at %s: %s", ts, e)
+        try:
+            self._last_prompt_chars = len(brief.render())
+        except Exception:                             # noqa: BLE001
+            self._last_prompt_chars = None
+
         # THE CAUSAL SNAPSHOT OF THIS DECISION MOMENT, built before anything
         # decides. It is what makes the model league real rather than
         # theoretical: a competitor -- another model, a rule, the user -- can be
@@ -636,9 +829,6 @@ class LiveDesk:
         except Exception as e:                        # noqa: BLE001
             log.warning("snapshot skipped at %s: %s", ts, e)
 
-        # All specialists receive the exact same immutable object. Council
-        # isolates each seat's failure; this outer guard isolates persistence
-        # and scorecard rendering so accountability can never cost a trade.
         if self._pending_snapshot is not None:
             try:
                 from .specialist_accountability import (
@@ -648,19 +838,15 @@ class LiveDesk:
                 record_verdicts(self.ledger, self._pending_snapshot,
                                 self._pending_specialist_report, ledger_rows)
                 block = earned_brief_block(
-                    self._pending_specialist_report,
-                    scorecards(ledger_rows))
+                    self._pending_specialist_report, scorecards(ledger_rows))
                 if block:
                     brief = replace(brief, blocks=tuple(brief.blocks) + (block,))
             except Exception as e:                    # noqa: BLE001
                 log.warning("specialist accountability skipped at %s: %s", ts, e)
 
-        # SELF-FEEDBACK, from the desk's OWN resolved ledger: mechanism
-        # cohorts, refusal blind spots, confidence calibration, novelty
-        # resolution. Only stable evidence (min cohort size) becomes memory;
-        # nothing here can refuse. Rendering it in is a vaccination against
-        # the very mechanism-first world: if peaks-of-order die in forward
-        # time, the next call carries that fact.
+        # Stable, forward-resolved lessons only. This teaches from losing and
+        # missed trades without adding a new refusal rule or turning one stop
+        # into timidity; weak samples remain observations, not authority.
         try:
             from .lessons import build_lessons
             lesson_block = build_lessons(ledger_rows)
@@ -672,8 +858,7 @@ class LiveDesk:
         try:
             imgs = self._render_charts(bars, i)
         except AnalystError as e:
-            self.stats.analyst_errors += 1
-            log.warning("charts unavailable at %s: %s", ts, e)
+            self._record_blind(bars, i, brief, ts, "charts", e)
             return
 
         if self.universe_mode:
@@ -682,20 +867,60 @@ class LiveDesk:
         try:
             pr = self.provider.read(brief, imgs)
             self.stats.reads += 1
+            self._analyst_answered()
         except AnalystError as e:
-            self.stats.analyst_errors += 1
-            log.warning("analyst unavailable at %s: %s", ts, e)
-            return
+            # DEGRADE BEFORE GOING DARK. BLIND is the only output certain to be
+            # worthless; a rule-based read is weaker evidence and vastly better
+            # than none. None means the fallback is off or failed too, and then
+            # this books BLIND exactly as it always did.
+            pr = self._fallback_read(brief, "read", e)
+            if pr is None:
+                self._record_blind(bars, i, brief, ts, "read", e)
+                return
 
-        if pr.read.is_no_trade():
-            verdict = "NO_TRADE" if pr.read.action == "NO_TRADE" else "NO_SETUP"
+        if getattr(pr.read, "action", None) == "NO_TRADE" or pr.read.setup is Setup.NO_SETUP:
             self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL, "MODEL",
-                         {"setup": pr.read.setup.value, "action": pr.read.action,
-                          "novelty": pr.read.novelty,
+                         {"setup": pr.read.setup.value,
+                          "action": getattr(pr.read, "action", "NO_TRADE"),
                           "analyst_read": pr.read.model_dump(),
                           "vision": self.vision.value, "charts_sent": len(imgs),
-                          **pr.stamp()}, f"analyst: {verdict}", "LONG", brief.atr)
+                          **pr.stamp()}, "analyst: NO_TRADE", "LONG", brief.atr)
             return
+
+        # Subscription-backed analysts can think for a minute or more. Never
+        # compile a MARKET proposal against the fossil quote they started with:
+        # refresh first, reprice the same thesis, and only refuse when the move
+        # during inference was so large that "enter now" is no longer the state
+        # the analyst judged. This directly prevents instant stale-entry stops.
+        if self.quote_provider is not None:
+            try:
+                live_bid, live_ask, live_age = self.quote_provider()
+                old_mid = brief.mid
+                live_mid = (live_bid + live_ask) / 2.0
+                drift_atr = abs(live_mid - old_mid) / max(brief.atr, 1e-9)
+                brief = replace(brief, bid=round(live_bid, 2), ask=round(live_ask, 2),
+                                spread=round(live_ask - live_bid, 2),
+                                tick_age_s=live_age,
+                                live_tape=tuple(brief.live_tape) + (
+                                    f"POST-READ QUOTE bid {live_bid:.2f} ask {live_ask:.2f} "
+                                    f"age {live_age:.1f}s after {pr.latency_ms/1000:.1f}s inference",
+                                ))
+                usage = dict(pr.usage)
+                usage.update({"decision_drift_atr": round(drift_atr, 4),
+                              "quote_refreshed_after_read": True})
+                pr = ProviderRead(pr.read, pr.provider, pr.model, pr.latency_ms, usage)
+                if (pr.read.entry_ref == "MARKET"
+                        and drift_atr > self.max_decision_drift_atr):
+                    self._record(
+                        bars, i, brief, DecisionKind.REFUSAL_COMPILER, "COMPILER",
+                        {"declined": pr.read.direction, "analyst_read": pr.read.model_dump(),
+                         **pr.stamp()},
+                        f"analysis expired during inference: quote moved {drift_atr:.2f} ATR",
+                        pr.read.direction, brief.atr)
+                    return
+            except Exception as e:                    # refresh failure is explicit
+                self._record_blind(bars, i, brief, ts, "post-read quote refresh", e)
+                return
 
         # Re-entry gate applies ONLY to a proposal repeating the prior trade's
         # direction while its context survives. An opposite-direction read is a
@@ -750,6 +975,86 @@ class LiveDesk:
 
         self._enter(bars, i, brief, res, pr, len(imgs))
 
+    def _refresh_crossmarket(self, now) -> None:
+        """Pull cross-market context if due. NEVER raises, for the same reason
+        _refresh_macro does not: losing a context block is a degradation, and a
+        desk that stops trading because one symbol read failed has converted a
+        missing input into an outage.
+
+        On failure the PREVIOUS block is kept and the timestamp is still
+        stamped, so a broken read is retried on the cadence rather than on every
+        wake -- and the analyst sees a stale block that says so, rather than a
+        silently absent one.
+        """
+        if self.crossmarket_provider is None:
+            return
+        if (self._crossmarket_at is not None
+                and now - self._crossmarket_at < self.macro_refresh):
+            return
+        self._crossmarket_at = now
+        try:
+            self._crossmarket = self.crossmarket_provider()
+        except Exception as e:                        # noqa: BLE001
+            log.warning("cross-market read failed (%s) — keeping the previous "
+                        "block rather than dropping the section", e)
+
+    # -- macro ------------------------------------------------------------
+    def _refresh_macro(self, now) -> None:
+        """Pull a fresh macro read if the cadence is due. NEVER raises.
+
+        A macro fetch that throws must not take down the decision path. The
+        desk's job is to read the market; losing macro is a degradation, and a
+        desk that stops trading because FRED is down has converted a missing
+        input into an outage.
+
+        On error the PREVIOUS read is kept, so MacroContext can report its true
+        age -- "72h old" -- rather than "absent", which would discard the fact
+        that the fetch used to work and when it stopped. `_macro_at` is stamped
+        even on failure so a broken feed is retried on the cadence rather than
+        on every wake.
+        """
+        if self.macro_provider is None:
+            return
+        if (self._macro_at is not None
+                and now - self._macro_at < self.macro_refresh):
+            return
+        # RUN IT WITH A HARD DEADLINE. The FRED leg carries timeout=15, but the
+        # Yahoo leg goes through yfinance, which has no timeout this code sets --
+        # and this call sits immediately before a decision. A FAILURE is handled
+        # below; a HANG is not a failure, it is an unbounded wait inside the
+        # path that produces signals, and it would look like a quiet market
+        # rather than a stuck fetch. A worker thread with a join deadline bounds
+        # it: on timeout the thread is abandoned (it is a read-only HTTP fetch,
+        # so leaking one is harmless) and the desk carries on with the previous
+        # read, which reports its own age.
+        import threading                                        # noqa: PLC0415
+        box = {}
+
+        def _fetch():
+            try:
+                box["m"] = self.macro_provider()
+            except Exception as e:                    # noqa: BLE001
+                box["err"] = e
+
+        th = threading.Thread(target=_fetch, daemon=True, name="macro-refresh")
+        th.start()
+        th.join(timeout=self.macro_timeout_s)
+        if th.is_alive():
+            log.warning("macro refresh exceeded %.0fs -- abandoning this attempt and "
+                        "keeping the previous read; the next one is due in %s",
+                        self.macro_timeout_s, self.macro_refresh)
+            self._macro_at = now
+            return
+        if "err" in box:
+            log.warning("macro refresh failed (%s) -- keeping the previous read, "
+                        "which reports its own age", box["err"])
+            self._macro_at = now
+            return
+        m = box.get("m")
+        if m is not None:
+            self._macro = m
+        self._macro_at = now
+
     # -- the opportunity universe -----------------------------------------
     def _decide_universe(self, bars, i, brief, imgs, ts, st) -> None:
         """Enumerate everything available, then decide as a portfolio.
@@ -769,13 +1074,21 @@ class LiveDesk:
         try:
             stamp, uni = self.provider.survey(brief, imgs)
             self.stats.reads += 1
+            self._analyst_answered()
         except AnalystError as e:
-            self.stats.analyst_errors += 1
-            log.warning("analyst unavailable at %s: %s", ts, e)
-            return
+            # Same degrade as the single-read path. DeterministicProvider
+            # inherits AnalystProvider.survey, which wraps its read into a
+            # one-candidate universe and SAYS SO -- so universe mode returns one
+            # honest candidate rather than silently reporting a full enumeration.
+            fb = self._fallback_read(brief, "survey", e)
+            if fb is None:
+                self._record_blind(bars, i, brief, ts, "survey", e)
+                return
+            from .universe import as_universe
+            stamp, uni = fb, as_universe(fb.read)
 
         cands = compile_universe(brief, uni, self.thresholds, self.cost_model,
-                                 self.cohorts)
+                                 self.cohorts, shadow=self.shadow)
         heat = Heat(max_open_risk_r=self.limits.max_open_risk_r,
                     correlation_haircut=self.limits.correlation_haircut,
                     max_daily_loss_r=self.limits.max_daily_loss_r)
@@ -881,13 +1194,31 @@ class LiveDesk:
         from .chart import Bar as CB, render_clean_chart
         from .features import aggregate
         out = []
+        # Prefer the broker's TRUE timeframe candles, including the explicitly
+        # forming last candle. This is the live sensorium; deterministic
+        # structure still uses closed bars only. Every chart is synchronized by
+        # being fetched in the same decision packet immediately before the call.
+        if self._live_frames:
+            required = ("M1", "M5", "M15", "H1", "H4")
+            missing = [label for label in required
+                       if len(self._live_frames.get(label) or ()) < 30]
+            if missing:
+                raise AnalystError(
+                    "live chart packet incomplete — missing/stunted "
+                    + ", ".join(missing)
+                    + "; refusing rather than letting the analyst infer from a "
+                      "partial or stale visual world")
+            for label in required:
+                frame = self._live_frames.get(label) or ()
+                win = list(frame)[-120:]
+                out.append(render_clean_chart(
+                    [CB(b.open, b.high, b.low, b.close) for b in win],
+                    f"{label}-LIVE-last-candle-forming"))
+            return tuple(out)
         # TRUE higher-timeframe aggregation. The previous version sliced every
         # 16th M15 bar, which produces fifteen-minute candles spaced four hours
         # apart and labels them H4 — misstating the higher timeframe's range,
         # and therefore its swings, sweeps and displacement, on every chart.
-        # The factors come from the ARM currently deciding (self.tf), so an M5
-        # evaluation aggregates M5 bars to H1 context while an H4 one
-        # aggregates to D1 — each arm's picture matches its own brief.
         fac = self._current_htf_factor or self.htf_factor
         hname = self._current_htf_name or HTF
         mid = max(1, fac // 4)
@@ -896,14 +1227,7 @@ class LiveDesk:
         mid_min = tf_min * mid
         mid_name = {15: "M15", 30: "M30", 60: "H1", 120: "H2", 240: "H4",
                     360: "H6", 480: "H8", 720: "H12", 1440: "D1"}.get(
-            mid_min, f"{mid_min}min")
-        # SYNCHRONIZED MULTI-ZOOM. The prompt promises "several images, including
-        # multiple synchronized zooms of the SAME timeframe" — so the pack must
-        # deliver exactly that: a close zoom for wick character and body shape,
-        # a wider window at the same resolution for where price sits in its
-        # range, then the aggregated higher timeframes for context. This is the
-        # whole point of the multi-zoom autopsy: the analyst reads shape at 4
-        # resolutions on every wake and the factorial decides if it helps.
+                        mid_min, f"{mid_min}min")
         for label, factor, n in ((f"{hname}-context", fac, 90),
                                  (f"{mid_name}-context", mid, 90),
                                  (f"{self.tf}-zoom", 1, 48),
@@ -1003,13 +1327,42 @@ class LiveDesk:
         alloc, risk_r, sizing_binds = self._size(sig, mech)
         plan = self._execution(brief, sig, edge_r)
 
+        # EVIDENCE TIER, ON THE FIRST LINE. Every caveat below was already in
+        # this message -- conf 2/5, "no measured edge yet for this mechanism",
+        # RISK estimation HIGH, and a why_not saying in plain words "filed NOVEL
+        # and expected to be shadowed rather than sized". It was scattered
+        # across five places, none of them the first line, and the first line is
+        # what gets read on a phone. An operator took one such experiment with
+        # real money on 2026-08-27. The message was not WRONG; it was UNRANKED,
+        # and an unranked caveat is one the reader has to assemble for
+        # themselves at the moment they are least inclined to.
+        #
+        # NOT A GATE. Nothing here refuses a trade, moves a threshold, or
+        # changes what reaches the ledger. Firing rate is unchanged.
+        from .tiers import evidence_tier
+        _stat = (self.cohorts or {}).get(mech)
+        tier = evidence_tier(
+            setup=sig.setup.value, mechanism_name=mech,
+            confidence=sig.confidence,
+            sweep_state=brief.context.sweep_state,
+            reclaim_state=brief.context.reclaim_state,
+            displacement_state=brief.context.displacement_state,
+            htf_alignment=brief.context.htf_alignment,
+            with_trend=((sig.direction == "LONG"
+                         and brief.context.trend_direction == "UP")
+                        or (sig.direction == "SHORT"
+                            and brief.context.trend_direction == "DOWN")),
+            cohort_n=(_stat.n if _stat else 0),
+            cohort_ev_r=(_stat.expected_r(sig.rr_tp2, sig.cost_r)
+                         if _stat and _stat.n else None))
+
         pos = Position(sig.direction, sig.entry, sig.stop, sig.stop, sig.risk,
                        1.0, 0.0, bars[i].ts, sig.setup.value)
         obs = TradeObserver(direction=sig.direction, entry=sig.entry, stop=sig.stop,
                             target=sig.tp2, risk_price=sig.risk, opened=bars[i].ts)
         self.open_trades.append(OpenTrade(pos, sig, i, obs,
                               entry_context=dict(brief.context.__dict__)
-                              | {"session": brief.session, "tf": self.tf},
+                              | {"session": brief.session} | self._trend_ctx(brief),
                               mechanism_name=mech,
                               risk_r=risk_r, sizing_basis=alloc.basis))
         self.risk.open_risks.append(risk_r)
@@ -1030,6 +1383,13 @@ class LiveDesk:
                       "management_authority": ("operator" if self._management_override
                                                else "durable-binding"),
                       "edge_r": edge_r,
+                      # The tier the operator was shown, on the row itself. A
+                      # ranking visible on a phone and absent from the ledger is
+                      # one no later analysis can group by -- and "did T4
+                      # experiments actually resolve worse than T2 signals" is
+                      # the question this ranking exists to make answerable.
+                      "evidence_tier": {"rank": tier.rank, "label": tier.label,
+                                        "why": tier.why},
                       "uncertainty": unc.to_dict(),
                       "sizing": {"risk_r": risk_r, "wanted_r": alloc.risk_r,
                                  "basis": alloc.basis, "capped_by": alloc.capped_by,
@@ -1062,64 +1422,15 @@ class LiveDesk:
             verb = "sized" if sizing_binds else "would size"
             size_line = (f"\n`SIZE   ` {verb} {alloc.risk_r:.2f}R"
                          + ("" if sizing_binds else " (advisory — risking 1R)"))
-        # THE MODEL'S STATED BELIEFS, printed only when it stated any. These are
-        # forward-calibrated: the ledger resolves them against what happens and
-        # the analyst's own probabilities become its scorecard.
-        p = sig.path
-        path_line = ""
-        if p is not None:
-            bits = []
-            if p.p_plus_1r is not None:
-                bits.append(f"+1R-before-SL {p.p_plus_1r:.0%}")
-            if p.p_minus_1r_first is not None:
-                bits.append(f"SL-first {p.p_minus_1r_first:.0%}")
-            if p.expected_r is not None:
-                bits.append(f"E[r] {p.expected_r:+.2f}R")
-            if p.expected_mfe_r is not None:
-                bits.append(f"E[MFE] {p.expected_mfe_r:.2f}R")
-            if p.expected_mae_r is not None:
-                bits.append(f"E[MAE] {p.expected_mae_r:.2f}R")
-            hold = sig.expected_holding_hours
-            if hold:
-                bits.append(f"hold~{hold:.0f}h")
-            if bits:
-                path_line = "\n`PATH   ` " + " · ".join(bits) + "  _(belief — resolved in ledger)_"
-        vision_line = ""
-        if sig.visual_zones:
-            vision_line = "\n`VISION ` " + "; ".join(sig.visual_zones[:3])
-        meta = f"conf {sig.confidence}/5 · cost {sig.cost_r:.3f}R · breakeven {sig.breakeven_win_rate:.0%}"
-        if sig.novelty and sig.novelty != "LOW":
-            meta += f" · novelty {sig.novelty}"
-        if sig.expected_holding_hours:
-            meta += f" · horizon ~{sig.expected_holding_hours:.0f}h"
         self._notify(
+            f"{tier.banner}\n"
             f"*ENTRY {sig.direction} {brief.symbol}*\n"
             f"`entry  {sig.entry:.2f}`\n`SL     {sig.stop:.2f}`  ({sig.risk:.2f} risk)\n"
             f"`TP1    {sig.tp1:.2f}`\n`TP2    {sig.tp2:.2f}`  ({sig.rr_tp2:.2f}R net)"
-            f"{how}{size_line}{risk_line}{path_line}{vision_line}\n"
-            f"{meta}\n\n{sig.read}\n\n"
+            f"{how}{size_line}{risk_line}\n"
+            f"conf {sig.confidence}/5 · cost {sig.cost_r:.3f}R · "
+            f"breakeven {sig.breakeven_win_rate:.0%}\n\n{sig.read}\n\n"
             f"*Why:* {sig.why}\n*Against:* {sig.why_not}\n*Invalid if:* {sig.invalidation}")
-        # THE PICTURE A HUMAN ACTS ON. The text carries the numbers; the chart
-        # shows where they sit. This is the Telegram product, drawn from the
-        # compiled geometry — it is deliberately NOT added to the analyst's
-        # read, which stays clean per Q3. Delivery is best-effort and counted;
-        # a photo failure can never cost the text message that already went out.
-        try:
-            from .chart import Bar as CB, render_signal_chart
-            from .notify import send_photo
-            win = [CB(b.open, b.high, b.low, b.close)
-                   for b in bars[max(0, i - 119):i + 1]]
-            if len(win) >= 30:
-                ch = render_signal_chart(
-                    win, self.tf, entry=sig.entry, stop=sig.stop,
-                    tp1=sig.tp1, tp2=sig.tp2, direction=sig.direction)
-                cap = (f"*{sig.direction} {brief.symbol} {self.tf}* · "
-                       f"entry {sig.entry:.2f} · SL {sig.stop:.2f} · "
-                       f"TP2 {sig.tp2:.2f} ({sig.rr_tp2:.2f}R net)"
-                       + ("  [SHADOW]" if self.shadow else ""))
-                send_photo(self.sink, cap, ch.png, f"signal-{self.tf}.png")
-        except Exception as e:                        # noqa: BLE001
-            log.warning("signal chart skipped at %s: %s", bars[i].ts, e)
 
     # -- management --------------------------------------------------------
     def _manage(self, bars, i, st: StructureState,
@@ -1404,10 +1715,23 @@ class LiveDesk:
         b = SnapshotBuilder(brief.symbol, self.tf, as_of)
         b.add_bars("entry", bars[:i + 1], self.tf, count=40)
         for key, val in (("bid", brief.bid), ("ask", brief.ask),
-                         ("spread", brief.spread), ("atr", brief.atr)):
+                         ("spread", brief.spread), ("atr", brief.atr),
+                         ("tick_age_s", brief.tick_age_s)):
             if val is not None:
                 b.add(key, float(val), as_of, source="feed")
         b.add("session", brief.session, as_of, source="calendar")
+        b.add("sensor.live_frame_count", sum(
+            1 for tf in ("M1", "M5", "M15", "H1", "H4")
+            if len(self._live_frames.get(tf) or ()) >= 30), as_of,
+            source="live-chart-packet")
+        macro = getattr(brief, "macro", None)
+        if macro is not None and getattr(macro, "usable", False):
+            b.add("macro.age_hours", float(macro.age_hours), as_of,
+                  source="macro-context")
+            for key, val in (getattr(macro, "states", {}) or {}).items():
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    b.add(f"macro.{key}", float(val), as_of,
+                          source="macro-context")
         for key, val in brief.context.__dict__.items():
             b.add(f"context.{key}", val, as_of, source="features")
         if brief.trigger_price is not None:
@@ -1423,6 +1747,233 @@ class LiveDesk:
             if price is not None:
                 b.add(f"level.{lv.id}", float(price), as_of, source="structure")
         return b.build()
+
+    @staticmethod
+    def _trend_ctx(brief) -> dict:
+        # Attaches the keys golddesk/quant_findings.py's sealed hypotheses
+        # select on (quant-trend-strength-high-v1 and the prior-NY-session
+        # finding). Without this a hypothesis's own selector never matches a
+        # ledger row and accrues post_n=0 forever — see quant_findings.py's
+        # module docstring.
+        out = {}
+        if brief.trend is not None:
+            out["trend_strength_bucket"] = strength_bucket(brief.trend.strength)
+        if brief.day_state is not None:
+            out["prior_ny_session_state"] = brief.day_state.value
+        return out
+
+    def _bank_tp1(self, t: OpenTrade, price: float, ts: datetime) -> None:
+        """Bank part of the position at the objective the operator was shown.
+
+        Routed through apply_option so the same invariants bind as for any other
+        partial -- I3 (locked profit may not fall) and I4 (a runner must
+        survive). A REJECTION is a legitimate outcome and is logged rather than
+        forced: if banking here would leave less than the minimum runner, the
+        honest answer is to leave the position alone, not to override the
+        invariant that says so.
+        """
+        from .management import (Action, ManagementOption, apply_option)
+        from .partial_policy import tp1_fraction
+        pos = t.position
+        # HOW MUCH, from live conditions rather than a constant. A fixed half
+        # treats a young aligned trend in quiet tape exactly like an exhausted
+        # one in an extreme one, and those want opposite treatment. Live
+        # structure where it exists, entry context for the higher-timeframe
+        # reading, which is not recomputed on the tick path.
+        st = self._last_state
+        ectx = t.entry_context or {}
+        plan = tp1_fraction(
+            trend_maturity=(getattr(st, "trend_maturity", None)
+                            or ectx.get("trend_maturity") or "MID"),
+            volatility_state=(getattr(st, "volatility_state", None)
+                              or ectx.get("volatility_state") or "NORMAL"),
+            htf_alignment=ectx.get("htf_alignment") or "NEUTRAL",
+            with_trend=((pos.direction == "LONG"
+                         and getattr(st, "trend_direction", None) == "UP")
+                        or (pos.direction == "SHORT"
+                            and getattr(st, "trend_direction", None) == "DOWN")),
+            rr_tp1=t.signal.rr_tp1, rr_tp2=t.signal.rr_tp2)
+        frac = plan.fraction
+        exc = Excursion(t.observer.mfe_r, t.observer.mae_r, t.t_mfe, t.t_mae,
+                        pos.r_at(price), 0)
+        opt = ManagementOption(
+            "TP1", Action.PARTIAL, None, frac, None,
+            f"TP1 {t.signal.tp1:.2f} reached at {price:.2f} — bank "
+            f"{frac:.0%} of the runner ({plan.why})")
+        # Default ManagementPolicy: min_runner_fraction is what protects the
+        # runner, and it belongs to the invariant layer rather than to whichever
+        # chooser happens to be active.
+        dec = apply_option(pos, opt, exc)
+        if dec.rejected_reason:
+            log.info("TP1 bank declined at %s: %s", ts, dec.rejected_reason)
+            return
+        t.position = dec.position_after
+        t.observer.stop = dec.position_after.current_stop
+        t.partials.append((frac, price))
+        self.stats.partials += 1
+        t.mgmt_log.append({"ts": ts.isoformat(), "action": "PARTIAL",
+                           "source": "tp1", "at": round(price, 2),
+                           "fraction": frac,
+                           # The REASONS travel with the decision, so a later
+                           # analysis can ask whether banking more in EXHAUSTED
+                           # actually beat banking less -- per mechanism, from
+                           # evidence rather than from partial_policy's opinion.
+                           "fraction_why": plan.why,
+                           "partial_policy": plan.version,
+                           "banked_r": round(dec.banked_now_r, 4),
+                           "locked_r": round(dec.position_after.locked_r, 4)})
+        self._notify(
+            f"*TP1 BANK* {pos.direction} {t.signal.setup.value}\n"
+            f"TP1 `{t.signal.tp1:.2f}` reached — banked "
+            f"`{frac:.0%}` at `{price:.2f}` "
+            f"(`{dec.banked_now_r:+.2f}R`)\n"
+            f"runner `{dec.position_after.remaining_fraction:.0%}` stays on for "
+            f"TP2 `{t.signal.tp2:.2f}`, SL `{dec.position_after.current_stop:.2f}`\n"
+            f"locked `{dec.position_after.locked_r:+.2f}R`\n"
+            f"_size from live conditions: {plan.why}_")
+
+    def _record_blind(self, bars, i, brief, ts, stage: str, err: Exception) -> None:
+        """Journal a bar the analyst never answered on.
+
+        Every one of these call sites used to `log.warning(...)` and `return`,
+        which left NO ROW. The consequence is not a missing log line — it is that
+        `state/ledger.jsonl`, the single artifact every downstream measurement
+        reads, could not tell a session the desk spent DECLINING from a session
+        it spent BLIND. Three ledger rows over a live window reads as a
+        disciplined desk seeing nothing worth taking; it was in fact an analyst
+        that timed out. Those are opposite facts and they had the same file.
+
+        Filed as BLIND, never REFUSAL_* — see DecisionKind.BLIND for why the name
+        is load-bearing. Direction is "NONE" because nothing formed a view; the
+        forward path is still resolved, so an outage window can be priced later
+        without pretending the desk chose to sit it out.
+        """
+        # THE ERROR TEXT, KEPT LONG ENOUGH TO NAME THE CAUSE.
+        #
+        # This truncated at 500 chars and cut every CLI failure off mid-field --
+        # in production the ledger held `..."cache_creation":{...},"inferenc` and
+        # nothing after, for a day, while the field that explains the failure sat
+        # just past the cut. providers.py already carries 2000 chars WITH A
+        # COMMENT saying 300 was doing exactly this; I reintroduced the same
+        # defect one layer out, in the row that exists to make the failure
+        # diagnosable.
+        detail = _explain_analyst_error(err)
+        self.stats.analyst_errors += 1
+        self.stats.consecutive_blind += 1
+        self.stats.longest_blind_streak = max(self.stats.longest_blind_streak,
+                                              self.stats.consecutive_blind)
+        log.warning("analyst unavailable at %s (%s): %s", ts, stage, err)
+        try:
+            self._record(bars, i, brief, DecisionKind.BLIND, "NONE",
+                         {"stage": stage, "error_type": type(err).__name__,
+                          "error": str(err)[:2000],
+                          # The CLI's own verdict, lifted out of its JSON so the
+                          # cause is readable without hunting through a payload.
+                          "cli": detail,
+                          # PROMPT SIZE, because it is the variable that changes
+                          # between a wake that answers and one that does not.
+                          # A failure with zero tokens and zero API time is a
+                          # LOCAL rejection, and size is the first thing to rule
+                          # in or out -- without it the question stays open for
+                          # as long as it takes to reproduce.
+                          "prompt_chars": self._last_prompt_chars,
+                          "vision": self.vision.value,
+                          "consecutive_blind": self.stats.consecutive_blind},
+                         f"BLIND: analyst unavailable at {stage} — {type(err).__name__}",
+                         "NONE", brief.atr)
+        except Exception as e:                        # noqa: BLE001
+            # The journal must never be the reason a bar takes the desk down.
+            # An unrecorded blind bar is bad; a crashed loop is worse.
+            log.warning("blind row not journalled at %s: %s", ts, e)
+        # THE ALARM, sent ONCE per outage rather than per bar. A blind desk and
+        # a quiet market look identical from the outside — silence — which is
+        # how a provider that had been timing out for hours read as discipline.
+        # It is not a per-bar alert: on M15 that would be four messages an hour
+        # for as long as the outage lasts, and an alert channel that cries every
+        # bar is one nobody reads. The recovery notice matters as much as the
+        # alarm: without it the last thing the operator ever heard was that the
+        # desk was down.
+        # AN EXPIRED LOGIN DOES NOT WAIT FOR THE THIRD WAKE. The three-wake
+        # threshold exists because a single timeout is ordinary and self-clears;
+        # a login does neither. It is known on the FIRST failure, it cannot
+        # resolve on its own, and the only person who can clear it is the one
+        # holding the browser — so waiting ~45 minutes to say so is 45 minutes
+        # of a blind desk bought for nothing. Sent once per outage, like the
+        # generic alarm, and reset by _analyst_answered.
+        if detail.get("needs_login") and not self._login_alarm_sent:
+            self._login_alarm_sent = True
+            self._notify(
+                "*ANALYST LOGGED OUT* — the Claude CLI's OAuth session expired "
+                "and could not refresh. This is NOT a rate limit, an outage or "
+                "a bug, and NOTHING the desk does will clear it: it will book "
+                "BLIND on every bar until somebody logs in.\n\n"
+                "On the VPS, as the user the scheduled task runs as:\n"
+                "`claude` — then complete the browser login.\n\n"
+                "No restart needed; the next wake reads normally.")
+        elif self.stats.consecutive_blind == BLIND_ALARM_AFTER:
+            self._notify(
+                f"*ANALYST DOWN* — {BLIND_ALARM_AFTER} consecutive wakes with no "
+                f"read ({stage}: {type(err).__name__}). The desk is BLIND, not "
+                f"quiet: it is not declining trades, it is not seeing them. "
+                f"Every bar from here is journalled BLIND until it answers.")
+
+    #: Experimental baseline only; OFF on every production desk. Deterministic
+    #: code may validate and reject an AI proposal but constitutionally cannot
+    #: invent the directional thesis that replaces one. Claude -> GPT is the
+    #: production availability chain; if both fail, record BLIND honestly.
+    fallback_when_blind: bool = False
+
+    def _fallback_read(self, brief, stage: str,
+                       err: Exception) -> Optional[ProviderRead]:
+        """A rule-based read when the analyst cannot be reached, or None.
+
+        Returns None -- and the caller books BLIND exactly as before -- when the
+        fallback is disabled or itself fails. A fallback that quietly failed
+        would turn an outage into a different outage with no record of either.
+        """
+        if not self.fallback_when_blind:
+            return None
+        try:
+            if self._fallback is None:
+                from .providers import DeterministicProvider
+                self._fallback = DeterministicProvider()
+            pr = self._fallback.read(brief)
+        except Exception as e:                        # noqa: BLE001
+            log.warning("fallback reader failed at %s too: %s", stage, e)
+            return None
+        usage = dict(pr.usage)
+        # THE LABEL IS THE WHOLE SAFETY ARGUMENT. Without it a degraded read is
+        # byte-identical to a model read in every downstream count, and the desk
+        # would look healthiest exactly while its analyst was dead.
+        usage.update({"degraded": True,
+                      "degraded_from": getattr(self.provider, "name", "?"),
+                      "degraded_stage": stage,
+                      "degraded_because": str(err)[:300]})
+        self.stats.fallback_reads += 1
+        if not self._degraded_notified:
+            self._degraded_notified = True
+            self._notify(
+                "*DESK ON THE RULE-BASED ARM* — the analyst is unreachable "
+                f"({type(err).__name__} at {stage}), so signals are coming from "
+                "the desk's own rules instead of a model read.\n\n"
+                "These are WEAKER reads: no context, no macro, no judgement — "
+                "structure only. They are labelled `deterministic/rules-v1` in "
+                "the ledger and are kept out of the analyst's evidence.\n\n"
+                "Better than silence, which is what you were getting. You will "
+                "be told the moment the analyst answers again.")
+        return ProviderRead(pr.read, pr.provider, pr.model, pr.latency_ms, usage)
+
+    def _analyst_answered(self) -> None:
+        """Called on every successful read. Closes an open outage."""
+        if (self.stats.consecutive_blind >= BLIND_ALARM_AFTER
+                or self._login_alarm_sent or self._degraded_notified):
+            self._notify(f"*ANALYST BACK* — reading again after "
+                         f"{self.stats.consecutive_blind} blind wakes"
+                         + (f" and {self.stats.fallback_reads} rule-based read(s)"
+                            if self._degraded_notified else "") + ".")
+        self.stats.consecutive_blind = 0
+        self._login_alarm_sent = False
+        self._degraded_notified = False
 
     def _record(self, bars, i, brief, kind, by, decision, reason, direction,
                 risk_price, suffix: str = ""):
@@ -1471,14 +2022,14 @@ class LiveDesk:
         decision.update(decision_stamp(
             getattr(self, "_pending_specialist_report", None)))
         decision["outcome_direction"] = direction
-        decision["tf"] = self.tf
         gid = gate_id(kind, reason, decision)
         if gid:
             decision["gate_id"] = gid
         self.ledger.append(DecisionRecord(
             decision_id=did, kind=kind,
             t0=bars[i].ts, symbol=brief.symbol,
-            context=dict(brief.context.__dict__) | {"session": brief.session}
+            context=dict(brief.context.__dict__)
+            | {"session": brief.session} | self._trend_ctx(brief)
             | snap_keys,
             brief_render=brief.render(), decided_by=by, decision=decision,
             reason=reason, path_ref=PathRef.of(brief.symbol, self.tf, lb),

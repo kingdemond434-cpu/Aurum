@@ -139,6 +139,65 @@ def test_a_valid_json_object_of_the_wrong_shape_is_rejected():
         p.read(brief())
 
 
+def test_over_long_prose_is_repaired_rather_than_discarding_the_read():
+    """MEASURED, not hypothetical: the live desk refused read after read on 2026-08-26 with
+    "analyst unavailable ... N validation errors for AnalystRead", while looking healthy in
+    every other respect. A sound judgement thrown away because its `why` ran past a prose cap
+    is a formatting failure wearing a judgement's clothes."""
+    over = dict(VALID_READ, why="x" * 900)          # cap is 500
+    r = ClaudeCodeAnalyst(runner=fake(json.dumps(over))).read(brief())
+    assert r.read.direction == "LONG"
+    assert len(r.read.why) == 500
+
+
+def test_a_forbidden_extra_field_is_dropped_not_fatal():
+    """`extra: "forbid"` exists to keep price fields out of the model's output surface, so
+    discarding an invented one enforces that intent rather than bypassing it."""
+    over = dict(VALID_READ, entry_price=4619.22)
+    r = ClaudeCodeAnalyst(runner=fake(json.dumps(over))).read(brief())
+    assert r.read.direction == "LONG"
+    assert not hasattr(r.read, "entry_price")
+
+
+@pytest.mark.parametrize("field,value", [
+    ("direction", "SIDEWAYS"),      # not in the Literal
+    ("confidence", 9),              # ge=1 le=5
+    ("setup", "VIBES"),             # not a Setup
+])
+def test_repair_never_rescues_a_bad_decision_field(field, value):
+    """THE SAFETY PROPERTY, PINNED. Repair only ever truncates prose or drops forbidden keys.
+    Every field that carries a DECISION is uncapped and untouched, so a malformed one must
+    still fail exactly as it did before -- otherwise the repair would be laundering junk into
+    a tradeable read."""
+    bad = dict(VALID_READ, **{field: value})
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(bad)))
+    with pytest.raises(AnalystError, match="not a valid AnalystRead"):
+        p.read(brief())
+
+
+def test_a_missing_decision_field_is_still_fatal_after_repair():
+    """Same property from the other side: repair adds nothing, so absence stays absence."""
+    missing = {k: v for k, v in VALID_READ.items() if k != "direction"}
+    missing["why"] = "y" * 900                      # force the repair path to actually run
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(missing)))
+    with pytest.raises(AnalystError, match="even after repair"):
+        p.read(brief())
+
+
+def test_a_clean_read_is_never_repaired():
+    """Strict validation runs first and is unchanged, so a conforming read is untouched."""
+    r = ClaudeCodeAnalyst(runner=fake(json.dumps(VALID_READ))).read(brief())
+    assert r.read.why == VALID_READ["why"]
+
+
+def test_the_timeout_clears_the_observed_read_cadence():
+    """240s was measured too tight live (repeated "claude timed out after 240.0s"), but the
+    bound cannot approach the ~15 minute floor between reads or a slow call would still be
+    running when the next bar's read begins."""
+    assert ClaudeCodeAnalyst().timeout_s == 600.0
+    assert ClaudeCodeAnalyst().timeout_s < 15 * 60
+
+
 def test_an_error_envelope_is_surfaced():
     p = ClaudeCodeAnalyst(runner=fake(envelope("boom", is_error=True)))
     with pytest.raises(AnalystError, match="reported failure"):
@@ -245,3 +304,237 @@ def test_it_does_not_pretend_to_manage_positions():
     """Inherited refusal: no contextual management brain, and it says so."""
     with pytest.raises(NotImplementedError, match="choose_option"):
         ClaudeCodeAnalyst().choose_option("s", "p", ["a", "b"])
+
+
+# --------------------------------------------------------------- --effort
+
+def test_effort_is_threaded_into_the_cli_argv():
+    """Confirmed against a real `claude --help`: the CLI documents --effort
+    with exactly the same five values AnthropicAnalyst already accepts."""
+    p = ClaudeCodeAnalyst(effort="high")
+    argv = p._argv()                                          # noqa: SLF001
+    assert argv[argv.index("--effort") + 1] == "high"
+
+
+def test_no_effort_means_no_flag_and_the_cli_default_applies():
+    p = ClaudeCodeAnalyst()
+    assert "--effort" not in p._argv()                        # noqa: SLF001
+
+
+def test_an_effort_value_the_cli_does_not_accept_is_refused_before_invoking():
+    p = ClaudeCodeAnalyst(effort="ultra")
+    with pytest.raises(AnalystError, match="not in"):
+        p._argv()                                             # noqa: SLF001
+
+
+def test_build_provider_threads_effort_into_claudecode():
+    p = build_provider("claudecode:claude-opus-5", effort="xhigh")
+    assert p.effort == "xhigh"
+
+
+def test_build_provider_threads_effort_into_anthropic():
+    a = build_provider("anthropic:claude-opus-5", effort="low")
+    assert a.effort == "low"
+
+
+def test_build_provider_refuses_effort_on_a_provider_that_cannot_use_it():
+    """deterministic reasons about nothing; a raw TypeError here would read
+    as an internal bug rather than a misapplied flag."""
+    with pytest.raises(ValueError, match="does not accept"):
+        build_provider("deterministic", effort="high")
+
+
+# -------------------------------------------------------------- the universe
+#
+# `--universe` was enabled in the Windows launch args before this override had
+# ever been exercised. It fails safe at the caller (AnalystError -> skip the
+# bar), so the dangerous outcome is not a crash but a SILENT one: every bar
+# skipped, zero signals, a log that looks healthy. These tests are the thing
+# standing between that and the box.
+
+def universe(n: int = 3, **over) -> dict:
+    u = {
+        "candidates": [dict(VALID_READ) for _ in range(n)],
+        "survey": "checked M15 continuation, H1 mean reversion, and the "
+                  "session sweep; dropped the sweep, no reclaim yet",
+        "dominant_context": "H4 uptrend intact above L1",
+        "had_more": False,
+    }
+    u.update(over)
+    return u
+
+
+def test_a_universe_of_several_candidates_parses():
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(3))))
+    stamp, uni = p.survey(brief())
+    assert len(uni.candidates) == 3
+    assert stamp.usage["candidates"] == 3
+    assert stamp.provider == "claudecode"
+
+
+def test_the_stamp_carries_the_head_only_as_provenance():
+    """Matches AnthropicAnalyst.survey. Selection does not privilege it; the
+    stamp exists so a universe run has a read to attach provenance to."""
+    stamp, uni = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(2)))).survey(brief())
+    assert stamp.read == uni.candidates[0]
+
+
+def test_a_fenced_universe_parses_because_the_cli_fences_this_too():
+    fenced = "```json\n" + json.dumps(universe(2)) + "\n```"
+    _, uni = ClaudeCodeAnalyst(runner=fake(fenced)).survey(brief())
+    assert len(uni.candidates) == 2
+
+
+def test_a_single_read_is_refused_rather_than_becoming_a_one_candidate_universe():
+    """THE REGRESSION THIS OVERRIDE EXISTS FOR.
+
+    The inherited default turned `--universe` into a label over an unchanged
+    single read. If a model ignores the universe schema and answers with one
+    AnalystRead, accepting it would reintroduce exactly that -- one layer
+    deeper and harder to see, because the meta would now say candidates=1 as
+    though the analyst had found one opportunity."""
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(VALID_READ)))
+    with pytest.raises(AnalystError, match="not a valid AnalystUniverse"):
+        p.survey(brief())
+
+
+def test_an_empty_universe_is_an_answer_not_an_error():
+    """Nothing tradeable is the same real answer NO_SETUP gives on the single
+    path. It must not raise, and the stamp must not invent a read."""
+    stamp, uni = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(0)))).survey(brief())
+    assert uni.candidates == []
+    assert stamp.read is None
+    assert stamp.usage["candidates"] == 0
+
+
+def test_a_truncated_universe_keeps_its_had_more_flag():
+    """The only trace a dropped proposition ever leaves."""
+    _, uni = ClaudeCodeAnalyst(
+        runner=fake(json.dumps(universe(2, had_more=True)))).survey(brief())
+    assert uni.had_more is True
+
+
+def test_the_universe_system_prompt_reaches_the_cli_and_carries_the_cap():
+    """A universe run that sent read()'s system prompt would be asking for one
+    proposition and validating against a twelve-slot schema."""
+    from golddesk.universe import MAX_CANDIDATES
+    seen: list = []
+    ClaudeCodeAnalyst(runner=fake(json.dumps(universe(1)), seen)).survey(brief())
+    argv, prompt = seen[0]
+    # BY EITHER ROUTE. The universe system prompt is 9,098 chars, over the argv
+    # budget, so it now travels in stdin -- on Windows a launcher shim truncates
+    # the command line at 8,191 and the CLI then fails locally with zero tokens
+    # and zero API time, which is what took the desk blind on every survey for
+    # 12 hours on 2026-08-27. This test's intent is unchanged and still the
+    # point: the universe addendum must REACH the model rather than being
+    # silently dropped or replaced by read()'s.
+    if "--system-prompt" in argv:
+        system = argv[argv.index("--system-prompt") + 1]
+    else:
+        system = prompt                  # relocated, not lost
+    assert "candidates" in system
+    assert str(MAX_CANDIDATES) in system
+    assert "had_more" in prompt          # the universe schema, not the read one
+
+
+def test_charts_are_refused_before_the_quota_is_spent():
+    """The CLI takes no image input; discovering that after the call would
+    burn a request and lose the charts silently."""
+    p = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(1))))
+    with pytest.raises(AnalystError, match="cannot send charts"):
+        p.survey(brief(), charts=[Chart("M15", b"\x89PNG", 800, 600)])
+
+
+def test_an_error_envelope_is_surfaced_on_the_universe_path_too():
+    env = envelope("rate limited", is_error=True, subtype="error_during_execution")
+    with pytest.raises(AnalystError, match="claude reported failure"):
+        ClaudeCodeAnalyst(runner=fake(env)).survey(brief())
+
+
+def test_an_empty_universe_result_is_an_error_not_an_empty_universe():
+    """Distinct from candidates=[]. Nothing came back at all -- reporting that
+    as 'no opportunities' would launder a transport failure into a verdict."""
+    with pytest.raises(AnalystError, match="empty result"):
+        ClaudeCodeAnalyst(runner=fake(envelope(""))).survey(brief())
+
+
+def test_universe_usage_folds_cache_creation_into_input_so_budget_sees_it():
+    stamp, _ = ClaudeCodeAnalyst(runner=fake(json.dumps(universe(2)))).survey(brief())
+    assert stamp.usage["in"] == 910 + 26488 + 0
+    assert stamp.usage["out"] == 61
+
+
+def _timeout_runner(fail_efforts, result):
+    """A runner that raises TimeoutExpired unless the call carries an effort NOT in fail_efforts.
+
+    Mirrors what subprocess.run does to _invoke, so the degraded-retry path is exercised
+    end-to-end rather than by reaching into it.
+    """
+    import subprocess
+    seen = []
+
+    def run(argv, prompt):
+        effort = argv[argv.index("--effort") + 1] if "--effort" in argv else None
+        seen.append(effort)
+        if effort in fail_efforts:
+            raise subprocess.TimeoutExpired(cmd=argv, timeout=1)
+        return result
+
+    return run, seen
+
+
+def test_a_slow_read_degrades_to_the_floor_effort_instead_of_being_lost():
+    """MEASURED: 6 of the last 10 failures on 2026-08-26 were "claude timed out after 240.0s",
+    each one discarding the whole bar. A completed low-effort read is strictly better evidence
+    than no read at all."""
+    run, seen = _timeout_runner({None}, envelope(json.dumps(VALID_READ)))
+    r = ClaudeCodeAnalyst(runner=run).read(brief())
+    assert r.read.direction == "LONG"
+    assert seen == [None, "low"], "expected one full-effort attempt then one low-effort retry"
+
+
+def test_the_degraded_retry_happens_once_and_then_gives_up():
+    """Retrying forever would spend the whole bar on a call that has already proved too slow,
+    and the second failure is a different finding -- latency on the box, not reasoning depth."""
+    run, seen = _timeout_runner({None, "low"}, envelope(json.dumps(VALID_READ)))
+    with pytest.raises(AnalystError, match="could not finish either"):
+        ClaudeCodeAnalyst(runner=run).read(brief())
+    assert seen == [None, "low"]
+
+
+def test_an_explicit_effort_still_degrades_to_the_floor():
+    """An operator-set effort is a starting point, not a floor to die on."""
+    run, seen = _timeout_runner({"high"}, envelope(json.dumps(VALID_READ)))
+    r = ClaudeCodeAnalyst(runner=run, effort="high").read(brief())
+    assert r.read.direction == "LONG"
+    assert seen == ["high", "low"]
+
+
+def test_the_whole_retry_budget_fits_inside_one_m15_bar():
+    """THE BOUND THAT ACTUALLY MATTERS. At M15 a read must finish inside 900s or it is still
+    running when the next bar's read begins, and the backlog compounds -- which is exactly the
+    ~2h20m processing lag observed live on 2026-08-26. Pinned as arithmetic so raising either
+    timeout without re-checking the sum fails here rather than in production."""
+    p = ClaudeCodeAnalyst()
+    assert p.timeout_s + p.FALLBACK_TIMEOUT_S <= 900.0
+    assert p.FALLBACK_EFFORT in ClaudeCodeAnalyst.EFFORTS
+    assert p.FALLBACK_TIMEOUT_S < p.timeout_s
+
+
+def test_the_why_not_cap_clears_what_the_model_actually_writes():
+    """MEASURED ON THE LIVE DESK, 2026-08-27: why_not arrived at 823 and 685 chars and was
+    truncated both times, so the desk was binning the tail of its own strongest counter-argument
+    as a matter of routine. ANALYST_SYSTEM demands more of this field than of the others -- it is
+    mandatory on every read including refusals, and must say what would make the trade worth
+    taking -- so it needs more room than `why`, not the same. Pinned against the observed
+    maximum so a future tightening has to argue with the measurement."""
+    from golddesk.analyst import AnalystRead
+
+    cap = next(m.max_length for m in AnalystRead.model_fields["why_not"].metadata
+               if getattr(m, "max_length", None) is not None)
+    assert cap >= 823, "the largest why_not actually observed live must fit without repair"
+
+    # And it must genuinely validate, not merely declare a bigger number.
+    ok = dict(VALID_READ, why_not="w" * 823)
+    r = ClaudeCodeAnalyst(runner=fake(json.dumps(ok))).read(brief())
+    assert len(r.read.why_not) == 823

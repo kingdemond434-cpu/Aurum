@@ -116,14 +116,14 @@ class ServerClock:
 
     def load(self) -> None:
         if self.cache_path and Path(self.cache_path).exists():
-            secs = float(Path(self.cache_path).read_text().strip())
+            secs = float(Path(self.cache_path).read_text(encoding='utf-8').strip())
             self.offset = timedelta(seconds=secs)
             log.info("server clock offset loaded: %+.0fs", secs)
 
     def _save(self) -> None:
         if self.cache_path:
             Path(self.cache_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(self.cache_path).write_text(str(self.offset.total_seconds()))
+            Path(self.cache_path).write_text(str(self.offset.total_seconds()), encoding="utf-8")
 
     def observe(self, tick_server_time: datetime, now_utc: datetime) -> bool:
         """Update the offset only if this quote is genuinely newer than the last.
@@ -191,6 +191,18 @@ class LiveFeed:
                     self.connected = True
                     self._halted_reason = None
                     self.resolved_symbol = self._resolve_symbol()
+                    # A feed is not usable yet even though it reports connected:
+                    # bars() converts every timestamp through self.clock, and the
+                    # clock is only ever set by observing a live tick (raw_tick()
+                    # -> clock.observe()). Nothing else calls raw_tick() before a
+                    # caller's first bars() request, so without this the very
+                    # first _warm() after connect() always raised "server clock
+                    # not yet measured" -- not intermittently, on every fresh
+                    # start with no cached offset, because there was no path that
+                    # ever measured the clock before it was needed.
+                    if not self.clock.known and self.raw_tick() is None:
+                        raise FeedError("connected but no tick available to "
+                                        "measure the server clock from")
                     log.info("feed connected, symbol=%s", self.resolved_symbol)
                     return
                 last = self.client.last_error()
@@ -297,6 +309,37 @@ class LiveFeed:
         out.sort(key=lambda b: b.ts)
         _assert_no_duplicates(out, timeframe)
         _assert_plausible_spread(out, timeframe, self.cfg)
+        return out
+
+    def live_bars(self, timeframe: str, count: int = 120) -> list[Bar]:
+        """Closed history plus the current forming candle, explicitly for vision.
+
+        Trading structure continues to use :meth:`bars` and therefore never
+        leaks a forming candle into deterministic confirmation. The analyst's
+        chart packet, however, must show where the market is *now*. Keeping a
+        separate method makes that distinction executable instead of relying on
+        a caller to remember whether the last bar is complete.
+        """
+        self._require_live()
+        if timeframe not in TF:
+            raise FeedError(f"unknown timeframe {timeframe}")
+        raw = self.client.copy_rates_from_pos(self.resolved_symbol, TF[timeframe],
+                                              0, count)
+        if raw is None or len(raw) < 2:
+            raise FeedError(f"no live bars for {timeframe}")
+        out: list[Bar] = []
+        for r in raw:
+            ts_raw = r["time"] if not hasattr(r, "time") else r.time
+            server = (datetime.utcfromtimestamp(float(ts_raw))
+                      if not isinstance(ts_raw, datetime) else ts_raw)
+            spread_pts = float(r["spread"]) if _has(r, "spread") else 0.0
+            out.append(Bar(
+                ts=self.clock.to_utc(server), open=float(r["open"]),
+                high=float(r["high"]), low=float(r["low"]), close=float(r["close"]),
+                volume=float(r["tick_volume"]) if _has(r, "tick_volume") else 0.0,
+                spread=spread_pts * (10 ** -self.cfg.digits)))
+        out.sort(key=lambda b: b.ts)
+        _assert_no_duplicates(out, timeframe)
         return out
 
     def multi(self, timeframes: Sequence[str], count: int = 500) -> dict[str, list[Bar]]:

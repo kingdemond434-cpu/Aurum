@@ -266,6 +266,107 @@ class SequenceSpecialist:
                               "learned sequence read")
 
 
+@dataclass
+class ContextSensorSpecialist:
+    """A bounded read of deterministic context already in the snapshot.
+
+    These are shadow sensors, not strategies: they never emit entries, levels,
+    stops, targets, or vetoes. Their only purpose is to create a permanent,
+    scoreable alternate representation on the exact same frozen state.
+    """
+    name: str
+    mode: str
+    role: str
+    horizon_bars: int = 1
+
+    def read(self, snapshot) -> SpecialistRead:
+        if self.mode == "technical":
+            direction = str(snapshot.get("context.trend_direction") or "NONE")
+            health = str(snapshot.get("context.trend_health") or "WEAK")
+            displacement = str(snapshot.get("context.displacement_state") or "NONE")
+            if direction not in ("UP", "DOWN"):
+                return SpecialistRead(self.name, "FLAT", 0.15, self.horizon_bars,
+                                      "no measured directional structure", role=self.role)
+            strength = {"WEAK": 0.25, "MODERATE": 0.45, "STRONG": 0.65}.get(
+                health, 0.30)
+            if displacement == "CONFIRMED":
+                strength = min(0.85, strength + 0.15)
+            return SpecialistRead(
+                self.name, "LONG" if direction == "UP" else "SHORT", strength,
+                self.horizon_bars,
+                f"measured trend {direction}/{health}, displacement {displacement}",
+                role=self.role)
+
+        if self.mode == "session":
+            session = snapshot.get("session")
+            if not session:
+                return SpecialistRead(self.name, "FLAT", 0.0, self.horizon_bars,
+                                      "session absent from snapshot", available=False,
+                                      role=self.role)
+            return SpecialistRead(self.name, "FLAT", 0.0, self.horizon_bars,
+                                  f"session={session}; context only, no direction",
+                                  role=self.role, probability_up=0.5)
+
+        if self.mode == "macro":
+            keys = [k for k in snapshot.keys() if k.startswith("macro.")
+                    and k not in {"macro.age_hours"}]
+            if not keys:
+                return SpecialistRead(self.name, "FLAT", 0.0, self.horizon_bars,
+                                      "no fresh structured macro observations",
+                                      available=False, role=self.role)
+            detail = ", ".join(f"{k[6:]}={snapshot.get(k):+.3f}" for k in keys
+                               if isinstance(snapshot.get(k), (int, float)))
+            return SpecialistRead(self.name, "FLAT", 0.0, self.horizon_bars,
+                                  (detail or "fresh macro observed")[:180],
+                                  role=self.role, probability_up=0.5)
+
+        if self.mode == "health":
+            tick_age = snapshot.get("tick_age_s")
+            frames = snapshot.get("sensor.live_frame_count")
+            if not isinstance(tick_age, (int, float)) or frames != 5:
+                return SpecialistRead(
+                    self.name, "FLAT", 0.0, self.horizon_bars,
+                    f"sensor incomplete: tick_age={tick_age}, live_frames={frames}",
+                    available=False, role=self.role)
+            return SpecialistRead(
+                self.name, "FLAT", 0.0, self.horizon_bars,
+                f"quote age {tick_age:.1f}s; all five live frames present",
+                role=self.role, probability_up=0.5)
+
+        return SpecialistRead(self.name, "FLAT", 0.0, self.horizon_bars,
+                              f"unknown sensor mode {self.mode}", available=False,
+                              role=self.role)
+
+
+def built_in_sensor_specialists() -> dict[str, Specialist]:
+    """Real local sensors available without pretending missing feeds exist.
+
+    Argus, Orion and Mnemosyne remain unavailable until their actual visual,
+    COMEX and structured-memory inputs are placed in the frozen snapshot.
+    """
+    def sequence_path(rows):
+        closes = [r[3] for r in rows]
+        if len(closes) < 20:
+            return 0.0
+        recent = closes[-8:]
+        scale = max(max(recent) - min(recent), 1e-9)
+        return max(-0.8, min(0.8, (recent[-1] - recent[0]) / scale * 0.65))
+
+    return {
+        "atlas": ContextSensorSpecialist("atlas-sensor", "macro", "macro context", 4),
+        "lumen": ContextSensorSpecialist(
+            "structure-sensor", "technical", "technical setup scouting", 1),
+        "apollo": ContextSensorSpecialist(
+            "session-sensor", "session", "events and session context", 1),
+        "chronos": SequenceSpecialist(
+            name="closed-path-sensor", predict_fn=sequence_path, horizon_bars=4,
+            key_prefix="entry", min_bars=20,
+            role="sequence and path dependence"),
+        "hephaestus": ContextSensorSpecialist(
+            "health-sensor", "health", "data and operational health", 1),
+    }
+
+
 # ------------------------------------------------------------------ the council
 
 @dataclass

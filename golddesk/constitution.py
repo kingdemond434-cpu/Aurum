@@ -34,6 +34,17 @@ SILENT RESTRICTIONS ARE A BUILD FAILURE
 
 from __future__ import annotations
 
+CONSTITUTION_VERSION = "const-2026-08-31-ai-discovery"
+
+AI_DISCOVERY_CONSTITUTION = (
+    "AI is the primary source of thesis generation.",
+    "No finite strategy-family whitelist controls what it may notice; labels are post-hoc.",
+    "Deterministic code measures and constrains but never invents a directional thesis.",
+    "Specialists provide evidence, not votes or trades.",
+    "Historical mechanisms are memory, novel mechanisms may enter shadow, and quality is "
+    "judged by forward outcomes rather than conformity.",
+)
+
 import ast
 import json
 import logging
@@ -45,8 +56,6 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Sequence
 
 log = logging.getLogger(__name__)
-
-CONSTITUTION_VERSION = "const-2026-08-14-a"
 
 
 class Kind(str, Enum):

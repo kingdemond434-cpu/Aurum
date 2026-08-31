@@ -153,13 +153,13 @@ class FrozenStates:
                 f"cannot detect the code moving")
         self.path.write_text(json.dumps({"version": DRIFT_VERSION,
                                          "frozen_at": datetime.now(timezone.utc).isoformat(),
-                                         "states": list(states)}, indent=2, default=str))
+                                         "states": list(states)}, indent=2, default=str), encoding="utf-8")
         return len(states)
 
     def read(self) -> list[dict]:
         if not self.path.exists():
             return []
-        return json.loads(self.path.read_text()).get("states", [])
+        return json.loads(self.path.read_text(encoding='utf-8')).get("states", [])
 
 
 def baseline_path(root: Path) -> Path:
@@ -172,7 +172,7 @@ def record_baseline(decisions: Sequence[StateDecision], root: Path) -> Path:
     p.write_text(json.dumps({"version": DRIFT_VERSION,
                              "recorded_at": datetime.now(timezone.utc).isoformat(),
                              "decisions": [asdict(d) for d in decisions]},
-                            indent=2, default=str))
+                            indent=2, default=str), encoding="utf-8")
     return p
 
 
@@ -186,7 +186,7 @@ def audit(current: Sequence[StateDecision], root: Path,
         rep.new_constants = (undeclared_thresholds(pkg_dir) if pkg_dir else [])
         return rep
     prev = {d["state_id"]: StateDecision(**d)
-            for d in json.loads(p.read_text()).get("decisions", [])}
+            for d in json.loads(p.read_text(encoding='utf-8')).get("decisions", [])}
     for d in current:
         old = prev.get(d.state_id)
         if old is None:
@@ -235,7 +235,7 @@ def undeclared_thresholds(pkg_dir: Path) -> list[str]:
                          "backtest.py", "evaluation.py"):
             continue
         try:
-            tree = ast.parse(path.read_text())
+            tree = ast.parse(path.read_text(encoding='utf-8'))
         except SyntaxError:
             continue
         for fn in [n for n in ast.walk(tree)

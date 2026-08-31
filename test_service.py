@@ -85,10 +85,16 @@ class FakeFeed:
         self.fail_first_connect = fail_first_connect
 
     def connect(self):
+        # Matches the real LiveFeed.connect()'s contract exactly: raise
+        # FeedError on failure, otherwise return None. A prior version of
+        # this fake returned True on success, which the real class never did
+        # -- and that mismatch hid a bug in service.py's caller that treated
+        # every successful connect as a failure. Never return a truthy value
+        # here; if the caller starts depending on one again, it should fail
+        # the same way it would against production.
         self.connects += 1
         if self.fail_first_connect and self.connects == 1:
             raise FeedError("simulated connect failure")
-        return True
 
     def quote(self):
         return self.bid, self.ask, self.age
@@ -195,8 +201,8 @@ def test_p0_2_rehydrate():
     s1 = DeskService(d1, FakeFeed(bars()), cfg)
     s1.checkpoint()
     check("checkpoint stores the compiled signal, not just tp2",
-          "signal" in (json.loads(cfg.state_path.read_text())["open_trade"] or {}),
-          f"keys={sorted((json.loads(cfg.state_path.read_text())['open_trade'] or {}))}")
+          "signal" in (json.loads(cfg.state_path.read_text(encoding='utf-8'))["open_trade"] or {}),
+          f"keys={sorted((json.loads(cfg.state_path.read_text(encoding='utf-8'))['open_trade'] or {}))}")
 
     d2 = make_desk(out)
     s2 = DeskService(d2, FakeFeed(bars()), cfg)
@@ -250,7 +256,7 @@ def test_p0_4_execution_side_and_cost():
     check("SHORT stop triggers on the ASK", r2 == "EXIT_STOP",
           f"mid 2009.9 < stop, ask 2010.1 >= stop -> {r2}")
 
-    rows = [json.loads(l) for l in (out / "l.jsonl").read_text().splitlines() if l.strip()]
+    rows = [json.loads(l) for l in (out / "l.jsonl").read_text(encoding='utf-8').splitlines() if l.strip()]
     closed = [x for x in rows if x.get("kind") == "TRADE_CLOSED"]
     check("close row records gross AND net separately", bool(closed)
           and "gross_r" in closed[0] and "cost_r" in closed[0],
@@ -338,7 +344,7 @@ def test_halt_flag_stands_the_desk_down():
     print("\nHALT  the flag written by the bot actually stops the loop")
     out = Path(tempfile.mkdtemp())
     halt = out / "HALTED"
-    halt.write_text("set by test")
+    halt.write_text("set by test", encoding="utf-8")
 
     sink = RecordingSink()
     f = FakeFeed(bars())

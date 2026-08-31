@@ -22,7 +22,7 @@ def desk(tmp_path: Path) -> B.BotConfig:
         "started_at": "2026-08-17T09:00:00+00:00",
         "restarts": 2, "bars_processed": 41, "ticks_seen": 9001,
         "reconnects": 1, "stale_suspensions": 0, "open_trade": None,
-    }))
+    }), encoding="utf-8")
     (tmp_path / "state" / "ledger.jsonl").write_text("\n".join(json.dumps(r) for r in [
         {"ts": "2026-08-17T10:00:00+00:00", "kind": "NO_SETUP",
          "reason": "no alignment", "forward_r": 1.4},
@@ -31,7 +31,7 @@ def desk(tmp_path: Path) -> B.BotConfig:
         {"ts": "2026-08-17T12:00:00+00:00", "kind": "SIGNAL",
          "mechanism": "fvg_retest", "realised_r": -1.0, "shadow": True,
          "reason": "stopped"},
-    ]) + "\n")
+    ]) + "\n", encoding="utf-8")
     return B.BotConfig(token="T", chat_id="42",
                        state_path=tmp_path / "state" / "service_state.json",
                        ledger_path=tmp_path / "state" / "ledger.jsonl",
@@ -129,7 +129,7 @@ def test_no_command_can_place_an_order():
     """The charter property, asserted against the command table itself rather
     than against a claim in a docstring."""
     import ast
-    src = Path(B.__file__).read_text()
+    src = Path(B.__file__).read_text(encoding='utf-8')
     banned = {"order_send", "order_check", "positions_modify", "eval", "exec",
               "system", "popen", "check_output"}
     hits = [f"{n.lineno}:{n.attr}" for n in ast.walk(ast.parse(src))
@@ -191,7 +191,7 @@ def test_refusals_surface_what_they_cost(desk):
 
 
 def test_a_torn_ledger_line_costs_one_row_not_the_answer(desk):
-    with desk.ledger_path.open("a") as fh:
+    with desk.ledger_path.open("a", encoding="utf-8") as fh:
         fh.write('{"ts": "2026-08-17T13:00:00+00:00", "kind": "SIG')
     assert "2" in B.cmd_pnl(desk)
     assert len(B._tail_ledger(desk.ledger_path)) == 3
@@ -199,7 +199,7 @@ def test_a_torn_ledger_line_costs_one_row_not_the_answer(desk):
 
 def test_an_empty_ledger_is_reported_not_crashed(tmp_path):
     p = tmp_path / "empty.jsonl"
-    p.write_text("")
+    p.write_text("", encoding="utf-8")
     cfg = B.BotConfig(token="T", chat_id="1", state_path=tmp_path / "s.json",
                       ledger_path=p, halt_path=tmp_path / "H")
     assert "empty" in B.cmd_recent(cfg)
@@ -218,7 +218,7 @@ def test_growth_reports_a_derived_size_from_the_live_ledger(desk):
 
 def test_growth_on_an_unwatched_book_refuses_to_name_a_size(tmp_path):
     p = tmp_path / "l.jsonl"
-    p.write_text("")
+    p.write_text("", encoding="utf-8")
     cfg = B.BotConfig(token="T", chat_id="1", state_path=tmp_path / "s.json",
                       ledger_path=p, halt_path=tmp_path / "H")
     assert "watched long enough" in B.cmd_growth(cfg)
@@ -272,8 +272,8 @@ def test_build_bot_shares_the_sink_resolver(tmp_path):
     assert B.build_bot(tmp_path / "absent") is None
     s = tmp_path / "secrets"
     s.mkdir()
-    (s / "telegram_token").write_text("tok")
-    (s / "telegram_chat_id").write_text("123")
+    (s / "telegram_token").write_text("tok", encoding="utf-8")
+    (s / "telegram_chat_id").write_text("123", encoding="utf-8")
     b = B.build_bot(s)
     assert b is not None and b.cfg.chat_id == "123"
 
@@ -283,6 +283,6 @@ def test_empty_credential_files_do_not_build_a_bot(tmp_path):
     values. Empty is not present."""
     s = tmp_path / "secrets"
     s.mkdir()
-    (s / "telegram_token").write_text("")
-    (s / "telegram_chat_id").write_text("")
+    (s / "telegram_token").write_text("", encoding="utf-8")
+    (s / "telegram_chat_id").write_text("", encoding="utf-8")
     assert B.build_bot(s) is None

@@ -274,7 +274,7 @@ def main() -> int:
 
     mgmt = t.mgmt_log if desk.open else []
     if not mgmt and desk.open is None:
-        mgmt = json.loads((OUT / "ledger.jsonl").read_text().splitlines()[-1]).get("management", [])
+        mgmt = json.loads((OUT / "ledger.jsonl").read_text(encoding='utf-8').splitlines()[-1]).get("management", [])
     tickborne = [m for m in mgmt if m["source"].startswith("observer")]
     arrow("wake -> mgmt (causal link)",
           f"{len(tickborne)}/{len(mgmt)} management steps originated from an "
@@ -374,7 +374,7 @@ def main() -> int:
 
     print("=" * 78)
     print(f"ALL {len(TRACE)} ARROWS EXECUTED")
-    (OUT / "trace.txt").write_text("\n".join(TRACE))
+    (OUT / "trace.txt").write_text("\n".join(TRACE), encoding="utf-8")
     return 0
 
 

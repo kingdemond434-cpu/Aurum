@@ -112,8 +112,8 @@ def test_health_tracking_is_on_by_default(tmp_path):
 def test_the_wrapper_preserves_the_resolved_sink(tmp_path):
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("tok")
-    (sec / "telegram_chat_id").write_text("123")
+    (sec / "telegram_token").write_text("tok", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     s = build_sink(sec)
     assert type(s.inner).__name__ == "TelegramSink"
 
@@ -122,7 +122,7 @@ def test_an_unconfigured_desk_still_falls_back_to_a_file(tmp_path):
     s = build_sink(tmp_path / "absent", shadow_log=tmp_path / "shadow.jsonl")
     assert isinstance(s.inner, FileSink)
     s.send("would have sent")
-    assert "would have sent" in (tmp_path / "shadow.jsonl").read_text()
+    assert "would have sent" in (tmp_path / "shadow.jsonl").read_text(encoding='utf-8')
 
 
 def test_tracking_can_be_turned_off_deliberately(tmp_path):
@@ -148,8 +148,8 @@ def test_preflight_sends_rather_than_only_reading_files(tmp_path, monkeypatch):
     import run_desk
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("tok")
-    (sec / "telegram_chat_id").write_text("123")
+    (sec / "telegram_token").write_text("tok", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     sent = []
     monkeypatch.setattr("golddesk.notify.TelegramSink.send",
                         lambda self, text: sent.append(text) or True)
@@ -163,8 +163,8 @@ def test_preflight_FAILS_when_credentials_exist_but_do_not_work(tmp_path, monkey
     import run_desk
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("revoked-token")
-    (sec / "telegram_chat_id").write_text("123")
+    (sec / "telegram_token").write_text("revoked-token", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     monkeypatch.setattr("golddesk.notify.TelegramSink.send",
                         lambda self, text: False)
     c = run_desk._telegram_check(True, sec)
@@ -175,8 +175,8 @@ def test_empty_credentials_still_fail_before_any_send(tmp_path):
     import run_desk
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("")
-    (sec / "telegram_chat_id").write_text("")
+    (sec / "telegram_token").write_text("", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("", encoding="utf-8")
     c = run_desk._telegram_check(True, sec)
     assert not c.ok and "EMPTY" in c.detail
 
@@ -185,8 +185,8 @@ def test_delivery_can_be_skipped_deliberately(tmp_path):
     import run_desk
     sec = tmp_path / "secrets"
     sec.mkdir()
-    (sec / "telegram_token").write_text("tok")
-    (sec / "telegram_chat_id").write_text("123")
+    (sec / "telegram_token").write_text("tok", encoding="utf-8")
+    (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     c = run_desk._telegram_check(True, sec, deliver=False)
     assert c.ok and "NOT verified by delivery" in c.detail
 
@@ -194,3 +194,36 @@ def test_delivery_can_be_skipped_deliberately(tmp_path):
 def test_not_wanting_telegram_is_not_a_failure(tmp_path):
     import run_desk
     assert run_desk._telegram_check(False, tmp_path).ok
+
+
+def test_claudecode_provider_without_numeric_only_fails_preflight():
+    """The failure this catches: a desk that starts, ticks, warms bars, and
+    refuses every analyst call forever because 'claudecode' cannot send charts
+    and --numeric-only was never passed. It looked exactly like a healthy
+    process -- MT5 connected, Telegram delivering -- while producing zero
+    signals, on a real account, until someone read the log line by line."""
+    import run_desk
+    checks = run_desk.preflight(
+        "XAUUSD", False, Path("secrets"), feed="mt5",
+        provider_spec="claudecode:claude-opus-5", numeric_only=False)
+    bad = [c for c in checks if c.name == "provider/vision match"]
+    assert bad and not bad[0].ok and bad[0].fatal
+    assert "--numeric-only" in bad[0].detail
+
+
+def test_claudecode_provider_with_numeric_only_does_not_fail_this_check():
+    import run_desk
+    checks = run_desk.preflight(
+        "XAUUSD", False, Path("secrets"), feed="mt5",
+        provider_spec="claudecode:claude-opus-5", numeric_only=True)
+    assert not [c for c in checks if c.name == "provider/vision match"]
+
+
+def test_anthropic_provider_is_unaffected_by_the_numeric_only_check():
+    """The check is specific to the CLI's no-image-input limitation, not a
+    general opinion about charts vs numeric."""
+    import run_desk
+    checks = run_desk.preflight(
+        "XAUUSD", False, Path("secrets"), feed="mt5",
+        provider_spec="anthropic:claude-opus-5", numeric_only=False)
+    assert not [c for c in checks if c.name == "provider/vision match"]

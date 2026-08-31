@@ -37,7 +37,7 @@ def systemd() -> None:
     print("1. systemd units can actually start")
     for name in ("aurum-desk.service", "aurum-capture.service"):
         p = ROOT / "deploy" / name
-        txt = p.read_text()
+        txt = p.read_text(encoding='utf-8')
         directives = [l.strip() for l in txt.splitlines()
                       if l.strip() and not l.strip().startswith("#")]
         user = [d for d in directives if d.startswith("User=")]
@@ -77,7 +77,7 @@ def manifest() -> None:
     check("requirements.txt exists", req.exists())
     if not req.exists():
         return
-    txt = req.read_text()
+    txt = req.read_text(encoding='utf-8')
     pins = re.findall(r"^([A-Za-z0-9_.\-]+)==([0-9][^\s#]*)", txt, re.M)
     names = {n.lower() for n, _ in pins}
     check("every requirement is PINNED with ==",
@@ -94,14 +94,14 @@ def manifest() -> None:
     res = ROOT / "requirements-research.txt"
     check("research deps exist and are separate", res.exists())
     if res.exists():
-        rtxt = res.read_text()
+        rtxt = res.read_text(encoding='utf-8')
         check("and carry pandas + pyarrow EXPLICITLY",
               "pandas" in rtxt and "pyarrow" in rtxt,
               "without pyarrow, to_parquet raises at runtime — which is how the "
               "parquet integration checks silently could not complete")
     cap = ROOT / "requirements-capture.txt"
     check("the collector's deps are SEPARATE so the desk installs without them",
-          cap.exists() and "telethon" in cap.read_text())
+          cap.exists() and "telethon" in cap.read_text(encoding='utf-8'))
     inst = ROOT / "deploy" / "install.sh"
     check("install.sh exists and is executable",
           inst.exists() and (inst.stat().st_mode & 0o111) != 0)
@@ -231,7 +231,7 @@ def polling() -> None:
           cfg.htf_cache_seconds >= 1800,
           f"{cfg.htf_cache_seconds:.0f}s; at 300s it expired between every M15 "
           f"close and saved nothing")
-    src = (ROOT / "golddesk" / "service.py").read_text()
+    src = (ROOT / "golddesk" / "service.py").read_text(encoding='utf-8')
     check("the loop no longer calls tick_is_stale() and quote() both",
           "self.feed.tick_is_stale()" not in src,
           "tick_is_stale IS quote — calling both doubled every request")
@@ -241,7 +241,7 @@ def polling() -> None:
 
 def telegram() -> None:
     print("\n5. Telegram deployment is reproducible")
-    env = (ROOT / "deploy" / "env.example").read_text()
+    env = (ROOT / "deploy" / "env.example").read_text(encoding='utf-8')
     check("env.example documents the SIGNAL bot credentials",
           "TELEGRAM_BOT_TOKEN" in env and "TELEGRAM_CHAT_ID" in env,
           "it previously carried only the collector's API ID/hash, so a clean "
@@ -256,8 +256,8 @@ def telegram() -> None:
     from golddesk.notify import NullSink, TelegramSink
 
     d = Path(tempfile.mkdtemp())
-    (d / "telegram_token").write_text("")
-    (d / "telegram_chat_id").write_text("")
+    (d / "telegram_token").write_text("", encoding="utf-8")
+    (d / "telegram_chat_id").write_text("", encoding="utf-8")
     for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         os.environ.pop(k, None)
     tok, cid, where = resolve_telegram(d)
@@ -267,8 +267,8 @@ def telegram() -> None:
     check("and the sink degrades to null rather than pretending",
           isinstance(build_sink(d), NullSink))
 
-    (d / "telegram_token").write_text("123:AA\n")
-    (d / "telegram_chat_id").write_text("-100123\n")
+    (d / "telegram_token").write_text("123:AA\n", encoding="utf-8")
+    (d / "telegram_chat_id").write_text("-100123\n", encoding="utf-8")
     tok, cid, where = resolve_telegram(d)
     check("filled files resolve", tok == "123:AA" and cid == "-100123", where)
     check("and produce a real Telegram sink",
@@ -285,7 +285,7 @@ def telegram() -> None:
         for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
             os.environ.pop(k, None)
 
-    run = (ROOT / "run_desk.py").read_text()
+    run = (ROOT / "run_desk.py").read_text(encoding='utf-8')
     check("preflight uses the SAME resolver as the sink",
           "resolve_telegram" in run,
           "two implementations of 'do we have credentials' is how a desk "
@@ -294,7 +294,7 @@ def telegram() -> None:
 
 def management() -> None:
     print("\n6. management authority is chosen, not inherited")
-    run = (ROOT / "run_desk.py").read_text()
+    run = (ROOT / "run_desk.py").read_text(encoding='utf-8')
     check("--management is a flag", "--management" in run)
     for mode in ("heuristic", "contextual", "passive"):
         check(f"  mode {mode} is offered", f'"{mode}"' in run)
@@ -303,9 +303,9 @@ def management() -> None:
           "the asymmetry — Claude enters, a heuristic manages — has to be "
           "visible at boot, not discovered by reading the source")
     check("the shipped unit states the mode explicitly",
-          "--management heuristic" in (ROOT / "deploy" / "aurum-desk.service").read_text())
+          "--management heuristic" in (ROOT / "deploy" / "aurum-desk.service").read_text(encoding='utf-8'))
 
-    live = (ROOT / "golddesk" / "live.py").read_text()
+    live = (ROOT / "golddesk" / "live.py").read_text(encoding='utf-8')
     check("an operator override does NOT go through policy_state.bind()",
           "_management_override" in live,
           "bind() records an evidence warrant with a TTL; a flag written "

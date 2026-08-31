@@ -95,14 +95,14 @@ class VintageStore:
         if not self.path:
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("w") as fh:
+        with self.path.open("w", encoding="utf-8") as fh:
             for v in self._rows:
                 fh.write(json.dumps(asdict(v)) + "\n")
 
     def load(self) -> "VintageStore":
         self._rows.clear()
         self._by_series.clear()
-        for line in self.path.read_text().splitlines():
+        for line in self.path.read_text(encoding='utf-8').splitlines():
             if line.strip():
                 self.add(Vintage(**json.loads(line)))
         return self

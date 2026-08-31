@@ -270,7 +270,7 @@ class LinkedRegistry:
         # Atomic: a torn write here loses the trial census, and the census is the
         # only thing standing between this desk and an over-confident q-value.
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(self.to_json())
+        tmp.write_text(self.to_json(), encoding="utf-8")
         tmp.replace(p)
 
     @staticmethod
@@ -278,7 +278,7 @@ class LinkedRegistry:
         p = Path(path)
         if not p.exists():
             return LinkedRegistry()
-        d = json.loads(p.read_text())
+        d = json.loads(p.read_text(encoding='utf-8'))
         reg = LinkedRegistry(known_hids=set(d.get("known_hids", ())))
         for rd in d.get("runs", ()):
             # Loaded WITHOUT the orphan check, deliberately: a legacy file with

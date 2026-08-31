@@ -52,6 +52,18 @@ class DecisionKind(str, Enum):
     REFUSAL_COMPILER = "REFUSAL_COMPILER"   # geometry/cost/drift gate
     REFUSAL_ROUTER = "REFUSAL_ROUTER"       # empirical cohort veto
     MANAGEMENT = "MANAGEMENT"        # in-trade action
+    # NOT a refusal. The bar woke, the brief was built, and the analyst never
+    # answered — timeout, transport failure, unparseable read. Nothing decided
+    # anything, so there is no gate to credit or bill.
+    #
+    # It is deliberately NOT named REFUSAL_*: `missed_money.py` selects refusals
+    # with `.startswith("REFUSAL")` and attributes forgone value to whatever
+    # declined. A blind bar filed as a refusal would bill a gate that never ran,
+    # and — worse — would make an outage look like discipline. Before this
+    # existed the path `return`ed with no row at all, so a day the desk spent
+    # blind and a day it spent declining were the same file (L1.28a: UNMEASURED
+    # is a real answer, and it has to be WRITTEN DOWN to be one).
+    BLIND = "BLIND"
 
 
 @dataclass(frozen=True)
@@ -223,7 +235,7 @@ class Ledger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def append(self, rec: DecisionRecord) -> None:
-        with self.path.open("a") as fh:
+        with self.path.open("a", encoding="utf-8") as fh:
             fh.write(rec.to_json() + "\n")
 
     def append_raw(self, row: dict) -> None:
@@ -233,13 +245,13 @@ class Ledger:
         the ordering between "what was decided" and "what happened next" is
         preserved in one place. Rows carry `kind`, so readers filter.
         """
-        with self.path.open("a") as fh:
+        with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, default=str) + "\n")
 
     def read_all(self) -> list[dict]:
         if not self.path.exists():
             return []
-        return [json.loads(l) for l in self.path.read_text().splitlines() if l.strip()]
+        return [json.loads(l) for l in self.path.read_text(encoding='utf-8').splitlines() if l.strip()]
 
     def unresolved(self) -> list[dict]:
         return [r for r in self.read_all() if r.get("outcome") is None]

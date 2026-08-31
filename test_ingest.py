@@ -120,7 +120,7 @@ def test_the_server_offset_is_required_and_has_no_default(tmp_path):
     timestamp still looks perfectly ordinary."""
     p = tmp_path / "x.csv"
     p.write_text("ticket,symbol,type,entry,volume,price,time\n"
-                 "1,XAUUSD,BUY,in,0.1,2000,2026.06.01 10:00:00\n")
+                 "1,XAUUSD,BUY,in,0.1,2000,2026.06.01 10:00:00\n", encoding="utf-8")
     with pytest.raises(IngestError, match="server_offset_hours is required"):
         ingest_file(p)
 
@@ -256,14 +256,14 @@ def test_stops_survive_the_round_trip_because_normalisation_needs_them():
 
 def test_ingesting_a_file_reports_what_it_did(tmp_path):
     p = tmp_path / "h.html"
-    p.write_text(HTML)
+    p.write_text(HTML, encoding="utf-8")
     log, n, note = ingest_file(p, server_offset_hours=3.0)
     assert n == 2 and "2 deal(s) parsed" in note and "1 paired trade" in note
 
 
 def test_ingesting_the_same_file_twice_adds_nothing(tmp_path):
     p = tmp_path / "h.html"
-    p.write_text(HTML)
+    p.write_text(HTML, encoding="utf-8")
     log, n1, _ = ingest_file(p, server_offset_hours=3.0)
     log, n2, note = ingest_file(p, server_offset_hours=3.0, log=log)
     assert n1 == 2 and n2 == 0 and "2 already seen" in note
@@ -273,7 +273,7 @@ def test_the_ingested_trades_feed_the_reverse_engineering_module(tmp_path):
     """The two modules are one pipeline, not two libraries."""
     from golddesk.reverse import build_baskets, infer_structure
     p = tmp_path / "h.html"
-    p.write_text(HTML)
+    p.write_text(HTML, encoding="utf-8")
     log, _, _ = ingest_file(p, server_offset_hours=3.0)
     trades, _ = log.trades()
     assert infer_structure(build_baskets(trades)).kind == "SINGLE_ENTRY"

@@ -1,0 +1,554 @@
+r"""Fix what is mechanical. Escalate what is not. Never blur the two.
+
+The operator asked why, if the desk can DETECT its own faults, a human has to
+fix them. For a large class the answer is "no reason" and remediate.py fixes
+those unattended. For another class the fix is WRITING CODE, and a process that
+writes and deploys its own code into a live trading desk can introduce a losing
+bug, widen a risk limit, or reach the ruin rail.
+
+The value is not that everything is automatic. It is that the line is EXPLICIT
+and allowlisted rather than decided in the moment — and these tests are that
+line, written down so a later edit has to delete an assertion rather than merely
+add a capability.
+
+    python3 -m pytest test_self_heal.py -q
+"""
+
+from __future__ import annotations
+
+import ast
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+from golddesk.remediate import (COOLDOWN, MAX_ATTEMPTS, Remediator, plan,
+                                render)
+from golddesk.self_audit import Finding
+
+UTC = timezone.utc
+NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+
+REMEDIATE = Path(__file__).parent / "golddesk" / "remediate.py"
+
+
+def _broken(check, detail="broken"):
+    return Finding(check, False, detail)
+
+
+class _Spy:
+    def __init__(self, ok=True):
+        self.calls, self.ok = 0, ok
+
+    def __call__(self):
+        self.calls += 1
+        return self.ok
+
+
+# ------------------------------------------------- the mechanical class
+
+def test_missing_cohorts_is_fixed_by_a_restart():
+    """Cohorts are rebuilt at boot from the ledger, so a desk holding none while
+    resolved trades exist booted before they resolved. A restart IS the remedy."""
+    spy = _Spy()
+    rem, esc = plan([_broken("cohorts")], restart_desk=spy)
+    Remediator().run(rem, now=NOW)
+    assert spy.calls == 1
+    assert not esc
+
+
+def test_a_stalled_ledger_is_fixed_by_a_restart():
+    spy = _Spy()
+    rem, _ = plan([_broken("ledger growth")], restart_desk=spy)
+    Remediator().run(rem, now=NOW)
+    assert spy.calls == 1
+
+
+def test_a_passing_finding_triggers_nothing():
+    rem, esc = plan([Finding("cohorts", True, "fine")], restart_desk=_Spy())
+    assert not rem and not esc
+
+
+# ------------------------------------------------ the escalation class
+
+def test_a_design_fault_is_escalated_and_never_fixed():
+    """'tp1 is computed and compared to nothing' needs new code. No allowlisted
+    action can touch it, and pretending otherwise is the dangerous version."""
+    spy = _Spy()
+    rem, esc = plan([_broken("tp1 banking")], restart_desk=spy)
+    Remediator().run(rem, now=NOW)
+    assert spy.calls == 0
+    assert [f.check for f in esc] == ["tp1 banking"]
+
+
+def test_an_unknown_fault_escalates_rather_than_being_dropped():
+    """A fault nobody is told about is worse than one nobody can fix."""
+    _, esc = plan([_broken("something-new")], restart_desk=_Spy())
+    assert [f.check for f in esc] == ["something-new"]
+
+
+def test_the_escalation_text_says_why_it_was_not_fixed():
+    """Otherwise the operator asks the same question every time one fires."""
+    _, esc = plan([_broken("excursion")], restart_desk=_Spy())
+    text = render([], esc)
+    assert "NEEDS A HUMAN" in text
+    assert "new code" in text
+    assert "widen a risk limit" in text
+
+
+# ------------------------------------------- it cannot become a loop
+
+def test_the_same_fault_is_not_re_fixed_inside_the_cooldown():
+    spy = _Spy()
+    r = Remediator()
+    rem, _ = plan([_broken("cohorts")], restart_desk=spy)
+    r.run(rem, now=NOW)
+    r.run(rem, now=NOW + timedelta(minutes=5))
+    assert spy.calls == 1
+
+
+def test_it_retries_once_the_cooldown_has_passed():
+    spy = _Spy()
+    r = Remediator()
+    rem, _ = plan([_broken("cohorts")], restart_desk=spy)
+    r.run(rem, now=NOW)
+    r.run(rem, now=NOW + COOLDOWN + timedelta(minutes=1))
+    assert spy.calls == 2
+
+
+def test_a_fault_that_survives_its_own_remedy_stops_being_mechanical():
+    """THE LOAD-BEARING LIMIT. A remedy that has not worked three times is not
+    the right remedy, and applying it forever is how a self-healer becomes a
+    crash loop."""
+    spy = _Spy()
+    r = Remediator()
+    rem, _ = plan([_broken("cohorts")], restart_desk=spy)
+    t = NOW
+    for _ in range(MAX_ATTEMPTS + 3):
+        r.run(rem, now=t)
+        t += COOLDOWN + timedelta(minutes=1)
+    assert spy.calls == MAX_ATTEMPTS
+
+
+def test_the_attempt_cap_says_what_it_means():
+    spy = _Spy()
+    r = Remediator()
+    rem, _ = plan([_broken("cohorts")], restart_desk=spy)
+    t = NOW
+    for _ in range(MAX_ATTEMPTS):
+        r.run(rem, now=t)
+        t += COOLDOWN + timedelta(minutes=1)
+    out = r.run(rem, now=t)
+    assert "no longer a mechanical fault" in out[0].detail
+
+
+def test_a_remedy_that_raises_does_not_take_the_caller_down():
+    def boom():
+        raise RuntimeError("schtasks exploded")
+    rem, _ = plan([_broken("cohorts")], restart_desk=boom)
+    out = Remediator().run(rem, now=NOW)
+    assert not out[0].taken
+    assert "RuntimeError" in out[0].detail
+
+
+def test_a_remedy_that_declines_is_recorded_as_not_taken():
+    rem, _ = plan([_broken("cohorts")], restart_desk=_Spy(ok=False))
+    out = Remediator().run(rem, now=NOW)
+    assert not out[0].taken
+
+
+# --------------------------------------- what it must never be able to do
+
+def test_the_module_cannot_write_code_or_touch_risk():
+    """Enumerated so a later edit has to delete a line rather than merely add a
+    capability. Walks the AST: the module docstring names these things while
+    promising not to do them, so a substring grep fails on its own explanation."""
+    tree = ast.parse(REMEDIATE.read_text(encoding="utf-8"))
+    names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    names |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.Import, ast.ImportFrom)):
+            names.update(a.name for a in n.names)
+            names.add(getattr(n, "module", "") or "")
+    forbidden = ("exec", "eval", "compile", "write_text", "unlink", "rmtree",
+                 "Thresholds", "current_stop", "risk_r", "max_open_risk_r",
+                 "arm", "deadman", "subprocess", "os")
+    for f in forbidden:
+        assert f not in names, (
+            f"remediate.py references {f!r} — it may fix OPERATIONAL state and "
+            f"nothing else")
+
+
+def test_every_action_is_injected_not_summoned():
+    """Actions arrive as callables from the caller, so the allowlist is the
+    call site and every one of them is visible to a test."""
+    src = REMEDIATE.read_text(encoding="utf-8")
+    assert "restart_desk: Callable" in src
+    assert "subprocess" not in src
+
+
+def test_the_runner_only_controls_the_desk_task():
+    """self_heal.py is the one file allowed to touch a process, and it may only
+    bounce the scheduled task — not kill by PID, not spawn python directly.
+
+    CHECKED ON THE CALLS, NOT ON THE TEXT. This scanned the raw source for the
+    forbidden words, which made it fire on PROSE: a docstring explaining why a
+    failed `git push` must escalate contains the word "git", and tripped a law
+    about INVOKING it. A gate that fails on its own explanation is one that gets
+    relaxed to shut it up — and this law is worth keeping — so it now reads the
+    string constants that actually reach a `.run(...)` call, which is what "can
+    invoke" means.
+    """
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "run"]
+    args = [a.value for c in calls for a in ast.walk(c) if isinstance(a, ast.Constant)]
+    assert "schtasks" in args
+    for bad in ("taskkill", "Stop-Process", "shutdown", "pip", "git", "python"):
+        assert bad not in args, f"self_heal.py can invoke {bad!r}"
+
+
+def test_the_only_git_the_healer_can_reach_is_the_state_publisher():
+    """The healer now causes git to run — through state_publish, never itself.
+
+    That is a NEW process-touching capability in a file that runs unattended
+    every fifteen minutes, so it gets an explicit allowlist rather than
+    inheriting trust from the module that calls it. Every verb it may use is
+    object-database plumbing or a push of one named ref: none can move HEAD, the
+    index, the working tree or the code branch, which is exactly what makes it
+    safe to run underneath an auto-updater that advances with `merge --ff-only`
+    and skips on a dirty tree.
+    """
+    src = (Path(__file__).parent / "golddesk" / "state_publish.py").read_text(
+        encoding="utf-8")
+    tree = ast.parse(src)
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "run"]
+    invoked = {a.value for c in calls for a in ast.walk(c)
+               if isinstance(a, ast.Constant) and isinstance(a.value, str)}
+    assert "git" in invoked, "the publisher stopped invoking git at all"
+
+    verbs = {v.value for v in ast.walk(tree)
+             if isinstance(v, ast.Constant) and isinstance(v.value, str)}
+    for destructive in ("reset", "checkout", "clean", "stash", "pull", "merge",
+                        "rebase", "--force", "add", "commit"):
+        assert destructive not in verbs, (
+            f"state_publish.py can run `git {destructive}` — it must only ever "
+            f"use plumbing that cannot touch the tree or the code branch")
+
+
+def test_the_dry_run_changes_nothing():
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    i = src.index("if args.dry_run:")
+    block = src[i:src.index("return 0", i)]
+    assert "Remediator(" not in block
+    assert "WOULD FIX" in block
+
+
+def test_attempt_history_outlives_the_process():
+    """The task starts fresh every 15 minutes. Without persistence the cooldown
+    is a fiction and it would loop forever."""
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    assert "_load_attempts" in src and "_save_attempts" in src
+
+
+def test_the_remedy_calls_a_real_flows_api():
+    """An earlier draft called flows.refresh(), which does not exist. A remedy
+    that raises on first real use is worse than none, because the allowlist
+    claims it works."""
+    from golddesk import flows
+    import self_heal, inspect
+    src = inspect.getsource(self_heal._refresh_flows)
+    assert "flows.save(flows.collect" in src
+    assert hasattr(flows, "collect") and hasattr(flows, "save")
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-q"]))
+
+
+def test_the_healer_is_actually_scheduled():
+    """An auto-fixer nothing runs is the exact defect class it exists to catch."""
+    src = (Path(__file__).parent / "deploy" / "windows" /
+           "Install-AurumStartup.ps1").read_text(encoding="utf-8")
+    assert "self_heal.py" in src and "-SelfHeal" in src
+    block = src[src.index("foreach ($t in @($TaskName"):][:500]
+    assert "-SelfHeal" in block, "the uninstaller would leave it firing"
+
+
+# ------------------------------- the expanded allowlist, split correctly
+
+@pytest.mark.parametrize("check,expect_fix", [
+    ("cohorts", True),
+    ("ledger growth", True),
+    ("checkpoint", True),
+    ("spread profile", True),
+    ("macro", True),
+    ("disk", True),
+    # These need NEW CODE or a human decision. No allowlisted action touches
+    # them, and pretending otherwise is the dangerous version.
+    ("tp1 banking", False),
+    ("excursion", False),
+    ("ledger integrity", False),
+    ("notifications", False),
+])
+def test_each_fault_routes_to_the_right_side_of_the_line(check, expect_fix):
+    rem, esc = plan([_broken(check)], restart_desk=_Spy(),
+                    sample_spread=_Spy(), refresh_macro=_Spy(),
+                    rotate_logs=_Spy(), refresh_flows=_Spy())
+    assert bool(rem) is expect_fix, check
+    assert bool(esc) is (not expect_fix), check
+
+
+def test_a_torn_ledger_is_never_auto_repaired():
+    """THE ONE THAT MATTERS MOST. The ledger is the only record of what this
+    desk predicted and what happened. A remedy that edits it unattended can
+    destroy the evidence the whole desk exists to produce."""
+    rem, esc = plan([_broken("ledger integrity")], restart_desk=_Spy(),
+                    sample_spread=_Spy(), refresh_macro=_Spy(), rotate_logs=_Spy())
+    assert not rem
+    assert [f.check for f in esc] == ["ledger integrity"]
+
+
+def test_a_spread_sampler_that_declines_is_not_a_failure():
+    """It refuses unless the attached terminal is the execution venue, and that
+    refusal is the sampler working correctly."""
+    rem, _ = plan([_broken("spread profile")], restart_desk=_Spy(),
+                  sample_spread=_Spy(ok=False))
+    out = Remediator().run(rem, now=NOW)
+    assert not out[0].taken
+    assert "declined by the action" in out[0].detail
+
+
+def test_the_disk_remedy_can_only_reach_rotated_logs():
+    """A disk remedy that can reach evidence eventually destroys it, which is
+    worse than the full disk it was fixing."""
+    import self_heal
+    for pat in self_heal.ROTATABLE:
+        assert pat.endswith((".1", ".2", ".old", ".tmp.*")), pat
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    i = src.index("def _rotate_logs")
+    block = src[i:i + 700]
+    assert "ledger" not in block
+    assert "service_state" not in block
+    assert 'BASE / "logs"' in block
+
+
+def test_no_remedy_is_offered_without_its_action():
+    """plan() must not promise a fix it was given no way to perform."""
+    rem, esc = plan([_broken("spread profile"), _broken("macro"), _broken("disk")],
+                    restart_desk=_Spy())
+    assert not rem
+    assert len(esc) == 3
+
+
+# ------------------------- the capture axis routes correctly too
+
+@pytest.mark.parametrize("check,expect_fix", [
+    ("quant inbox", True),      # a deduped idempotent file copy
+    ("capture", False),         # answered by changing management: judgement
+    ("signal rate", False),     # answered by understanding WHY first
+    ("dominant gate", False),
+    ("survivors", False),       # answered on the quant side entirely
+])
+def test_capture_faults_route_correctly(check, expect_fix):
+    rem, esc = plan([_broken(check)], restart_desk=_Spy(), sync_quant=_Spy())
+    assert bool(rem) is expect_fix, check
+    assert bool(esc) is (not expect_fix), check
+
+
+def test_capture_and_rate_can_never_be_auto_tuned():
+    """THE MOST IMPORTANT REFUSAL IN THE FILE. "Capture is 15%" is answered by
+    changing how positions are managed; "the rate halved" by understanding why.
+    A process that adjusts its own thresholds toward a rate it likes is not
+    self-healing — it is a desk optimising its own scorecard, which is how a
+    gate gets loosened until it protects nothing."""
+    spy = _Spy()
+    rem, esc = plan([_broken("capture"), _broken("signal rate")],
+                    restart_desk=spy, sync_quant=_Spy())
+    Remediator().run(rem, now=NOW)
+    assert spy.calls == 0
+    assert {f.check for f in esc} == {"capture", "signal rate"}
+
+
+# ---------------------- a standing fault is not news every 15 minutes
+
+def _fresh_state(tmp_path, monkeypatch):
+    import self_heal as SH
+    monkeypatch.setattr(SH, "STATE", tmp_path / "self_heal.json")
+    return SH
+
+
+def test_a_new_fault_set_is_announced(tmp_path, monkeypatch):
+    SH = _fresh_state(tmp_path, monkeypatch)
+    assert SH._should_notify("capture", NOW)
+
+
+def test_an_unchanged_fault_set_is_not_re_announced(tmp_path, monkeypatch):
+    """THE DEFECT THIS FIXES. self_heal runs every 15 minutes. A standing
+    problem — capture at 15%, an absent spread profile — would have been 96
+    Telegram messages a day, and an alert channel that fires every quarter hour
+    is one nobody reads. That costs more than the alert was ever worth."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture", NOW)
+    assert not SH._should_notify("capture", NOW + timedelta(minutes=15))
+    assert not SH._should_notify("capture", NOW + timedelta(hours=6))
+
+
+def test_a_standing_fault_is_repeated_eventually(tmp_path, monkeypatch):
+    """Silence forever is the opposite failure — a problem nobody is reminded of
+    is one that quietly becomes permanent."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture", NOW)
+    assert SH._should_notify("capture", NOW + SH.RENOTIFY_AFTER)
+
+
+def test_a_fault_APPEARING_alongside_an_old_one_is_announced(tmp_path, monkeypatch):
+    """A second fault is an event even while the first is still standing."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture", NOW)
+    assert SH._should_notify("capture,cohorts", NOW + timedelta(minutes=15))
+
+
+def test_a_fault_CLEARING_is_announced(tmp_path, monkeypatch):
+    """Recovery matters as much as failure: without it the last thing the
+    operator heard was that something was broken."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture,cohorts", NOW)
+    assert SH._should_notify("cohorts", NOW + timedelta(minutes=15))
+
+
+def test_the_fingerprint_ignores_live_numbers_in_the_detail(tmp_path, monkeypatch):
+    """Detail text carries numbers that move on every closed trade — "15% across
+    6 winners" becomes "14% across 7". Fingerprinting that would make every
+    fault look new every pass and defeat the whole mechanism."""
+    import self_heal as SH
+    a = SH._fault_key([Finding("capture", False, "15% of MFE across 6 winners")])
+    b = SH._fault_key([Finding("capture", False, "14% of MFE across 7 winners")])
+    assert a == b == "capture"
+
+
+def test_the_fingerprint_is_order_independent():
+    import self_heal as SH
+    a = SH._fault_key([Finding("capture", False, "x"), Finding("cohorts", False, "y")])
+    b = SH._fault_key([Finding("cohorts", False, "y"), Finding("capture", False, "x")])
+    assert a == b
+
+
+def test_notification_bookkeeping_does_not_erase_the_attempt_history(tmp_path, monkeypatch):
+    """Both live in one file. A blind write would silently reset the remediation
+    cooldown every pass, and the cooldown is what stops a crash loop."""
+    SH = _fresh_state(tmp_path, monkeypatch)
+    SH._record_notify("capture", NOW)
+    SH._save_attempts({"cohorts": [NOW]})
+    assert SH._load_attempts()["cohorts"] == [NOW]
+    assert not SH._should_notify("capture", NOW + timedelta(minutes=1))
+
+
+def test_the_log_still_gets_every_run(tmp_path):
+    """De-duplication is for the CHANNEL. The log must stay complete, or an
+    incident review has gaps exactly where the fault persisted."""
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    i = src.index("report = render(outcomes, escalations)")
+    assert src.index("print(report)", i) < src.index("_should_notify(key", i), (
+        "the report must be logged BEFORE the channel gate, or an incident "
+        "review has gaps exactly where the fault persisted")
+
+
+# ------------------- analyst and watchdog faults route correctly
+
+def _task(name, fixable):
+    from golddesk.task_health import Finding as TF
+    return TF(name, False, "x", fixable=fixable)
+
+
+@pytest.mark.parametrize("finding,expect_fix,label", [
+    (None, True, "analyst answering"),
+    (None, False, "analyst latency"),
+    (None, False, "analyst model"),
+])
+def test_analyst_faults_route_correctly(finding, expect_fix, label):
+    rem, esc = plan([_broken(label)], restart_desk=_Spy(), enable_task=_Spy())
+    assert bool(rem) is expect_fix, label
+    assert bool(esc) is (not expect_fix), label
+
+
+def test_a_disabled_watchdog_is_re_enabled_automatically():
+    """Flipping a flag on an existing registration is deterministic, bounded and
+    reversible — the one task-control action safe to take unattended."""
+    calls = []
+    rem, esc = plan([_task("AurumSignalDesk-SelfHeal", True)],
+                    restart_desk=_Spy(),
+                    enable_task=lambda n: calls.append(n) or True)
+    Remediator().run(rem, now=NOW)
+    assert calls == ["AurumSignalDesk-SelfHeal"]
+    assert not esc
+
+
+def test_a_MISSING_watchdog_is_never_registered_automatically():
+    """Registering a task changes machine configuration, can prompt, and can
+    fail leaving the desk worse off than it started."""
+    calls = []
+    rem, esc = plan([_task("AurumSignalDesk-Cycle", False)],
+                    restart_desk=_Spy(),
+                    enable_task=lambda n: calls.append(n) or True)
+    Remediator().run(rem, now=NOW)
+    assert calls == []
+    assert [f.check for f in esc] == ["AurumSignalDesk-Cycle"]
+
+
+def test_no_task_is_enabled_without_the_action():
+    rem, esc = plan([_task("AurumSignalDesk-SelfHeal", True)], restart_desk=_Spy())
+    assert not rem and len(esc) == 1
+
+
+def test_the_healer_runs_all_four_audits():
+    """A watchdog written and not called is the defect class this whole file
+    exists to catch."""
+    src = (Path(__file__).parent / "self_heal.py").read_text(encoding="utf-8")
+    for mod in ("self_audit", "capture", "analyst_health", "task_health"):
+        assert mod in src, mod
+    i = src.index("findings = (list(findings)")
+    block = src[i:i + 250]
+    for name in ("cap_findings", "ah_findings", "th_findings"):
+        assert name in block, f"{name} is computed but never reaches remediation"
+
+
+# --------------------- the quant checkout is found, not assumed
+
+def test_the_quant_root_is_searched_not_hardcoded():
+    """It was BASE.parent/"quant" — C:\\quant on the box — and the real checkout
+    is at C:\\opt\\quant. The remedy pointed at a directory that does not exist and
+    logged "transport cannot run" forever: a fixer that cannot fix, saying so in
+    a log nobody was reading."""
+    import self_heal as SH
+    cands = [str(c).replace("\\", "/") for c in SH._QUANT_CANDIDATES]
+    assert any("opt/quant" in c for c in cands), cands
+    assert len(cands) > 1, "a single hardcoded path is what this replaced"
+
+
+def test_an_env_var_beats_the_search():
+    """A search is a guess; an operator with a fifth location must not have to
+    edit the list."""
+    import self_heal as SH
+    import os
+    tmp = Path(SH.BASE)
+    os.environ["AURUM_QUANT_ROOT"] = str(tmp)
+    try:
+        assert SH._quant_root() == tmp
+    finally:
+        del os.environ["AURUM_QUANT_ROOT"]
+
+
+def test_a_stray_folder_named_quant_is_not_the_checkout(tmp_path, monkeypatch):
+    """The marker is the DESK, not the directory name."""
+    import self_heal as SH
+    (tmp_path / "quant").mkdir()
+    monkeypatch.setattr(SH, "_QUANT_CANDIDATES", (tmp_path / "quant",))
+    assert SH._quant_root() is None
+    (tmp_path / "quant" / "desks" / "mt5").mkdir(parents=True)
+    assert SH._quant_root() == tmp_path / "quant"

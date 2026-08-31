@@ -59,3 +59,30 @@ data/**/*.csv.gz
 # desk actually predicted and what actually happened, it is the input to
 # adapt.py's closed loop, and hiding it meant every new session started blind to
 # every signal the desk had ever produced. They are now tracked.
+
+# ---- the flows CACHE, and only the cache --------------------------------
+# state/flows.json is a REFETCHABLE MIRROR of three public feeds (GLD tonnage,
+# CFTC COT, Shanghai premium), not a record of anything this desk decided. It is
+# excluded for one specific reason, and it is not size or secrecy:
+#
+# THIS CLONE CANNOT REACH THOSE FEEDS. The agent proxy answers every one of them
+# with `403 Forbidden`, so a run here writes a file of nulls with an `errors`
+# block and a FRESH `fetched_utc`. Committing that would push an all-null cache
+# carrying today's timestamp on top of the one the VPS fetched successfully, and
+# the desk would read it as a current, complete measurement of flows that are in
+# fact simply unfetched. Absence wearing the timestamp of a measurement is
+# exactly the failure the rest of this file exists to prevent.
+#
+# The flows that MATTER downstream — the prompt block the analyst was shown —
+# travel in the ledger row's `brief_render`, which is committed. Nothing is lost.
+state/flows.json
+
+# ---- the desk state buffer -------------------------------------------------
+# NOT a secret and NOT hidden evidence: the published copy lives on the
+# `aurum-state` branch, one file per commit, every 15 minutes
+#   git fetch origin aurum-state && git show origin/aurum-state:desk_state.json
+# The local copy is a change-detection buffer only. It is ignored HERE because
+# Update-AurumDesk.ps1 skips the auto-update whenever `git status --porcelain`
+# is non-empty, so a tracked file rewritten every 15 minutes would silently
+# stop the box from ever updating itself.
+reports/desk_state.json

@@ -43,6 +43,7 @@ import logging
 import os
 import signal
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -51,38 +52,26 @@ from typing import Any, Optional, Sequence
 from .features import Bar, atr, classify, swings, visible_swings
 from .feed import FeedConfig, FeedError, LiveFeed, RealMt5Client
 from .ledger import Ledger
-from .live import ENTRY_TF, HTF, LiveDesk, Vision
+from .live import ENTRY_TF, HTF, LiveDesk, Vision, _downsample_path
 from .management import BrokerLimits
 from .notify import build_sink
 from .runner import build_brief
 
 log = logging.getLogger(__name__)
 
-SERVICE_VERSION = "service-2026-08-31-a"
+SERVICE_VERSION = "service-2026-08-14-a"
 
 # Entry-timeframe lengths, for clock-gating the bar request. Only used to decide
 # WHETHER to ask; the answer still has to pass the last_bar_ts guard.
 TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240,
               "D1": 1440}
-
-# Per-arm higher-timeframe pairing: entry tf -> (context tf, aggregation factor
-# from entry bars to that context). Each evaluation arm gets structure from a
-# TRUE higher timeframe of its own — an M5 read sees H1 context, an H4 read
-# sees D1 — instead of every arm pretending the M15 desk's H4 is "the" context.
 TF_HTF = {"M1": ("H1", 60), "M5": ("H1", 12), "M15": ("H4", 16),
           "M30": ("H4", 8), "H1": ("D1", 24), "H4": ("D1", 6), "D1": ("D1", 1)}
 
 
 def channel_history_bars(tf: str, history_bars: int) -> int:
-    """How many entry bars a channel needs for its charts, not just its state.
-
-    The H-context chart wants ~90 aggregated candles, which costs factor*92
-    source bars. The old fixed 600 left the M5 arm unable to draw H1 context at
-    all (12*92 = 1104 > 600), which under the multimodal VERIFIED rule means a
-    refusal, not a downgrade — an arm that silently never fires.
-    """
-    htf_factor = TF_HTF.get(tf, ("H4", 16))[1]
-    return max(history_bars, htf_factor * 92 + 50)
+    """Enough source bars for the arm's context chart and state."""
+    return max(history_bars, TF_HTF.get(tf, ("H4", 16))[1] * 92 + 50)
 
 
 @dataclass
@@ -91,16 +80,7 @@ class ServiceConfig:
     entry_tf: str = ENTRY_TF
     htf: str = HTF
     history_bars: int = 600
-    # MULTI-TIMEFRAME ARMS. Every tf listed here is evaluated exactly once per
-    # ITS OWN bar close, as a separate causal arm with its own watcher, HTF
-    # context, charts and ledger stamp. Frequency comes from more evaluation
-    # points, never from re-deciding a bar already decided. The first entry is
-    # the home timeframe (state.last_bar_ts stays keyed to it for checkpoint
-    # compatibility); portfolio heat, not the count of arms, governs exposure.
     timeframes: tuple = ("M15",)
-    # Maximum-frequency management means observing an open position every
-    # second by default. Entries remain closed-bar decisions: polling faster
-    # cannot create new causal information and must not duplicate a signal.
     poll_seconds: float = 1.0
     # Reconnect backoff, bounded so a long outage does not become a long sleep.
     backoff_initial_s: float = 2.0
@@ -153,8 +133,6 @@ class ServiceState:
     """Everything needed to resume mid-trade after a restart."""
     version: str = SERVICE_VERSION
     last_bar_ts: Optional[str] = None
-    # Per-arm last processed bar, keyed by timeframe. `last_bar_ts` above stays
-    # the home timeframe's value for checkpoint compatibility with older states.
     last_bar_tfs: dict = field(default_factory=dict)
     open_trade: Optional[dict] = None
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -174,16 +152,29 @@ class DeskService:
         self._stop = False
         self._last_tick_advance = time.monotonic()
         self._last_heartbeat = 0.0
-        # One evaluation channel PER TIMEFRAME. Each carries its own bar cache,
-        # swings, ATRs and higher-timeframe context, so an M5 close and an H4
-        # close are separate causal evaluations rather than one blended state.
+        self._bars: list[Bar] = []       # home-arm compatibility aliases
+        self._sw: list = []
+        self._atrs: list = []
         self._channels: dict[str, dict] = {}
+        self._live_chart_cache: dict[str, list[Bar]] = {}
+        self._live_chart_cached_at = 0.0
+        # GPT/Claude subscription reads routinely take 60-120s. They must not
+        # freeze the MT5 tick observer during that time: doing so erased the
+        # exact path that decides whether a signal was good and left stops
+        # effectively unwatched. One worker preserves analyst ordering; a
+        # single latest pending packet prevents a slow model building a stale
+        # queue. The observer loop itself never waits for inference.
+        self._analysis_pool = ThreadPoolExecutor(max_workers=1,
+                                                 thread_name_prefix="aurum-analyst")
+        self._analysis_future: Optional[Future] = None
+        self._analysis_pending: Optional[tuple] = None
+        self._analysis_started_at = 0.0
         self._rehydrated = False
         self._venue_shut = False
         self._halted = False
         self._notify_errors = 0
-        # Daily track-record report: posted once per UTC day on rollover.
-        self._last_daily: Optional[str] = None
+        self._htf_cache = None
+        self._htf_cached_at = 0.0
         from .tickguard import TickArchive, TickGuard
         self.guard = TickGuard() if self.cfg.guard_ticks else None
         self.archive = (TickArchive(self.cfg.tick_archive_dir, self.cfg.symbol)
@@ -207,7 +198,7 @@ class DeskService:
         if not p.exists():
             return self.state
         try:
-            raw = json.loads(p.read_text())
+            raw = json.loads(p.read_text(encoding='utf-8'))
             self.state = ServiceState(**{k: v for k, v in raw.items()
                                          if k in ServiceState.__dataclass_fields__})
             self.state.restarts += 1
@@ -249,8 +240,36 @@ class DeskService:
             "opened_idx": t.opened_idx,
             "mechanism_name": t.mechanism_name,
             "entry_context": t.entry_context,
+            # THE WHOLE OBSERVER, not two of its fields.
+            #
+            # This wrote mfe_r/mae_r/ticks and rehydrate() read back only the
+            # first two, so `ticks` reset to 0 on every restart -- which is
+            # literally the "0 observations" printed on an exit message. Worse,
+            # `path`, `t_mfe` and `t_mae` were never written at all: the full
+            # excursion path and both time-to-extreme stamps were destroyed by
+            # any restart, and this desk restarts on every logon, every
+            # watchdog relaunch and every deploy.
+            #
+            # That is not a cosmetic loss. The path IS the forward evidence --
+            # time-to-MFE, time-to-MAE, whether +0.5R came before -1R, how much
+            # of MFE was captured. A desk cannot learn whether a 16-point
+            # structural stop beats a tight one from a record that resets to
+            # zero every few hours. Telemetry only: nothing here gates a trade.
             "observer": {"mfe_r": t.observer.mfe_r, "mae_r": t.observer.mae_r,
-                         "ticks": t.observer.ticks},
+                         "ticks": t.observer.ticks,
+                         "t_mfe": (t.observer.t_mfe.isoformat()
+                                   if t.observer.t_mfe else None),
+                         "t_mae": (t.observer.t_mae.isoformat()
+                                   if t.observer.t_mae else None),
+                         "last_price": t.observer.last_price,
+                         "last_ts": (t.observer.last_ts.isoformat()
+                                     if t.observer.last_ts else None),
+                         "velocity_r_per_min": t.observer.velocity_r_per_min,
+                         # Bounded the same way the ledger bounds it, so a
+                         # long tick-driven trade cannot grow the checkpoint
+                         # without limit. Both extremes are pinned by
+                         # _downsample_path, so the turning points survive.
+                         "path": _downsample_path(t.observer.path)},
             "mgmt_log": t.mgmt_log}
         # DELIVERY HEALTH GOES IN THE CHECKPOINT. The message is this desk's
         # only product, so "is the channel working" belongs beside "is there a
@@ -258,7 +277,7 @@ class DeskService:
         payload = asdict(self.state)
         payload["notification_health"] = self.notification_health()
         tmp = self.cfg.state_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload, indent=2, default=str))
+        tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         os.replace(tmp, self.cfg.state_path)
 
     def rehydrate(self) -> bool:
@@ -269,8 +288,17 @@ class DeskService:
         ledger on each call, so a flapping connection inflated open risk without
         opening a single trade.
 
-        Excursion history before the restart is restored from the checkpoint;
-        the tick-by-tick path is genuinely lost and is not fabricated.
+        The FULL excursion record is restored: both extremes, both time-to-
+        extreme stamps, the observation count and the (bounded) tick-by-tick
+        path. This docstring used to say "the tick-by-tick path is genuinely
+        lost and is not fabricated" -- accurate when written, and the reason
+        the loss went unquestioned for so long. It described a deliberate
+        choice, but checkpoint() was not even persisting `ticks` back, so an
+        exit could report "0 observations" on a trade that had run for hours,
+        and time-to-MFE/MAE vanished on every logon, watchdog relaunch and
+        deploy. Nothing is fabricated now either: an unparseable point is
+        DROPPED rather than coerced, and a checkpoint from an older build
+        restores exactly as it used to.
         """
         if self._rehydrated:
             return self.desk.open is not None
@@ -295,16 +323,7 @@ class DeskService:
                 opened_utc=datetime.fromisoformat(pr["opened_utc"]),
                 setup=pr.get("setup", "UNKNOWN"))
             sg = dict(raw["signal"])
-            # setup is now analytics-only after the mechanism-first rewrite; a
-            # persisted signal predating it may carry a value the enum no longer
-            # knows, so restore defensively rather than crash the reload.
-            if isinstance(sg.get("setup"), str):
-                try:
-                    sg["setup"] = Setup(sg["setup"])
-                except ValueError:
-                    sg["setup"] = Setup.OTHER
-            else:
-                sg["setup"] = Setup.OTHER
+            sg["setup"] = Setup(sg["setup"])
             sg["brief_as_of"] = datetime.fromisoformat(sg["brief_as_of"])
             sig = CompiledSignal(**sg)
             obs = TradeObserver(pos.direction, pos.entry, pos.current_stop,
@@ -312,6 +331,35 @@ class DeskService:
             ob = raw.get("observer") or {}
             obs.mfe_r = ob.get("mfe_r", 0.0)
             obs.mae_r = ob.get("mae_r", 0.0)
+            # RESTORE THE REST. `ticks` was being WRITTEN by checkpoint() and
+            # never read here, so it came back 0 on every restart -- the "0
+            # observations" on the exit message. Each field below is restored
+            # defensively: a checkpoint written by an older build has none of
+            # them, and a missing field must degrade to the old behaviour
+            # rather than raise and lose the whole position.
+            obs.ticks = int(ob.get("ticks") or 0)
+            obs.velocity_r_per_min = float(ob.get("velocity_r_per_min") or 0.0)
+            lp = ob.get("last_price")
+            obs.last_price = float(lp) if lp is not None else None
+            for attr in ("t_mfe", "t_mae", "last_ts"):
+                raw_ts = ob.get(attr)
+                if raw_ts:
+                    try:
+                        setattr(obs, attr, datetime.fromisoformat(raw_ts))
+                    except ValueError:
+                        log.warning("checkpoint %s unparseable (%r) — left unset "
+                                    "rather than guessed", attr, raw_ts)
+            # The path is stored as [iso, r] pairs. Anything unparseable is
+            # DROPPED rather than coerced: a fabricated point in an excursion
+            # path is worse than a shorter one.
+            restored = []
+            for pt in (ob.get("path") or []):
+                try:
+                    ts_s, r = pt
+                    restored.append((datetime.fromisoformat(ts_s), float(r)))
+                except (TypeError, ValueError):
+                    continue
+            obs.path = restored
             self.desk.open = OpenTrade(
                 pos, sig, raw.get("opened_idx", 0), obs,
                 entry_context=raw.get("entry_context") or {},
@@ -351,8 +399,15 @@ class DeskService:
                 log.info("max_seconds reached — exiting cleanly")
                 break
             try:
+                # connect() signals failure by RAISING FeedError (after its own
+                # internal retry loop) -- it has no meaningful truthy return on
+                # success, so this must never gate on its return value. It used
+                # to: `if not self.feed.connect(): raise FeedError(...)`, which
+                # fired on every successful connect (an implicit `None` return
+                # is falsy) and made the live loop unable to ever get past this
+                # line. Invisible to tests because the fake feed's connect()
+                # returned True, a contract the real one never had.
                 self.feed.connect()
-                self.feed.quote()          # seeds the server clock from a live tick
                 backoff = self.cfg.backoff_initial_s
                 self._warm()
                 self.rehydrate()
@@ -383,6 +438,13 @@ class DeskService:
         self._notify(f"*DESK STOPPED* {self.state.bars_processed} bars, "
                      f"{self.state.ticks_seen} ticks, "
                      f"{self.state.reconnects} reconnect(s)")
+        # Do not leave the subscription worker alive after a deliberate desk
+        # stop. cancel_futures drops a queued stale packet; an already-running
+        # CLI call is allowed to finish without blocking the MT5 shutdown path.
+        # Without shutdown(), Python's executor atexit hook kept short service
+        # runs and supervisor restarts alive indefinitely after run() returned.
+        self._analysis_pending = None
+        self._analysis_pool.shutdown(wait=False, cancel_futures=True)
         return self.state
 
     def _inner_loop(self, started: float, max_seconds: Optional[float]) -> None:
@@ -507,6 +569,9 @@ class DeskService:
                 last_price = price
             self.state.ticks_seen += 1
 
+            # Harvest a completed analyst read without ever waiting for it.
+            self._poll_analysis()
+
             # ---- venue halt: measured, not from a calendar ---------------
             silent = time.monotonic() - self._last_tick_advance
             if silent > self.cfg.halt_after_silence_s:
@@ -524,11 +589,12 @@ class DeskService:
                 if out:
                     self.checkpoint()
 
-            # ---- BAR PATH: exactly once, on close, PER ARM ---------------
-            # Each configured timeframe is gated on its own boundary and its
-            # own last-processed timestamp. An M5 close and an H4 close in the
-            # same iteration are two separate evaluations of two separate
-            # causal bars; neither suppresses the other.
+            # ---- BAR PATH: exactly once, on close ------------------------
+            # Gated on the CLOCK before it is gated on the data. A new M15 bar
+            # can only close at :00/:15/:30/:45, so asking the venue for several
+            # hundred candles at 14:03:07 cannot possibly return one the desk
+            # has not seen. The old loop asked anyway, once a second — the single
+            # largest and least useful request the service made.
             for tf in self._tf_list():
                 if self._bar_boundary_passed(tf):
                     self._maybe_close_bar(tf, quote=(bid, ask, age))
@@ -538,13 +604,6 @@ class DeskService:
                 log.info("alive: %d ticks, %d bars, open=%s, spread %.2f",
                          self.state.ticks_seen, self.state.bars_processed,
                          bool(self.desk.open), self.desk.last_spread or 0.0)
-            # ---- PROOF LOOP: once per UTC day, post what was delivered ----
-            today = datetime.now(timezone.utc).date().isoformat()
-            if self._last_daily is None:
-                self._last_daily = today      # a restart mid-day must not repost
-            elif today != self._last_daily:
-                self._last_daily = today
-                self._post_daily_track()
             # Fast while managing, slow while flat. The one thing that must not
             # be slowed is observation of an open position, and that is exactly
             # what this keeps at full rate.
@@ -552,7 +611,7 @@ class DeskService:
                        else self.cfg.idle_poll_seconds)
 
     def _bar_boundary_passed(self, tf: Optional[str] = None) -> bool:
-        """Could a new bar of THIS timeframe plausibly have closed since the last?
+        """Could a new entry-timeframe bar plausibly have closed since the last?
 
         Pure clock arithmetic, no network. Returns True in a short window after
         each boundary so the venue has time to publish the closed candle, and
@@ -568,8 +627,8 @@ class DeskService:
         mins = TF_MINUTES.get(tf)
         if not mins:
             return True                       # unknown timeframe: never gate
-        last_raw = (self.state.last_bar_tfs.get(tf) if tf != self.cfg.entry_tf
-                    else (self.state.last_bar_tfs.get(tf) or self.state.last_bar_ts))
+        last_raw = (self.state.last_bar_tfs.get(tf) or
+                    (self.state.last_bar_ts if tf == self.cfg.entry_tf else None))
         if not last_raw:
             return True
         now = datetime.now(timezone.utc)
@@ -585,24 +644,24 @@ class DeskService:
 
     def _warm(self) -> None:
         for tf in self._tf_list():
-            n = channel_history_bars(tf, self.cfg.history_bars)
-            bars = list(self.feed.bars(tf, n))
-            self._channels[tf] = {
-                "bars": bars, "sw": swings(bars), "atrs": atr(bars),
-                "htf_cache": None, "htf_cached_at": 0.0}
+            bars = list(self.feed.bars(tf, channel_history_bars(tf, self.cfg.history_bars)))
+            self._channels[tf] = {"bars": bars, "sw": swings(bars), "atrs": atr(bars),
+                                  "htf_cache": None, "htf_cached_at": 0.0}
             log.info("warmed %s: %d bars, last close %s", tf, len(bars),
                      bars[-1].ts if bars else "-")
+        home = self._channels.get(self.cfg.entry_tf, {})
+        self._bars, self._sw, self._atrs = (home.get("bars", []), home.get("sw", []),
+                                            home.get("atrs", []))
 
     def _tf_list(self) -> tuple:
-        """The evaluation timeframes, home timeframe first, de-duplicated."""
         tfs = list(self.cfg.timeframes) or [self.cfg.entry_tf]
         if self.cfg.entry_tf not in tfs:
             tfs.insert(0, self.cfg.entry_tf)
-        return tuple(dict.fromkeys(t for t in tfs if t in TF_MINUTES))
+        return tuple(dict.fromkeys(t.upper() for t in tfs if t.upper() in TF_MINUTES))
 
     def _maybe_close_bar(self, tf: Optional[str] = None,
                          quote: Optional[tuple] = None) -> None:
-        """Process ONE timeframe's bar exactly once, on its close, never forming.
+        """Process a bar exactly once, on its close, never while forming.
 
         `quote` is the one the loop already fetched this iteration. Passing it
         avoids a third round trip for a tick that is at most one poll old — on
@@ -610,9 +669,7 @@ class DeskService:
         cost is paid on every close.
         """
         tf = tf or self.cfg.entry_tf
-        ch = self._channels.get(tf)
-        n = channel_history_bars(tf, self.cfg.history_bars)
-        bars = list(self.feed.bars(tf, n))
+        bars = list(self.feed.bars(tf, channel_history_bars(tf, self.cfg.history_bars)))
         if len(bars) < 2:
             return
         # LiveFeed.bars() drops the forming bar itself and documents that it
@@ -623,51 +680,105 @@ class DeskService:
         closed = bars[-1]
         last = self.state.last_bar_tfs.get(tf)
         if last is None and tf == self.cfg.entry_tf:
-            last = self.state.last_bar_ts     # pre-multi-tf checkpoint
+            last = self.state.last_bar_ts
         if last == closed.ts.isoformat():
             return
-        if ch is None:
-            ch = self._channels[tf] = {"bars": bars, "htf_cache": None,
-                                       "htf_cached_at": 0.0}
-        ch["bars"] = bars
-        ch["sw"] = swings(bars)
-        ch["atrs"] = atr(bars)
+        ch = self._channels.setdefault(tf, {})
+        ch["bars"], ch["sw"], ch["atrs"] = bars, swings(bars), atr(bars)
+        if tf == self.cfg.entry_tf:
+            self._bars, self._sw, self._atrs = bars, ch["sw"], ch["atrs"]
         i = len(bars) - 1
         htf_state = self._htf_state(tf)
         bid, ask, age = quote if quote is not None else self.feed.quote()
         htf_name, htf_factor = TF_HTF.get(tf, (self.cfg.htf, 16))
-        try:
-            self.desk.on_bar(bars, i, visible_swings(ch["sw"], i), ch["atrs"],
-                             htf_state, (bid, ask, age),
-                             (f"{tf} close {closed.ts:%Y-%m-%d %H:%M}",),
-                             tf=tf, htf_factor=htf_factor, htf_name=htf_name)
-        except Exception as e:
-            log.exception("on_bar failed at %s %s: %s", tf, closed.ts, e)
+        live_frames = self._live_chart_frames()
+        args = (bars, i, visible_swings(ch["sw"], i), ch["atrs"], htf_state,
+                (bid, ask, age), (f"{tf} close {closed.ts:%Y-%m-%d %H:%M}",))
+        kwargs = {"tf": tf, "htf_factor": htf_factor, "htf_name": htf_name,
+                  "live_frames": live_frames}
+        self._submit_analysis(args, kwargs, tf, closed.ts)
         self.state.last_bar_tfs[tf] = closed.ts.isoformat()
         if tf == self.cfg.entry_tf:
             self.state.last_bar_ts = closed.ts.isoformat()
         self.state.bars_processed += 1
         self.checkpoint()
 
-    def _htf_state(self, tf: Optional[str] = None):
-        """Higher-timeframe structure for THIS arm, from TRUE aggregation.
+    def _run_analysis(self, args: tuple, kwargs: dict, tf: str,
+                      ts: datetime) -> None:
+        try:
+            self.desk.on_bar(*args, **kwargs)
+        except Exception as e:                         # noqa: BLE001
+            log.exception("on_bar failed at %s %s: %s", tf, ts, e)
 
-        CACHED per arm. At M15 entry and H4 context, the H4 structure is
-        identical across sixteen consecutive M15 closes, so re-requesting 200
-        H4 candles each time bought nothing and cost a large request. The cache
-        expires on time rather than on count so an unusual timeframe pairing
-        cannot make it stale by accident.
+    def _submit_analysis(self, args: tuple, kwargs: dict, tf: str,
+                         ts: datetime) -> None:
+        self._poll_analysis()
+        item = (args, kwargs, tf, ts)
+        if self._analysis_future is None:
+            self._analysis_started_at = time.monotonic()
+            self._analysis_future = self._analysis_pool.submit(
+                self._run_analysis, args, kwargs, tf, ts)
+            return
+        # Keep only the freshest world. Analysing every intermediate close
+        # after a slow response is not frequency; it is trading the past.
+        old = self._analysis_pending
+        self._analysis_pending = item
+        if old is None:
+            log.info("analyst busy; retained latest %s packet at %s", tf, ts)
+        else:
+            log.info("analyst busy; replaced pending %s packet with fresher %s %s",
+                     old[2], tf, ts)
+
+    def _poll_analysis(self) -> None:
+        future = self._analysis_future
+        if future is None or not future.done():
+            return
+        try:
+            future.result()
+        except Exception as e:                         # defensive; worker logs too
+            log.exception("analyst worker failed: %s", e)
+        elapsed = time.monotonic() - self._analysis_started_at
+        log.info("analyst worker completed in %.1fs; tick observer remained live", elapsed)
+        self._analysis_future = None
+        self.checkpoint()
+        if self._analysis_pending is not None:
+            args, kwargs, tf, ts = self._analysis_pending
+            self._analysis_pending = None
+            self._analysis_started_at = time.monotonic()
+            self._analysis_future = self._analysis_pool.submit(
+                self._run_analysis, args, kwargs, tf, ts)
+
+    def _live_chart_frames(self) -> dict[str, list[Bar]]:
+        """One synchronized current packet, cached only across the same wake."""
+        now = time.monotonic()
+        if self._live_chart_cache and now - self._live_chart_cached_at < 2.0:
+            return self._live_chart_cache
+        packet: dict[str, list[Bar]] = {}
+        for tf in ("M1", "M5", "M15", "H1", "H4"):
+            try:
+                packet[tf] = self.feed.live_bars(tf, 120)
+            except Exception as e:
+                log.warning("live %s chart unavailable for this packet: %s", tf, e)
+        self._live_chart_cache, self._live_chart_cached_at = packet, now
+        return packet
+
+    def _htf_state(self, tf: Optional[str] = None):
+        """Higher-timeframe structure from TRUE aggregation, never sampling.
+
+        CACHED. At M15 entry and H4 context, the H4 structure is identical
+        across sixteen consecutive M15 closes, so re-requesting 200 H4 candles
+        each time bought nothing and cost a large request. The cache expires on
+        time rather than on count so an unusual timeframe pairing cannot make it
+        stale by accident.
         """
         tf = tf or self.cfg.entry_tf
-        ch = self._channels.get(tf)
-        if ch is None:
-            return None
+        ch = self._channels.setdefault(tf, {"htf_cache": None, "htf_cached_at": 0.0})
         now = time.monotonic()
         if (ch.get("htf_cache") is not None
-                and now - ch["htf_cached_at"] < self.cfg.htf_cache_seconds):
+                and now - ch.get("htf_cached_at", 0.0) < self.cfg.htf_cache_seconds):
             return ch["htf_cache"]
         try:
-            htf_bars = list(self.feed.bars(TF_HTF.get(tf, (self.cfg.htf,))[0], 200))
+            htf_bars = self.feed.bars(TF_HTF.get(tf, (self.cfg.htf, 16))[0], 200)
             if len(htf_bars) < 30:
                 return None
             # Same contract, same fix. Dropping one more here made the higher
@@ -684,22 +795,6 @@ class DeskService:
             # Do NOT cache a failure as "no HTF context" — a transient error
             # would then suppress higher-timeframe state for the whole window.
             return None
-
-    def _post_daily_track(self) -> None:
-        """Once a day, tell the operator what the channel actually delivered.
-
-        Drawn from the ledger by a deterministic renderer, so the posted number
-        and the journalled number cannot drift. The 24h window sits beside the
-        all-time figure — a desk can have a good day forever and still be
-        bleeding, and the daily line is what catches that.
-        """
-        try:
-            from .daily_track import collect, render
-            rows = Ledger(self.cfg.ledger_path).read_all()
-            self._notify(render(collect(rows, window_h=24.0), title="LAST 24H")
-                         + "\n\n" + render(collect(rows), title="ALL TIME"))
-        except Exception as e:                    # reporting must never halt trading
-            log.warning("daily track report failed: %s", e)
 
     def _notify(self, text: str) -> None:
         """Never propagates — but no longer discards.
@@ -739,6 +834,7 @@ class DeskService:
 
 def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   provider_spec: str = "anthropic:claude-opus-5",
+                  provider_effort: Optional[str] = None,
                   vision: Vision = Vision.NUMERIC_PLUS_CHARTS,
                   cfg: Optional[ServiceConfig] = None,
                   secrets_dir: str = "secrets",
@@ -752,7 +848,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   spread_profile_path: str = "config/spread_profile.json",
                   declared_spread: Optional[float] = None,
                   broker_limits: Optional[BrokerLimits] = None,
-                  provider_effort: Optional[str] = None,
+                  enable_macro: bool = True,
+                  wake_on_bar_close: bool = False,
                   fallback_provider_specs: Sequence[str] = ("codex:gpt-5.6-sol",),
                   specialists: Optional[dict] = None) -> DeskService:
     """Wire the real client, feed, desk and sink. One call, one deployed desk.
@@ -763,14 +860,13 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     non-MT5 feed cannot quietly supply its own.
     """
     from .providers import build_provider_chain
-    from .specialists import build_desk_council
+    from .specialists import build_desk_council, built_in_sensor_specialists
     cfg = cfg or ServiceConfig(symbol=symbol)
     if timeframes:
-        cfg.timeframes = tuple(timeframes)
+        cfg.timeframes = tuple(t.upper() for t in timeframes)
         if cfg.entry_tf not in cfg.timeframes:
             cfg.entry_tf = cfg.timeframes[0]
-    log.info("evaluation arms: %s (home %s)", ",".join(cfg.timeframes),
-             cfg.entry_tf)
+    log.info("evaluation arms: %s (home %s)", ",".join(cfg.timeframes), cfg.entry_tf)
     if feed_backend == "oanda":
         from .feed_oanda import OandaClient
         client = OandaClient(instrument=os.environ.get("OANDA_INSTRUMENT", "XAU_USD"))
@@ -843,35 +939,161 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     # once at boot from the ledger; None until there is enough of it, which the
     # decomposition reports as UNKNOWN rather than as "familiar".
     history = None
+    cohorts = None
+    rows: list = []          # bound BEFORE the try: the self-audit below reads
+                             # it, and an exception here must leave it empty
+                             # rather than unbound.
     try:
         from .regime import load_history
         rows = Ledger(cfg.ledger_path).read_all()
         history = load_history(rows) or None
         log.info("regime history: %d resolved trades to compare against",
                  len(history or []))
-    except Exception as e:
-        log.info("no regime history yet (%s) — novelty will read UNKNOWN", e)
 
-    provider_kw = {"effort": provider_effort} if provider_effort else {}
+        # MEASURED COHORTS, FROM THE DESK'S OWN RESOLVED TRADES.
+        #
+        # THIS IS WHAT MADE THE DESK UNABLE TO LEARN. `build_cohorts` existed,
+        # was correct, and was called by adapt.py and acceptance.py -- never by
+        # the thing that builds the LIVE desk. So `LiveDesk.cohorts` was None
+        # forever, and every consumer silently degraded to its no-history path:
+        #
+        #   ev_gate      took the COLD_START_PRIOR branch on EVERY decision, no
+        #                matter how many trades had resolved -- so a mechanism
+        #                with eighty wins was priced exactly like one never
+        #                traded
+        #   _size        adaptive sizing saw cohort_n=0 and could not size to
+        #                measured edge
+        #   _edge_r      no measured edge, so execution advice stayed silent
+        #   evidence_tier could never reach T1 MEASURED, by construction
+        #
+        # Every part worked. Nothing joined them, so the desk re-derived
+        # ignorance at every boot. The same `rows` was already being read one
+        # line above for regime history and then thrown away.
+        #
+        # Refreshed at BOOT rather than continuously: outcomes resolve over
+        # hours, the desk restarts on every logon, watchdog relaunch and deploy,
+        # and a cohort that moves mid-session would make two decisions in the
+        # same hour incomparable. Boot is frequent enough and is a clean seam.
+        from .opportunity import build_cohorts
+        cohorts = build_cohorts(rows) or None
+        if cohorts:
+            top = sorted(cohorts.values(), key=lambda c: -c.n)[:3]
+            log.info("cohorts: %d mechanism(s) with resolved history — %s",
+                     len(cohorts),
+                     ", ".join(f"{c.key} n={c.n} hit {c.hit_rate_shrunk:.0%}"
+                               for c in top))
+        else:
+            log.info("cohorts: NONE resolved yet — every mechanism prices off "
+                     "the cold-start prior until trades resolve")
+    except Exception as e:
+        log.info("no regime history or cohorts yet (%s) — novelty will read "
+                 "UNKNOWN and every mechanism stays cold-start", e)
+
+    # MACRO. Built here rather than inside LiveDesk so the desk keeps taking a
+    # plain callable and stays testable without a network. None means no feed,
+    # and every brief then renders MACRO CONTEXT: UNMEASURED -- the honest
+    # state, not a silent omission.
+    #
+    # This closes the last unwired link on the macro path: macro_context could
+    # build a block and MarketBrief could carry one, but nothing ever
+    # CONSTRUCTED a provider, so the analyst would have read UNMEASURED forever
+    # while every individual part looked correctly wired.
+    macro_fn = None
+    if enable_macro:
+        def macro_fn():
+            from .drivers_free import build_drivers
+            from .drivers_mt5 import build_from
+            from .macro_context import from_drivers
+            try:
+                points = build_drivers(os.environ.get("FRED_API_KEY"))
+            except Exception as e:                     # noqa: BLE001
+                # A DEAD WEB FEED MUST NOT MEAN NO MACRO. yfinance broke twice
+                # in two days -- "possibly delisted" for DX-Y.NYB/^GSPC/^VIX on
+                # 2026-08-27, not importable at all on 2026-08-28 -- and each
+                # time the analyst silently lost every macro variable while
+                # every component reported healthy.
+                log.warning("web driver feed failed (%s) — falling back to the "
+                            "execution terminal", e)
+                points = {}
+            # FILLS GAPS ONLY. A driver the web feed really observed is the
+            # actual series and is never overridden by the terminal's proxy.
+            client = getattr(feed, "client", None)
+            if client is not None:
+                from .crossmarket_mt5 import collect
+                points, note = build_from(points, collect(client))
+                if note:
+                    log.info("macro: %s", note)
+            return from_drivers(points)
+        log.info("macro feed: drivers_free (dxy, spx, vix, real_yield_10y, "
+                 "breakeven_10y) on the desk's own refresh cadence")
+    else:
+        log.info("macro feed DISABLED -- briefs render MACRO CONTEXT: UNMEASURED, "
+                 "which the analyst is told to treat as absent, not neutral")
+
+    # CROSS-MARKET FROM THE EXECUTION TERMINAL. The macro leg above goes to
+    # Yahoo, and on 2026-08-27 Yahoo returned "possibly delisted" for DX-Y.NYB,
+    # ^GSPC and ^VIX at the same moment -- three of the most quoted series in
+    # the world do not delist on one afternoon, so that was the API. Every brief
+    # that day read MACRO CONTEXT: UNMEASURED while this process held an
+    # authenticated connection to a broker quoting silver, the dollar and
+    # indices on the SAME CLOCK as its own bars.
+    #
+    # This does not replace drivers_free: real yields and breakevens need a rate
+    # curve no broker quotes. It means the analyst is not left with NOTHING when
+    # the web feed fails.
+    def crossmarket_fn():
+        from .crossmarket_mt5 import collect
+        client = getattr(feed, "client", None)
+        if client is None:
+            return None
+        return collect(client, gold_price=getattr(desk, "last_bid", None)).render()
+
+    provider_kw = {"effort": provider_effort} if provider_effort is not None else {}
     primary_name = provider_spec.partition(":")[0]
     fallbacks = (() if primary_name in {"deterministic", "replay", "codex"}
                  else tuple(fallback_provider_specs))
     provider = build_provider_chain(provider_spec, fallbacks,
                                     fallback_kw={"effort": "high"},
                                     **provider_kw)
-    desk = LiveDesk(provider, Ledger(cfg.ledger_path),
+    desk = LiveDesk(provider,
+                    Ledger(cfg.ledger_path),
                     sink, shadow=shadow, vision=vision, broker=broker,
                     cost_model=cost_model,
                     shadow_management=shadow_management,
                     shadow_contextual=shadow_contextual,
                     universe_mode=universe_mode,
+                    cohorts=cohorts,
+                    crossmarket_provider=crossmarket_fn,
                     calendar=calendar, regime_history=history,
-                    specialist_council=build_desk_council(specialists))
+                    macro_provider=macro_fn,
+                    wake_on_bar_close=wake_on_bar_close,
+                    entry_tf=cfg.entry_tf,
+                    quote_provider=feed.quote,
+                    specialist_council=build_desk_council(
+                        built_in_sensor_specialists() if specialists is None
+                        else specialists))
 
     # WHO HAS AUTHORITY over the open position. An explicit production decision:
     # the desk ships with Claude forming the entry judgement and a deterministic
     # heuristic running the lifecycle, and that asymmetry should be chosen out
     # loud rather than inherited from a default nobody revisited.
+    # WIRING SELF-AUDIT. run_desk.py's preflight checks the WORLD -- MT5, the
+    # broker, Telegram -- and every one of those passed all day on 2026-08-27
+    # while the desk was broken in five places. None was a world problem: each
+    # was a JOIN between two components that both worked and both passed their
+    # own tests. A join is invisible to any check that looks at one side of it.
+    #
+    # Reports, never blocks. A desk that refuses to start because an audit is
+    # unhappy is worse than one that starts and says so loudly.
+    try:
+        from .self_audit import audit, render
+        _findings = audit(rows, cohorts)
+        for _line in render(_findings).splitlines():
+            log.warning(_line) if any(not f.ok for f in _findings) else log.info(_line)
+    except Exception as e:                            # noqa: BLE001
+        log.warning("self-audit skipped (%s) — wiring is UNVERIFIED, which is "
+                    "not the same as verified-good", e)
+
     desk.set_management(management)
     log.info("management authority: %s (shadow=%s, contextual shadowed=%s)",
              management, shadow_management, shadow_contextual)

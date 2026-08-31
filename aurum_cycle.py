@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -82,7 +83,7 @@ def _rows(path: Path | None = None, limit: int = 100_000) -> list:
     """
     path = path if path is not None else LEDGER
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = path.read_text(encoding='utf-8').splitlines()
     except OSError:
         return []
     out = []
@@ -110,15 +111,35 @@ def step_evidence(ctx: dict) -> str:
     ctx["rows"] = rows
     rs = _resolved_r(rows)
     ctx["r_multiples"] = rs
-    refusals = [r for r in rows if str(r.get("kind", "")).upper()
-                in ("NO_SETUP", "REFUSED", "REFUSAL", "VETO", "BLOCKED")]
+    # MATCH THE KINDS THE LEDGER ACTUALLY WRITES. This was an exact-membership
+    # test against ("NO_SETUP", "REFUSED", "REFUSAL", "VETO", "BLOCKED") — five
+    # strings, NOT ONE of which DecisionKind emits. `golddesk/ledger.py` writes
+    # REFUSAL_MODEL / REFUSAL_COMPILER / REFUSAL_ROUTER, so this matched zero
+    # rows on a ledger full of refusals and the cycle reported "0 refusals
+    # recorded" — absence read as a clean answer, on the exact quantity the
+    # desk exists to measure. Verified against the live ledger: 0 of 2
+    # REFUSAL_MODEL rows matched before this change. `missed_money.py` had the
+    # prefix test right all along; the two now agree, and
+    # test_aurum_cycle.py pins them to each other.
+    refusals = [r for r in rows if str(r.get("kind", "")).upper().startswith("REFUSAL")]
     ctx["refusals"] = refusals
+    # BLIND is counted and reported SEPARATELY and never folded into refusals.
+    # A bar the analyst never answered is not a decision to stand aside, and
+    # summing them would let an outage read as discipline.
+    blind = [r for r in rows if str(r.get("kind", "")).upper() == "BLIND"]
+    ctx["blind"] = blind
     if not rows:
         return ("LEDGER EMPTY. No forward evidence exists yet, so every number "
                 "below is a null and not a result. This is the honest state of a "
                 "desk that has not yet run, not a finding about gold.")
-    return (f"{len(rows)} ledger rows | {len(rs)} resolved | "
+    line = (f"{len(rows)} ledger rows | {len(rs)} resolved | "
             f"{len(refusals)} refusals recorded")
+    if blind:
+        line += (f"\n{len(blind)} BLIND bars — the analyst never answered on these. "
+                 "They are NOT refusals: nothing decided anything, so no gate "
+                 "earns credit for them and the evidence they would have "
+                 "produced is simply missing.")
+    return line
 
 
 def step_growth(ctx: dict) -> str:
@@ -219,6 +240,26 @@ def step_absorb(ctx: dict) -> str:
     # on any given night; the cycle is not.
     qroot = os.environ.get("AURUM_QUANT_ROOT", "").strip()
     if qroot:
+        # UPDATE THE CHECKOUT BEFORE SCANNING IT. Without this, "absorbs as
+        # quant grows" is a lie unless a human remembers to `git pull` the
+        # checkout by hand between cycles — the scan would silently keep
+        # reading whatever snapshot was on disk the day it was cloned. Same
+        # swallow-on-failure rule as the rest of this function: a detached
+        # HEAD, a dirty tree, or no network degrades to "scan what's already
+        # there", never to a broken cycle.
+        if (Path(qroot) / ".git").is_dir():
+            try:
+                pull = subprocess.run(
+                    ["git", "-C", qroot, "pull", "--ff-only"],
+                    capture_output=True, text=True, timeout=120)
+                if pull.returncode == 0:
+                    log(f"  quant checkout updated: {pull.stdout.strip() or '(already current)'}")
+                else:
+                    log(f"  quant pull failed ({pull.returncode}): "
+                        f"{pull.stderr.strip()[:200]}; scanning checkout as-is")
+            except Exception as e:                               # noqa: BLE001
+                log(f"  quant pull skipped ({type(e).__name__}: {e}); "
+                    f"scanning checkout as-is")
         try:
             from golddesk.absorb_auto import to_inbox
             res = to_inbox(Path(qroot), inbox)
@@ -250,7 +291,7 @@ def step_absorb(ctx: dict) -> str:
 def step_channel(ctx: dict) -> str:
     """Is the desk's only product actually reaching anybody?"""
     try:
-        st = json.loads((STATE_DIR / "service_state.json").read_text())
+        st = json.loads((STATE_DIR / "service_state.json").read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError):
         return ("no service checkpoint — the desk has not run, so channel health "
                 "is UNKNOWN rather than healthy.")
@@ -289,7 +330,7 @@ def step_mining(ctx: dict) -> str:
                 f"while every timestamp still looks ordinary. Write the offset "
                 f"(e.g. 3) to that file.")
     try:
-        offset = float(off_file.read_text().strip())
+        offset = float(off_file.read_text(encoding='utf-8').strip())
     except ValueError:
         return f"{off_file} is not a number; refusing to guess an offset."
 
@@ -377,6 +418,102 @@ def step_decay(ctx: dict) -> str:
     return h.render() + "\n\n  DETECTION LATENCY\n" + tail + (
         "\n    A thin edge cannot be protected by monitoring: by the time decay "
         "is provable it has been paid for.")
+
+
+def step_flows(ctx: dict) -> str:
+    """Refresh who is holding the metal: ETF tonnage and speculative positioning.
+
+    Collected on the CYCLE, not on the decision path -- an analyst read must never wait on, or
+    fail because of, spdrgoldshares.com. The brief reads the cache this leaves behind, and an
+    absent or stale cache renders UNMEASURED inside the block rather than as a zero.
+
+    Both series fail independently and fall back independently: GLD publishes daily, COT weekly
+    with a publication lag, so one being down must not blank the other.
+    """
+    from golddesk.flows import collect
+    from golddesk.runner import FLOWS_CACHE
+
+    st = collect(FLOWS_CACHE)
+    out = st.to_prompt()
+    if st.errors:
+        out += ("\n  FETCH ERRORS: "
+                + "; ".join(f"{k}: {v}" for k, v in sorted(st.errors.items()))
+                + "\n  Cached values were used where available, WITH their age -- a fetch "
+                  "failure must not silently become a fresh-looking number.")
+    return out
+
+
+def step_stop_autopsy(ctx: dict) -> str:
+    """Was the thesis wrong, or was the stop in the way?
+
+    A stopped-out trade writes -1.0R and nothing else, and that one number
+    cannot separate "stop trading this mechanism" from "give it more room" --
+    two fixes that point in opposite directions. The SIGNAL row already carries
+    the forward excursion the idea achieved INDEPENDENT of the stop; this joins
+    it to the close. Reports only.
+    """
+    from golddesk.stop_autopsy import autopsy, render
+    items = autopsy(ctx.get("rows") or [])
+    ctx["stop_autopsy"] = items
+    return render(items)
+
+
+def step_stop_autopsy(ctx: dict) -> str:
+    """Was the thesis wrong, or was the stop simply in the way?
+
+    A stopped-out trade writes -1.0R and nothing else, and that one number
+    cannot separate "stop trading this mechanism" from "give it more room" --
+    two fixes pointing in opposite directions. The SIGNAL row already carries
+    the excursion the IDEA achieved, resolved forward from the decision moment
+    and independent of where the stop sat; this joins it to the close. Reports
+    only: it cannot move a stop or refuse anything.
+    """
+    from golddesk.stop_autopsy import autopsy, render
+    items = autopsy(ctx.get("rows") or [])
+    ctx["stop_autopsy"] = items
+    return render(items)
+
+
+def step_missed_money(ctx: dict) -> str:
+    """What the refusals actually cost -- counting only money that was GETTABLE.
+
+    A refusal's forward path says what price did next; it does NOT say the desk could have
+    participated. missed_money.py exists precisely to separate those, because conflating them
+    inflates every "this gate cost you R" number in one direction -- upward -- which is the
+    direction that argues for removing gates. It was written, tested, and run by nothing: its
+    `__main__` block defaults to `backtest_out/ledger-A-test*.jsonl`, so the LIVE ledger was
+    never its subject. Wired here because a desk that grades only what it took cannot see its
+    false negatives, and refusals are the majority of what this analyst produces.
+    """
+    import missed_money
+
+    if not LEDGER.exists():
+        return "no ledger yet -- UNMEASURED, not zero missed money."
+    rows = missed_money.load([LEDGER])
+    if not rows:
+        return ("ledger present but no rows this run -- UNMEASURED. A refusal that has not "
+                "resolved forward yet is pending, not free.")
+    return missed_money.report(rows)
+
+
+def step_mgmt_counterfactual(ctx: dict) -> str:
+    """What the OTHER management policies would have produced on the identical path.
+
+    Management is roughly half of realised R, and this desk runs `heuristic` while shadowing
+    the alternatives -- but shadowing only records what each policy would have CHOSEN. What
+    those choices would have PRODUCED needs the excursion path, which the ledger persists, and
+    that half was computed by a script nothing scheduled. No market re-simulation is involved:
+    the path is what happened, and only the desk's response to it changes.
+    """
+    import mgmt_counterfactual
+
+    if not LEDGER.exists():
+        return "no ledger yet -- UNMEASURED, not a verdict that heuristic is best."
+    rows = mgmt_counterfactual.load([LEDGER])
+    if not rows:
+        return ("no management traces carrying a persisted path yet -- UNMEASURED. The arms "
+                "cannot be compared until closed positions carry their excursions.")
+    return mgmt_counterfactual.report(rows)
 
 
 def step_levers(ctx: dict) -> str:
@@ -477,6 +614,9 @@ def step_intake(ctx: dict) -> str:
 
 STEPS = (
     ("evidence", step_evidence),
+    # Early: the brief reads the cache this refreshes, so a stale flows file should be
+    # renewed before anything downstream reasons about the day.
+    ("flows", step_flows),
     ("shadow", step_shadow),
     ("intake", step_intake),
     ("channel", step_channel),
@@ -485,6 +625,14 @@ STEPS = (
     ("regime", step_regime),
     ("census", step_census),
     ("decay", step_decay),
+    # AFTER decay, BEFORE levers, and the position is load-bearing. `levers` asks where the
+    # next unit of effort buys the most growth, and it cannot rank honestly while the cost of
+    # the desk's REFUSALS and the value of its management arms are both invisible -- the two
+    # numbers most likely to move that ranking. Both scripts existed and were run by nothing.
+    ("stop_autopsy", step_stop_autopsy),
+    ("stop_autopsy", step_stop_autopsy),
+    ("missed_money", step_missed_money),
+    ("mgmt_counterfactual", step_mgmt_counterfactual),
     ("levers", step_levers),
     ("mining", step_mining),
     ("entries", step_entries),
@@ -510,7 +658,7 @@ def run(force: bool = False, dry: bool = False) -> int:
     state = {}
     if CYCLE_STATE.exists():
         try:
-            state = json.loads(CYCLE_STATE.read_text())
+            state = json.loads(CYCLE_STATE.read_text(encoding='utf-8'))
         except json.JSONDecodeError:
             state = {}
     if state.get("last_run") == today and not force:
@@ -563,7 +711,7 @@ def run(force: bool = False, dry: bool = False) -> int:
         state["last_run"] = today
         state["last_failed_steps"] = failed
         state["version"] = CYCLE_VERSION
-        CYCLE_STATE.write_text(json.dumps(state, indent=2))
+        CYCLE_STATE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
     log(f"daily cycle {today} done"
         + (f" -- FAILED: {', '.join(failed)}" if failed else ""))

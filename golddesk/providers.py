@@ -30,6 +30,38 @@ from .chart import Chart
 log = logging.getLogger(__name__)
 
 
+def strict_output_schema(schema: dict) -> dict:
+    """Return the fully recursive strict-JSON transport form OpenAI requires.
+
+    Pydantic marks only non-default fields required and nested models live in
+    `$defs`. Structured Outputs requires *every* object at every depth to deny
+    extra keys and list every property as required (nullable fields remain
+    nullable). Applying this only at the universe root caused the live GPT
+    analyst to fail before inference as soon as PathForecast was added.
+    """
+    out = json.loads(json.dumps(schema))
+
+    def visit(node):
+        if isinstance(node, dict):
+            # Pydantic represents a defaulted enum/model as `$ref` plus a
+            # sibling `default`. OpenAI's strict validator rejects any such
+            # sibling before inference. Every property is required below, so
+            # transport defaults are both illegal and unnecessary.
+            node.pop("default", None)
+            props = node.get("properties")
+            if isinstance(props, dict):
+                node["additionalProperties"] = False
+                node["required"] = list(props)
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for value in node:
+                visit(value)
+
+    visit(out)
+    return out
+
+
 @dataclass(frozen=True)
 class ProviderRead:
     read: AnalystRead
@@ -44,6 +76,11 @@ class ProviderRead:
 
 
 class AnalystError(RuntimeError):
+    pass
+
+
+class AnalystQuotaError(AnalystError):
+    """A subscription ceiling, not an invocation defect or transient parse."""
     pass
 
 
@@ -335,8 +372,16 @@ class ClaudeCodeAnalyst(AnalystProvider):
     that is 46 to 92 reads a day, which prices out at roughly $290-580 a month
     against an account of EUR 1,500. budget.py's own docstring predicted this
     exactly: at a small account an analyst call can cost more than the trade
-    makes. The CLI authenticates against a Pro/Max subscription, so the same
-    read consumes subscription quota rather than dollars.
+    makes. Routed through the CLI under a Pro/Max subscription, the same read
+    consumes subscription quota rather than dollars.
+
+    THE LIVE DESK RUNS ON A MAX SUBSCRIPTION (operator, 2026-08-28), which is
+    what makes the cadence above affordable and is the premise every cost number
+    downstream rests on. It is worth stating explicitly because NOTHING IN A
+    READ PROVES IT: total_cost_usd comes back either way, as API-EQUIVALENT
+    dollars, so the envelope cannot distinguish a subscription read from a
+    metered one. See billing_basis(), which labels the assumption instead of
+    passing it off as a measurement.
 
     WHAT IT COSTS INSTEAD, MEASURED NOT ASSUMED. Claude Code injects its own
     scaffolding: a trivial prompt with --system-prompt replacing the default
@@ -364,28 +409,153 @@ class ClaudeCodeAnalyst(AnalystProvider):
         "Return ONLY a single JSON object conforming to this JSON Schema. No "
         "prose, no explanation, no markdown code fences.\n\nSCHEMA:\n{schema}\n")
 
+    #: Matches AnthropicAnalyst's own accepted values exactly -- confirmed
+    #: against `claude --help`, which documents this literal set for its own
+    #: --effort flag. A value neither side accepts is not a case worth coding
+    #: for defensively; it is caught by choices= on the argparse flag that
+    #: feeds this, the same way an invalid --management value already is.
+    EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+    #: 240s was measured too tight on 2026-08-26: the live desk logged "claude timed out after
+    #: 240.0s" on repeated reads (22:00, 23:32), each one discarded as a refusal. A reasoning
+    #: model asked for a full structured read legitimately spends minutes, so the old bound was
+    #: cutting off sound work rather than catching a hang.
+    #:
+    #: THE CEILING IS THE READ CADENCE, NOT COMFORT. Observed live gaps between reads ran ~15
+    #: to ~75 minutes, so the shortest real gap is about 15 minutes; a timeout at or above that
+    #: would let one slow call still be running when the next bar's read begins, which is the
+    #: failure this bound exists to prevent. 600s keeps a comfortable margin under that floor
+    #: while giving 2.5x the room -- a call still running at ten minutes is genuinely wedged.
+    DEFAULT_TIMEOUT_S = 600.0
+
+    #: The degraded retry. `low` is the floor of EFFORTS, and 240s was the OLD full budget --
+    #: known from production to be enough for many reads, so it is a measured fallback rather
+    #: than a guessed one. 600 + 240 = 840s worst case, inside the 900s M15 bar that bounds the
+    #: whole exchange. Raising either number without re-checking that sum reintroduces the
+    #: backlog the bar bound exists to prevent.
+    FALLBACK_EFFORT = "low"
+    FALLBACK_TIMEOUT_S = 240.0
+
     def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
-                 timeout_s: float = 240.0, cwd: Optional[str] = None,
+                 timeout_s: float = DEFAULT_TIMEOUT_S, cwd: Optional[str] = None,
                  billed: Optional[bool] = None, runner: Any = None,
-                 effort: str = "medium"):
+                 effort: Optional[str] = None, retry_on_timeout: bool = True):
         self.model, self.binary, self.timeout_s = model, binary, timeout_s
         self.cwd, self._billed, self._runner = cwd, billed, runner
         self.effort = effort
+        self.retry_on_timeout = retry_on_timeout
+
+    #: Operator's declaration of how the CLI is paid for: "api" or
+    #: "subscription". Set in the environment, because it is a property of the
+    #: BOX's login rather than of any one desk run.
+    BILLING_ENV = "AURUM_CLI_BILLING"
+
+    def billing_basis(self) -> str:
+        """HOW the billing question was answered, not just what the answer was.
+
+        WHY THIS EXISTS SEPARATELY FROM billed(). The old heuristic modelled two
+        cases -- an API key in the environment means metered, its absence means
+        subscription -- and a bare False is returned for the second WITHOUT
+        having established it. That is a guess wearing a finding's clothes, and
+        budget.py cannot tell the two apart from a 0.0.
+
+        THE LIVE DESK RUNS ON A MAX SUBSCRIPTION (operator, 2026-08-28), so
+        "assumed_subscription" happens to be right there and cost_usd 0.0 is
+        the correct stamp. This is not a claim that it is wrong; it is a record
+        that nothing in a read PROVES it. Nothing in the CLI's JSON envelope
+        distinguishes the bases -- total_cost_usd is reported either way, as
+        API-equivalent dollars -- so the only way to turn the assumption into a
+        fact is for the box to declare it (BILLING_ENV).
+
+        So the answer now carries its provenance rather than laundering a guess
+        into a measurement. Nothing about the desk's behaviour changes.
+        """
+        if self._billed is not None:
+            return "explicit"
+        declared = (os.environ.get(self.BILLING_ENV) or "").strip().lower()
+        if declared in ("api", "metered", "billed"):
+            return "declared_api"
+        if declared in ("subscription", "sub", "max", "pro"):
+            return "declared_subscription"
+        if (os.environ.get("ANTHROPIC_API_KEY") or "").strip():
+            return "api_key_present"
+        return "assumed_subscription"
 
     def billed(self) -> bool:
         """Whether these tokens are being charged in dollars.
 
-        HEURISTIC, AND LABELLED AS ONE. Claude Code bills against a metered API
-        key when one is present and against the subscription otherwise, and it
-        does not report which it used. So this reads the environment and the
-        operator can override it. It matters because budget.py prices tokens at
-        API list: reporting real dollars for a subscription read would overstate
-        cost, and reporting zero for an API-key read would hide it. Guessing
-        silently in either direction corrupts every net-value number downstream.
+        HEURISTIC WHERE IT HAS TO BE, DECLARED WHERE IT CAN BE. budget.py prices
+        tokens at API list: reporting real dollars for a subscription read
+        overstates cost, and reporting zero for a metered read hides it, so
+        guessing silently in either direction corrupts every net-value number
+        downstream.
+
+        The CLI does not report which basis it used in the JSON envelope -- it
+        reports total_cost_usd either way, as API-EQUIVALENT dollars -- so there
+        is nothing in a read to infer this from. That is why the operator can
+        declare it (see BILLING_ENV), and why the undeclared case is labelled an
+        assumption rather than passed off as a finding.
         """
         if self._billed is not None:
-            return self._billed
-        return bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+            return bool(self._billed)
+        return self.billing_basis() in ("declared_api", "api_key_present")
+
+    @staticmethod
+    def _repair(text: str) -> tuple[str, list[str]]:
+        """Bounded repair of the two schema violations actually observed in production.
+
+        WHY THIS IS NOT "BEING LENIENT WITH THE MODEL". Both repairs are provably incapable of
+        changing what the desk would do, because of how AnalystRead is shaped: every field
+        carrying a DECISION -- setup, direction, entry_ref, stop_ref, tp1_ref, tp2_ref,
+        confidence -- is uncapped and is never touched here. Every field that IS length-capped
+        is prose commentary. So a truncated `why` loses the tail of an explanation and cannot
+        turn a NONE into a LONG; a missing or malformed decision field still fails validation
+        exactly as before, which is the property that matters.
+
+        The two repairs:
+
+          - EXTRA FIELDS ARE DROPPED. `extra: "forbid"` exists on AnalystRead specifically to
+            keep price fields out of the model's output surface ("No price fields exist here by
+            design"), so a model inventing `entry_price` is a violation whose correct handling
+            is to discard it -- which is what the config already intends. Dropping it enforces
+            the schema rather than bypassing it.
+          - OVER-LONG PROSE IS TRUNCATED to the model's own declared cap.
+
+        Caps and the allowed key set are READ OFF AnalystRead rather than restated, so this
+        cannot drift into a second copy of the schema: change a Field(max_length=...) and this
+        follows automatically.
+
+        Returns (possibly-rewritten JSON text, human-readable list of repairs made). An empty
+        repair list means nothing here applied and the caller must surface the original error --
+        silence would turn a genuine schema failure into a shrug.
+        """
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return text, []                       # not JSON at all; not this function's problem
+        if not isinstance(data, dict):
+            return text, []
+
+        allowed = set(AnalystRead.model_fields)
+        caps: dict[str, int] = {}
+        for fname, finfo in AnalystRead.model_fields.items():
+            for meta in finfo.metadata:
+                cap = getattr(meta, "max_length", None)
+                if cap is not None:
+                    caps[fname] = cap
+
+        repairs: list[str] = []
+        for key in [k for k in data if k not in allowed]:
+            data.pop(key)
+            repairs.append(f"dropped forbidden extra field {key!r}")
+        for fname, cap in caps.items():
+            value = data.get(fname)
+            if isinstance(value, str) and len(value) > cap:
+                data[fname] = value[:cap]
+                repairs.append(f"truncated {fname} {len(value)}->{cap} chars")
+        if not repairs:
+            return text, []
+        return json.dumps(data), repairs
 
     @staticmethod
     def _unfence(text: str) -> str:
@@ -401,14 +571,96 @@ class ClaudeCodeAnalyst(AnalystProvider):
         s = s.split("\n", 1)[1] if "\n" in s else ""
         return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
 
-    def _argv(self) -> list[str]:
-        return [self.binary, "-p",
-                "--output-format", "json",
-                "--model", self.model,
-                "--effort", self.effort,
-                "--system-prompt", ANALYST_SYSTEM,
-                "--allowed-tools", "",
-                "--max-turns", "1"]
+    #: Characters of system prompt above which it is moved OFF the command line
+    #: and into stdin.
+    #:
+    #: WHY THIS EXISTS. `--system-prompt` is passed as a single argv element, and
+    #: on Windows a launcher shim that re-invokes through cmd.exe truncates the
+    #: command line at 8,191 characters. Over that, the CLI fails LOCALLY: exit
+    #: 1, is_error true, duration_api_ms 0, zero input and output tokens -- it
+    #: never reaches the API, so it looks like neither a rate limit nor an
+    #: outage nor a timeout.
+    #:
+    #: OBSERVED 2026-08-27/28. universe_system() is 9,098 chars against a
+    #: single-read ANALYST_SYSTEM of 7,226, so the desk answered normally on the
+    #: single-read path and went blind on EVERY survey -- which is exactly the
+    #: shape the ledger showed: every failure carrying stage "survey", 59
+    #: successful reads at a healthy 115s median in the same window.
+    #:
+    #: 7,900 is chosen to sit BETWEEN the two real prompts, not at a round
+    #: number: single-read is 7,226 and stays on argv, universe is 9,098 and does
+    #: not. That matters because the single-read path is currently WORKING and
+    #: producing evidence -- moving it too would silently change how a working
+    #: arm addresses the model, and a change to the arm must be deliberate.
+    #:
+    #: The rest of argv (binary path, model, flags) is ~130 chars on the live
+    #: box, so 7,900 leaves ~160 of margin inside the 8,191 budget. If
+    #: ANALYST_SYSTEM grows past this the single-read path flips to stdin too --
+    #: automatically, loudly, and still working, which is the entire point.
+    MAX_SYSTEM_ARGV_CHARS = 7900
+
+    #: Flags dropped, in order, when the CLI rejects a call LOCALLY.
+    #:
+    #: WHY A LADDER RATHER THAN A DIAGNOSIS. On 2026-08-28 every survey failed
+    #: with exit 1, a session id, `duration_api_ms: 0` and zero tokens in and
+    #: out -- the CLI refusing before it billed anything. That is what a
+    #: rejected FLAG looks like, and it is indistinguishable from an expired
+    #: login without reading the CLI's own message. A desk that stays blind
+    #: while somebody works out which flag changed has already lost the day.
+    #:
+    #: ORDERED LEAST HARMFUL FIRST, and the order is the argument:
+    #:   --effort        a reasoning HINT. Losing it costs depth, not capability.
+    #:   --allowed-tools passed as an empty string, which is exactly the kind of
+    #:                   argument a CLI update starts rejecting.
+    #:   --max-turns     a bound the desk does not depend on: the schema does.
+    #:   --model         LAST, and never silently. Dropping it changes WHICH
+    #:                   MODEL answers, which changes the arm and makes reads
+    #:                   from either side non-comparable in one cohort. It is
+    #:                   still better than a desk that produces nothing, and
+    #:                   analyst_health's model check reports the substitution
+    #:                   within fifteen minutes.
+    FLAG_LADDER = ("--effort", "--allowed-tools", "--max-turns", "--model")
+
+    #: How many rungs of FLAG_LADDER are currently dropped. A CLASS default of 0
+    #: rather than an __init__ assignment, so a provider is never missing it --
+    #: including the __new__-constructed ones the argv tests use, where an
+    #: AttributeError here would be an artefact of the test harness rather than
+    #: a real defect. Instances shadow it the moment a rung is confirmed, so the
+    #: memory is per-provider and never leaks between them.
+    _flag_drop: int = 0
+
+    def _argv(self, system: Optional[str] = None,
+              effort: Optional[str] = None, drop: int = 0) -> list[str]:
+        """`effort` overrides self.effort for ONE call -- used by the degraded retry below.
+
+        `drop` removes the first N flags of FLAG_LADDER, for the local-rejection
+        ladder in _invoke.
+        """
+        dropped = set(self.FLAG_LADDER[:drop])
+        sys_text = system or ANALYST_SYSTEM
+        if len(sys_text) > self.MAX_SYSTEM_ARGV_CHARS:
+            # Signalled by omitting the flag; _invoke prepends the text to stdin.
+            sys_text = None
+        argv = [self.binary, "-p", "--output-format", "json"]
+        if "--model" not in dropped:
+            argv += ["--model", self.model]
+        if "--allowed-tools" not in dropped:
+            argv += ["--allowed-tools", ""]
+        if "--max-turns" not in dropped:
+            argv += ["--max-turns", "1"]
+        if sys_text is not None:
+            argv += ["--system-prompt", sys_text]
+        chosen = effort if effort is not None else self.effort
+        if "--effort" in dropped:
+            chosen = None
+        if chosen is not None:
+            if chosen not in self.EFFORTS:
+                raise AnalystError(
+                    f"effort {chosen!r} not in {self.EFFORTS} -- the CLI "
+                    f"would reject it too, but failing here names the actual "
+                    f"problem instead of an opaque nonzero exit from claude")
+            argv += ["--effort", chosen]
+        return argv
 
     def _env(self) -> dict:
         """The child's environment.
@@ -424,40 +676,268 @@ class ClaudeCodeAnalyst(AnalystProvider):
             env.pop("ANTHROPIC_AUTH_TOKEN", None)
         return env
 
-    def _invoke(self, prompt: str) -> dict:
-        if self._runner is not None:                  # injected for tests
-            return self._runner(self._argv(), prompt)
-        import shutil
-        import subprocess
-        argv = self._argv()
-        # On Windows, a global npm install of the CLI is a .CMD shim, and
-        # CreateProcess only resolves .EXE/.COM by bare name -- it silently
-        # can't find "claude" even though it is on PATH. Resolving to the
-        # full path (extension included) fixes that without needing
-        # shell=True, which would hand ANALYST_SYSTEM to cmd.exe for
-        # metacharacter parsing.
-        resolved = shutil.which(argv[0])
-        if resolved:
-            argv = [resolved, *argv[1:]]
+    #: What an expired login looks like in the CLI's own words.
+    #:
+    #: OBSERVED 2026-08-28, after four hours of the desk booking BLIND on every
+    #: single read. The envelope is deliberately confusing: `subtype` is
+    #: "success", `stop_reason` is "stop_sequence", `api_error_status` is null,
+    #: and the ONLY field that names the problem is `result`:
+    #:
+    #:     "Failed to authenticate: OAuth session expired and could not be
+    #:      refreshed"
+    #:
+    #: It is byte-identical to a rejected flag on every field the flag ladder
+    #: below inspects -- exit 1, duration_api_ms 0, zero tokens, a session id --
+    #: which is exactly why the ladder cannot be the only answer here. Matched
+    #: on the CLI's TEXT rather than inferred, so the desk names the actual fix
+    #: instead of degrading its own arm four times and then guessing.
+    AUTH_MARKERS = ("failed to authenticate", "oauth session expired",
+                    "please run /login", "invalid api key",
+                    "authentication_error", "credentials could not be refreshed")
+    QUOTA_MARKERS = ("weekly limit", "usage limit", "rate_limit_error",
+                     '"api_error_status":429', "api_error_status: 429")
+
+    @classmethod
+    def _quota_failure(cls, stdout: str, stderr: str) -> Optional[str]:
+        blob = (stdout or "") + "\n" + (stderr or "")
+        if not any(m in blob.lower() for m in cls.QUOTA_MARKERS):
+            return None
         try:
-            p = subprocess.run(argv, input=prompt, env=self._env(),
-                               cwd=self.cwd, capture_output=True, text=True,
-                               timeout=self.timeout_s)
+            i, j = blob.find("{"), blob.rfind("}")
+            data = json.loads(blob[i:j + 1]) if i >= 0 and j > i else {}
+            return str(data.get("result") or blob.strip())[:300]
+        except Exception:                              # noqa: BLE001
+            return blob.strip()[:300]
+
+    @classmethod
+    def _auth_failure(cls, stdout: str, stderr: str) -> Optional[str]:
+        """The CLI's own sentence about the login, or None.
+
+        Returns the MESSAGE rather than a bool so the error the desk raises can
+        quote the CLI verbatim. A paraphrase would be one more thing to doubt at
+        01:30 when nothing has read the market since 21:00.
+        """
+        blob = (stdout or "") + "\n" + (stderr or "")
+        low = blob.lower()
+        if not any(m in low for m in cls.AUTH_MARKERS):
+            return None
+        import json as _json
+        i, j = blob.find("{"), blob.rfind("}")
+        if i >= 0 and j > i:
+            try:
+                d = _json.loads(blob[i:j + 1])
+                if isinstance(d, dict) and d.get("result"):
+                    return str(d["result"])[:300]
+            except Exception:                          # noqa: BLE001
+                pass
+        return blob.strip()[:300]
+
+    @staticmethod
+    def _is_local_rejection(stdout: str, stderr: str) -> bool:
+        """Did the CLI refuse BEFORE calling the API?
+
+        The discriminator is SPEND: zero input tokens, zero output tokens and
+        zero API duration mean nothing was sent, which rules out a rate limit, a
+        model outage and a timeout, and rules in the invocation itself. Anything
+        else -- a real API error, a bad response, a partial answer -- must NOT
+        walk the flag ladder, or the desk degrades its own arm in response to a
+        problem the flags did not cause.
+
+        Absence of the field is not zero. `duration_api_ms` must be PRESENT and
+        0: a CLI that stops reporting it would otherwise make every failure look
+        local and walk the whole ladder down to an unpinned model on the first
+        real API outage.
+        """
+        import json as _json
+        blob = (stdout or "") + (stderr or "")
+        i, j = blob.find("{"), blob.rfind("}")
+        if i < 0 or j <= i:
+            return False
+        try:
+            d = _json.loads(blob[i:j + 1])
+        except Exception:                              # noqa: BLE001
+            return False
+        if not isinstance(d, dict) or "duration_api_ms" not in d:
+            return False
+        u = d.get("usage") or {}
+        return (d.get("duration_api_ms") == 0
+                and not u.get("input_tokens")
+                and not u.get("output_tokens"))
+
+    def _run(self, argv: list[str], prompt: str,
+             budget: float) -> tuple[int, str, str]:
+        """TRANSPORT ONLY. Returns (returncode, stdout, stderr); decides nothing.
+
+        Everything above this line -- the timeout degrade, the flag ladder, the
+        envelope checks -- is policy, and policy that can only be reached
+        through subprocess.run is policy no test can exercise. That is not
+        hypothetical here: the flag ladder below was written against
+        `p.returncode` and an injected runner returned a parsed envelope, so the
+        ladder existed on exactly one path and the tests could not see it.
+
+        An injected runner may return either shape:
+          - a dict  -- the parsed envelope, treated as a successful exit;
+          - a (rc, stdout, stderr) tuple -- for exercising NON-zero exits.
+        """
+        if self._runner is not None:
+            out = self._runner(argv, prompt)
+            if isinstance(out, tuple):
+                rc, so, se = out
+                return int(rc), so or "", se or ""
+            return 0, json.dumps(out), ""
+        import subprocess
+        p = subprocess.run(argv, input=prompt, env=self._env(),
+                           cwd=self.cwd, capture_output=True, text=True,
+                           timeout=budget)
+        return p.returncode, p.stdout or "", p.stderr or ""
+
+    def _invoke(self, prompt: str, system: Optional[str] = None,
+                effort: Optional[str] = None, timeout_s: Optional[float] = None,
+                drop: Optional[int] = None) -> dict:
+        import subprocess
+        budget = self.timeout_s if timeout_s is None else timeout_s
+        # Start from the level already known to work, so the ladder is probed
+        # once rather than on every wake.
+        drop = self._flag_drop if drop is None else drop
+        try:
+            # THE INJECTED TRANSPORT IS INSIDE THE TRY ON PURPOSE. It used to sit above it, which
+            # meant the degrade-on-timeout policy below existed only on the subprocess path and
+            # could not be exercised by any test -- retry policy silently coupled to transport.
+            # A test runner that raises TimeoutExpired now travels the same path production does.
+            argv = self._argv(system, effort, drop=drop)
+            sys_text = system or ANALYST_SYSTEM
+            # `prompt` IS NOT REASSIGNED. Both retry paths below recurse with it,
+            # and an in-place prepend meant the retry re-prepended a system text
+            # the payload already carried -- the model got the whole 9,098-char
+            # universe prompt twice, on exactly the path (oversized system, so
+            # stdin) that was already the failing one.
+            stdin_text = prompt
+            if "--system-prompt" not in argv:
+                # TOO LONG FOR THE COMMAND LINE. Carried in stdin instead, which
+                # is unbounded. Logged at WARNING every time: a transport that
+                # silently changes how the model is addressed is a change to the
+                # arm, and it must be visible in the log rather than inferred
+                # later from a shift in behaviour.
+                log.warning("system prompt is %d chars, over the %d-char argv "
+                            "budget -- sending it in stdin instead. The model "
+                            "sees the same text; only the transport changes.",
+                            len(sys_text), self.MAX_SYSTEM_ARGV_CHARS)
+                stdin_text = f"{sys_text}\n\n---\n\n{prompt}"
+            rc, out_s, err_s = self._run(argv, stdin_text, budget)
         except FileNotFoundError as e:
             raise AnalystError(
                 f"{self.binary!r} not found. Install Claude Code on this box and "
                 f"log in once interactively, or use provider 'anthropic:' and "
                 f"pay per token.") from e
         except subprocess.TimeoutExpired as e:
-            raise AnalystError(f"claude timed out after {self.timeout_s}s") from e
-        if p.returncode != 0:
-            raise AnalystError(f"claude exited {p.returncode}: "
-                               f"{(p.stderr or p.stdout)[:300]}")
+            if not self.retry_on_timeout:
+                raise AnalystError(
+                    f"claude timed out after {budget}s; handing the frozen read "
+                    "to the configured analyst failover") from e
+            # DEGRADE, DO NOT SURRENDER. A timeout discards the whole read and books a refusal,
+            # so the desk's answer to "this one was slow" was to learn nothing from that bar at
+            # all -- 6 of the last 10 failures on 2026-08-26 were exactly this. A completed
+            # low-effort read is strictly better evidence than no read, so the retry trades
+            # depth of reasoning for an answer that actually arrives, rather than trading the
+            # answer away.
+            #
+            # ONE retry, at the floor effort, on a SHORTER budget. The bound that matters is the
+            # bar: at M15 a read must finish inside 900s or it is still running when the next
+            # bar's read begins, and the backlog compounds. self.timeout_s (600) plus
+            # FALLBACK_TIMEOUT_S (240) is 840s worst case, which fits with margin. Retrying at
+            # the same effort would just spend the budget twice on the thing that already proved
+            # too slow, and a second full-length attempt would breach the bar outright.
+            if effort == self.FALLBACK_EFFORT:
+                raise AnalystError(f"claude timed out after {budget}s at "
+                                   f"{self.FALLBACK_EFFORT} effort -- the floor arm could not "
+                                   f"finish either, so this is latency on the box or the "
+                                   f"venue, not reasoning depth") from e
+            log.warning("claude timed out after %ss; retrying once at %s effort within %ss",
+                        budget, self.FALLBACK_EFFORT, self.FALLBACK_TIMEOUT_S)
+            # `drop` is carried: a timeout is not evidence about the flags, so
+            # the retry must not silently climb back to a rung already known to
+            # be rejected.
+            return self._invoke(prompt, system, effort=self.FALLBACK_EFFORT,
+                                timeout_s=self.FALLBACK_TIMEOUT_S, drop=drop)
+        quota = self._quota_failure(out_s, err_s) if rc != 0 else None
+        if quota is not None:
+            raise AnalystQuotaError(
+                f"Claude subscription quota unavailable: {quota}; switch to "
+                "the configured GPT/ChatGPT subscription backend immediately")
+        auth = self._auth_failure(out_s, err_s) if rc != 0 else None
+        if auth is not None:
+            # NOT A FLAG. The ladder below and this branch are triggered by an
+            # identical envelope -- exit 1, zero tokens, zero API time -- and the
+            # only thing that separates them is the CLI's own message. Walking
+            # the ladder here would spend four invocations, log "CLI FLAGS
+            # DEGRADED", leave the model unpinned, and still be blind, with the
+            # log now actively pointing away from the cause.
+            #
+            # AND NOTHING THE DESK CAN DO WILL FIX IT. A subscription login is
+            # an interactive browser flow: it is the principal's act, the same
+            # way arming capital is. So this raises immediately with the exact
+            # command, and self_heal's ESCALATE path carries it to Telegram
+            # rather than pretending a retry might help.
+            raise AnalystError(
+                f"claude cannot authenticate: {auth}. "
+                f"THIS IS NOT A FLAG, A RATE LIMIT OR AN OUTAGE, and no retry "
+                f"will clear it -- the desk stays blind until somebody logs in. "
+                f"On the box, as the user the scheduled task runs as, run "
+                f"`claude` once interactively and complete the browser login; "
+                f"reads resume on the next wake with no restart needed.")
+        if rc != 0 and self._is_local_rejection(out_s, err_s) and drop < len(self.FLAG_LADDER):
+            # THE CLI REFUSED BEFORE IT BILLED ANYTHING. Zero tokens, zero API
+            # time, a session id and exit 1: it parsed, started, and declined.
+            # That is what a rejected FLAG looks like, and a CLI that updates
+            # under a long-running desk is a recurring risk rather than a
+            # one-off -- the flags this desk passes were accepted for weeks
+            # before 2026-08-28 and then were not.
+            #
+            # Step down the ladder rather than stay blind. The level that works
+            # is REMEMBERED, so the probe costs one extra invocation once and
+            # not on every wake.
+            nxt = drop + 1
+            log.warning("claude refused locally (exit %s, no tokens spent) -- "
+                        "retrying without %s. A rejected flag and an expired "
+                        "login look identical here; if the ladder runs out it "
+                        "was the login.",
+                        rc, self.FLAG_LADDER[drop])
+            out = self._invoke(prompt, system, effort, timeout_s, drop=nxt)
+            if self._flag_drop < nxt:
+                self._flag_drop = nxt
+                log.error("CLI FLAGS DEGRADED to drop=%d (%s removed). %s",
+                          nxt, ", ".join(self.FLAG_LADDER[:nxt]),
+                          "MODEL IS NO LONGER PINNED -- reads may come from a "
+                          "different model and are not comparable in one cohort; "
+                          "analyst_health reports which."
+                          if "--model" in self.FLAG_LADDER[:nxt]
+                          else "Reasoning depth or bounds reduced, capability intact.")
+            return out
+        if rc != 0:
+            # 300 chars was cutting off every failure at almost exactly the point where the
+            # CLI's own JSON error payload names the actual problem -- every "analyst
+            # unavailable" line in production ended with "output_tokens": and nothing after,
+            # for days, because the field that would have explained the failure sits past that
+            # cutoff. 2000 chars comfortably covers the CLI's error JSON without risking an
+            # unbounded log line from a truly pathological response.
+            #
+            # THE LADDER IS NAMED WHEN IT IS EXHAUSTED. Reaching here at the last
+            # rung means every flag was dropped and the CLI still refused before
+            # spending a token, which is no longer a flag problem: it is the
+            # login. Saying so turns a recurring hour of guessing into one line.
+            exhausted = ""
+            if drop >= len(self.FLAG_LADDER) and self._is_local_rejection(out_s, err_s):
+                exhausted = (" -- EVERY flag in the ladder was dropped and the CLI "
+                             "still refused without spending a token, so this is NOT "
+                             "a rejected flag. Log in on the box: `claude` once, "
+                             "interactively, as the user the task runs as.")
+            raise AnalystError(f"claude exited {rc}: "
+                               f"{(err_s or out_s)[:2000]}{exhausted}")
         try:
-            return json.loads(p.stdout)
+            return json.loads(out_s)
         except json.JSONDecodeError as e:
             raise AnalystError(f"claude did not return JSON: "
-                               f"{p.stdout[:300]!r}") from e
+                               f"{out_s[:300]!r}") from e
 
     def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
         if charts:
@@ -484,9 +964,28 @@ class ClaudeCodeAnalyst(AnalystProvider):
             raise AnalystError("claude returned an empty result")
         try:
             read = AnalystRead.model_validate_json(text)
-        except Exception as e:                                   # noqa: BLE001
-            raise AnalystError(f"claude returned text that is not a valid "
-                               f"AnalystRead: {e}; got {text[:300]!r}") from e
+        except Exception as strict_err:                          # noqa: BLE001
+            # A CLEAN READ STAYS CLEAN: strict validation is tried first and unchanged, so this
+            # path only runs on output that already failed. Observed live 2026-08-26: the desk
+            # logged "analyst unavailable ... N validation errors" on read after read, refused
+            # every one, and looked perfectly healthy doing it (preflight PASS, Telegram PASS,
+            # process up) because a refusal is a legitimate outcome. Discarding a sound read
+            # over an over-long `why` is a formatting failure wearing a judgement's clothes.
+            repaired, repairs = self._repair(text)
+            if not repairs:
+                raise AnalystError(f"claude returned text that is not a valid "
+                                   f"AnalystRead: {strict_err}; got {text[:300]!r}"
+                                   ) from strict_err
+            try:
+                read = AnalystRead.model_validate_json(repaired)
+            except Exception as e:                               # noqa: BLE001
+                raise AnalystError(f"claude returned text that is not a valid AnalystRead "
+                                   f"even after repair ({'; '.join(repairs)}): {e}; "
+                                   f"got {text[:300]!r}") from e
+            # LOUD ON PURPOSE. The repair is safe but it is not free: a truncated field means
+            # the model wrote more than the schema allows, and a persistent stream of these is
+            # a prompt/schema mismatch to fix at the source, not a condition to normalise.
+            log.warning("analyst read accepted after repair (%s)", "; ".join(repairs))
 
         u = env.get("usage") or {}
         fresh = int(u.get("input_tokens") or 0)
@@ -507,22 +1006,104 @@ class ClaudeCodeAnalyst(AnalystProvider):
             "billed": billed,
             "cost_usd_api_equivalent": env.get("total_cost_usd"),
             "cost_usd": env.get("total_cost_usd") if billed else 0.0,
+            # HOW the zero was arrived at. "assumed_subscription" means nobody
+            # declared the box's billing and no API key was visible -- which is
+            # exactly the state an OAuth login to an org on API usage billing
+            # produces, where the true cost is NOT zero. Carried so budget.py
+            # can tell a declared zero from a guessed one.
+            "billing_basis": self.billing_basis(),
         })
 
 
-class CodexCliAnalyst(AnalystProvider):
-    """Local Codex CLI failover using a read-only, ephemeral exec run.
+    def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
+        """A REAL enumeration through the CLI, not a wrapped single read.
 
-    Codex's stable non-interactive mode accepts a JSON output schema and can
-    write the validated final message to a file.  The run is pointed at an
-    empty temporary workspace with a read-only sandbox: an analyst needs the
-    supplied brief and charts, not access to Aurum's code, ledger, or secrets.
-    """
+        WHY THIS OVERRIDE HAD TO EXIST. Without it this provider inherited
+        AnalystProvider.survey, which calls read() once and wraps the answer in
+        a one-candidate universe. That default is honest -- it says a
+        single-read provider returns one candidate because that is what its
+        interface can express -- but the consequence was that `--universe` on
+        this provider changed the LABEL and nothing else. An operator enabling
+        universe mode to widen capture would have got the same single read,
+        reported as a universe, with no error anywhere.
+
+        WHY IT IS THE HIGHEST-VALUE CHANGE PER UNIT OF QUOTA. A subscription
+        meters TOKENS, and the expensive part of a read is the brief -- levels,
+        macro, context, timeline -- which is sent whether the model returns one
+        proposition or twelve. Asking for the full set costs one extra request's
+        worth of OUTPUT and reuses the whole input, so it raises capture without
+        raising call frequency. On a plan with a weekly ceiling that is strictly
+        better than more calls.
+
+        Same system prefix as read(), with the universe addendum appended, so
+        the two modes stay comparable rather than becoming different prompts
+        that happen to share a name.
+        """
+        from .universe import (MAX_CANDIDATES, AnalystUniverse,  # noqa: PLC0415
+                               UNIVERSE_SCHEMA, universe_system)
+        if charts:
+            raise AnalystError(
+                f"{self.name!r} cannot send charts: the CLI takes no image input. "
+                f"Run the chart arm on provider 'anthropic:'.")
+
+        prompt = (self._SCHEMA_INSTRUCTION.format(
+            schema=json.dumps(UNIVERSE_SCHEMA)) + "\n" + brief.render())
+
+        t0 = time.monotonic()
+        env = self._invoke(prompt, system=universe_system(ANALYST_SYSTEM,
+                                                          MAX_CANDIDATES))
+        dt = (time.monotonic() - t0) * 1000
+
+        if env.get("is_error") or env.get("subtype") not in (None, "success"):
+            raise AnalystError(f"claude reported failure: "
+                               f"{env.get('subtype')} {str(env.get('result'))[:200]}")
+        text = self._unfence(str(env.get("result") or ""))
+        if not text:
+            raise AnalystError("claude returned an empty result")
+        try:
+            uni = AnalystUniverse.model_validate_json(text)
+        except Exception as e:                                   # noqa: BLE001
+            # NOT silently downgraded to a single read. A universe run that
+            # quietly becomes a one-candidate answer is the same defect this
+            # override exists to remove, one layer deeper.
+            raise AnalystError(f"claude returned text that is not a valid "
+                               f"AnalystUniverse: {e}; got {text[:300]!r}") from e
+
+        u = env.get("usage") or {}
+        fresh = int(u.get("input_tokens") or 0)
+        created = int(u.get("cache_creation_input_tokens") or 0)
+        cached = int(u.get("cache_read_input_tokens") or 0)
+        billed = self.billed()
+        # The stamp carries the FIRST candidate purely so provenance has a read
+        # to attach to; selection does not privilege it in any way. Matches
+        # AnthropicAnalyst.survey exactly, so the two providers' universe runs
+        # stay comparable rather than differing in how they report.
+        head = uni.candidates[0] if uni.candidates else None
+        pr = ProviderRead(head, self.name, self.model, dt, {
+            "in": fresh + created + cached,
+            "cache_read": cached,
+            "out": int(u.get("output_tokens") or 0),
+            "billed": billed,
+            "cost_usd_api_equivalent": env.get("total_cost_usd"),
+            "cost_usd": env.get("total_cost_usd") if billed else 0.0,
+            # HOW the zero was arrived at. "assumed_subscription" means nobody
+            # declared the box's billing and no API key was visible -- which is
+            # exactly the state an OAuth login to an org on API usage billing
+            # produces, where the true cost is NOT zero. Carried so budget.py
+            # can tell a declared zero from a guessed one.
+            "billing_basis": self.billing_basis(),
+            "candidates": len(uni.candidates),
+        })
+        return pr, uni
+
+
+class CodexCliAnalyst(AnalystProvider):
+    """Local ChatGPT subscription failover through an ephemeral Codex run."""
 
     name = "codex"
 
     def __init__(self, model: str = "gpt-5.6-sol", binary: str = "codex",
-                 timeout_s: float = 240.0, runner: Any = None,
+                 timeout_s: float = 600.0, runner: Any = None,
                  billed: Optional[bool] = None, effort: str = "high"):
         self.model, self.binary, self.timeout_s = model, binary, timeout_s
         self._runner, self._billed, self.effort = runner, billed, effort
@@ -541,16 +1122,12 @@ class CodexCliAnalyst(AnalystProvider):
     def _argv(self, workspace: str, schema_path: str, output_path: str,
               image_paths: Sequence[str] = ()) -> list[str]:
         argv = [self.binary, "exec", "--ephemeral", "--sandbox", "read-only",
+                "--disable", "code_mode_host",
                 "--skip-git-repo-check", "--cd", workspace,
                 "--output-schema", schema_path,
-                "--output-last-message", output_path]
-        if self.model:
-            argv += ["--model", self.model]
-        if self.effort:
-            # Codex configuration values use TOML syntax.  Supplying this per
-            # invocation prevents a machine-level default from quietly
-            # weakening or strengthening the production fallback.
-            argv += ["-c", f'model_reasoning_effort="{self.effort}"']
+                "--output-last-message", output_path,
+                "--model", self.model,
+                "-c", f'model_reasoning_effort="{self.effort}"']
         for path in image_paths:
             argv += ["--image", path]
         argv.append("-")
@@ -580,23 +1157,25 @@ class CodexCliAnalyst(AnalystProvider):
         except subprocess.TimeoutExpired as e:
             raise AnalystError(f"codex timed out after {self.timeout_s}s") from e
         if p.returncode != 0:
+            detail = p.stderr or p.stdout or ""
             raise AnalystError(f"codex exited {p.returncode}: "
-                               f"{(p.stderr or p.stdout)[:300]}")
+                               f"{detail[-1500:]}")
         if not output_path.exists():
             raise AnalystError("codex completed without writing its final message")
         return output_path.read_text(encoding="utf-8")
 
     def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        output_schema = strict_output_schema(ANALYST_SCHEMA)
         prompt = (ANALYST_SYSTEM + "\n\nReturn only JSON conforming to this "
                   "schema; do not inspect files or run commands:\n" +
-                  json.dumps(ANALYST_SCHEMA, sort_keys=True) + "\n\n" +
+                  json.dumps(output_schema, sort_keys=True) + "\n\n" +
                   brief.render())
         t0 = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="aurum-codex-analyst-") as td:
             root = Path(td)
             schema_path = root / "analyst-schema.json"
             output_path = root / "answer.json"
-            schema_path.write_text(json.dumps(ANALYST_SCHEMA), encoding="utf-8")
+            schema_path.write_text(json.dumps(output_schema), encoding="utf-8")
             images = []
             for i, chart in enumerate(charts):
                 path = root / f"chart-{i}-{chart.timeframe}.png"
@@ -611,41 +1190,154 @@ class CodexCliAnalyst(AnalystProvider):
         except Exception as e:                            # noqa: BLE001
             raise AnalystError(f"codex returned text that is not a valid "
                                f"AnalystRead: {e}; got {text[:300]!r}") from e
-        return ProviderRead(read, self.name,
-                            self.model or "configured-default", dt,
+        return ProviderRead(read, self.name, self.model, dt,
                             {"billed": self.billed(), "cost_usd": None,
                              "source": "codex exec --ephemeral",
                              "reasoning_effort": self.effort})
 
+    def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
+        """Enumerate the opportunity set through ChatGPT, retaining chart input."""
+        from .universe import (MAX_CANDIDATES, AnalystUniverse, UNIVERSE_SCHEMA,
+                               universe_system)
+        # OpenAI strict structured outputs require every declared property to
+        # appear in `required`, even when Pydantic gives it a default. The
+        # runtime model still applies those defaults on ordinary JSON, but the
+        # transport rejects that schema before inference. Keep the canonical
+        # schema unchanged and make a strict transport copy here.
+        output_schema = strict_output_schema(UNIVERSE_SCHEMA)
+        prompt = (universe_system(ANALYST_SYSTEM, MAX_CANDIDATES) +
+                  "\n\nReturn only JSON conforming to this schema; do not inspect "
+                  "files or run commands:\n" +
+                  json.dumps(output_schema, sort_keys=True) + "\n\n" +
+                  brief.render())
+        t0 = time.monotonic()
+        with tempfile.TemporaryDirectory(prefix="aurum-codex-universe-") as td:
+            root = Path(td)
+            schema_path = root / "universe-schema.json"
+            output_path = root / "answer.json"
+            schema_path.write_text(json.dumps(output_schema), encoding="utf-8")
+            images = []
+            for i, chart in enumerate(charts):
+                path = root / f"chart-{i}-{chart.timeframe}.png"
+                path.write_bytes(chart.png)
+                images.append(str(path))
+            text = self._invoke(
+                self._argv(str(root), str(schema_path), str(output_path), images),
+                prompt, output_path)
+        dt = (time.monotonic() - t0) * 1000
+        try:
+            uni = AnalystUniverse.model_validate_json(text.strip())
+        except Exception as e:                            # noqa: BLE001
+            raise AnalystError(f"codex returned text that is not a valid "
+                               f"AnalystUniverse: {e}; got {text[:300]!r}") from e
+        head = uni.candidates[0] if uni.candidates else None
+        return ProviderRead(head, self.name, self.model, dt, {
+            "billed": self.billed(), "cost_usd": None,
+            "source": "codex exec --ephemeral",
+            "reasoning_effort": self.effort,
+            "candidates": len(uni.candidates),
+        }), uni
+
 
 class FailoverAnalyst(AnalystProvider):
-    """Try providers in order; a valid refusal never triggers failover."""
+    """Try providers in order; a valid refusal never triggers failover.
+
+    Claude Code has no image argument. In a chart-enabled chain it receives the
+    full numeric brief while later image-capable providers retain the charts.
+    Thus Claude remains primary and GPT receives live charts if Claude fails.
+    """
 
     name = "failover"
 
-    def __init__(self, providers: Sequence[AnalystProvider]):
+    def __init__(self, providers: Sequence[AnalystProvider],
+                 blind_threshold: int = 3, cooldown_s: float = 3600.0):
         self.providers = list(providers)
         if not self.providers:
             raise ValueError("failover chain is empty")
         self.model = " -> ".join(
             f"{p.name}:{getattr(p, 'model', '')}" for p in self.providers)
+        self.blind_threshold = max(1, int(blind_threshold))
+        self.cooldown_s = max(1.0, float(cooldown_s))
+        self._primary_failures = 0
+        self._primary_circuit_until = 0.0
+
+    def _provider_order(self):
+        if len(self.providers) > 1 and time.monotonic() < self._primary_circuit_until:
+            return list(enumerate(self.providers[1:], start=1))
+        return list(enumerate(self.providers))
+
+    def _failed(self, index: int, error: Exception) -> None:
+        if index != 0 or len(self.providers) < 2:
+            return
+        self._primary_failures += 1
+        if isinstance(error, AnalystQuotaError) or self._primary_failures >= self.blind_threshold:
+            self._primary_circuit_until = time.monotonic() + self.cooldown_s
+            why = ("quota" if isinstance(error, AnalystQuotaError)
+                   else f"{self._primary_failures} consecutive blind calls")
+            log.warning("primary analyst circuit OPEN (%s); routing directly to %s",
+                        why, self.providers[1].name)
+
+    def _succeeded(self, index: int) -> None:
+        if index == 0:
+            self._primary_failures = 0
+            self._primary_circuit_until = 0.0
 
     def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
         errors = []
-        for i, provider in enumerate(self.providers):
+        attempted = []
+        for i, provider in self._provider_order():
+            attempted.append(provider.name)
             try:
-                result = provider.read(brief, charts)
+                provider_charts = () if provider.name == "claudecode" else charts
+                result = provider.read(brief, provider_charts)
+                self._succeeded(i)
                 usage = dict(result.usage)
-                usage.update({"failover_index": i,
-                              "failover_attempts": [p.name for p in self.providers[:i + 1]],
-                              "failover_errors": errors})
+                usage.update({
+                    "failover_index": i,
+                    "failover_attempts": list(attempted),
+                    "failover_errors": errors,
+                    "primary_circuit_open": i > 0 and not errors,
+                    "charts_available": len(charts),
+                    "charts_sent": len(provider_charts),
+                })
                 return ProviderRead(result.read, result.provider, result.model,
                                     result.latency_ms, usage)
             except Exception as e:                       # noqa: BLE001
+                self._failed(i, e)
                 errors.append(f"{provider.name}: {type(e).__name__}: {e}")
                 log.warning("analyst provider %s failed; trying fallback: %s",
                             provider.name, e)
         raise AnalystError("all analyst providers failed: " + " | ".join(errors))
+
+    def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
+        """Fail over the full universe call, not a wrapped single-read call."""
+        errors = []
+        attempted = []
+        for i, provider in self._provider_order():
+            attempted.append(provider.name)
+            try:
+                provider_charts = () if provider.name == "claudecode" else charts
+                result, universe = provider.survey(brief, provider_charts)
+                self._succeeded(i)
+                usage = dict(result.usage)
+                usage.update({
+                    "failover_index": i,
+                    "failover_attempts": list(attempted),
+                    "failover_errors": errors,
+                    "primary_circuit_open": i > 0 and not errors,
+                    "charts_available": len(charts),
+                    "charts_sent": len(provider_charts),
+                })
+                stamp = ProviderRead(result.read, result.provider, result.model,
+                                     result.latency_ms, usage)
+                return stamp, universe
+            except Exception as e:                       # noqa: BLE001
+                self._failed(i, e)
+                errors.append(f"{provider.name}: {type(e).__name__}: {e}")
+                log.warning("analyst provider %s survey failed; trying fallback: %s",
+                            provider.name, e)
+        raise AnalystError("all analyst providers failed survey: " +
+                           " | ".join(errors))
 
     def choose_option(self, system: str, prompt: str,
                       option_ids: Sequence[str]) -> str:
@@ -670,23 +1362,40 @@ PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
 def build_provider(spec: str, **kw) -> AnalystProvider:
     """spec = 'anthropic:claude-opus-5', 'claudecode:claude-opus-5', or 'replay'.
 
-    'claudecode' routes the SAME MODEL through the Claude Code CLI instead of
-    the metered API -- your subscription pays, nothing else about the desk
-    changes. Vendor choice is config either way.
+    'claudecode' routes the SAME AnthropicAnalyst through a Claude Code CLI
+    client instead of the metered API -- your subscription pays, nothing else
+    about the desk changes. Vendor choice is config either way.
     """
     name, _, model = spec.partition(":")
     if name not in PROVIDERS:
         raise ValueError(f"unknown provider {name!r}; have {sorted(PROVIDERS)}")
     if model:
         kw["model"] = model
-    return PROVIDERS[name](**kw)
+    try:
+        return PROVIDERS[name](**kw)
+    except TypeError as e:
+        # Most likely --effort against 'deterministic' or 'replay', neither of
+        # which reasons about anything and so has nothing to apply effort to.
+        # A raw TypeError from here reads as an internal bug; naming the
+        # actual mismatched argument is the same courtesy every other
+        # preflight refusal in this desk already gives.
+        raise ValueError(
+            f"provider {name!r} does not accept one of these arguments: "
+            f"{sorted(kw)}. Original error: {e}") from e
 
 
 def build_provider_chain(primary_spec: str, fallback_specs: Sequence[str] = (),
                          fallback_kw: Optional[dict] = None,
                          **kw) -> AnalystProvider:
-    """Build a provider with explicit local failovers, preserving order."""
-    providers = [build_provider(primary_spec, **kw)]
+    primary_kw = dict(kw)
+    primary_name = primary_spec.partition(":")[0]
+    if fallback_specs and primary_name == "claudecode":
+        # With a second model available, Claude's old 600s + 240s internal
+        # degraded retry is no longer the failover. Hand the unchanged brief
+        # to GPT while the M15 state is still current.
+        primary_kw.setdefault("timeout_s", 240.0)
+        primary_kw.setdefault("retry_on_timeout", False)
+    providers = [build_provider(primary_spec, **primary_kw)]
     providers.extend(build_provider(spec, **(fallback_kw or {}))
                      for spec in fallback_specs if spec)
     return providers[0] if len(providers) == 1 else FailoverAnalyst(providers)

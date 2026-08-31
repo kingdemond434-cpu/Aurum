@@ -249,6 +249,7 @@ def compile_universe(brief: MarketBrief, universe: AnalystUniverse,
                      thresholds: Thresholds = Thresholds(),
                      cost_model: CostModel = CostModel(),
                      cohorts: Optional[dict[str, CohortStat]] = None,
+                     shadow: bool = False,
                      ) -> list[Candidate]:
     """Compile every proposition through the identical path.
 
@@ -270,7 +271,8 @@ def compile_universe(brief: MarketBrief, universe: AnalystUniverse,
             continue
         v = ev_gate(res.rr_tp2, res.cost_r, read.mechanism_name, cohorts,
                     fallback_min_rr=thresholds.fallback_min_rr,
-                    min_ev_r=thresholds.min_ev_r)
+                    min_ev_r=thresholds.min_ev_r,
+                    novelty_level=read.novelty)
         ev = None if (v.ev_r is None or math.isnan(v.ev_r)) else v.ev_r
         out.append(Candidate(k, read, res, None, ev, v.basis))
     return out
@@ -307,6 +309,11 @@ def redundancy(a: Candidate, b: Candidate, min_overlap: float = 0.6
     a long from it are a legitimate sequence, and refusing that pair would be an
     invented restriction, not a risk control.
     """
+    if (a.direction != b.direction and a.compiled is not None and b.compiled is not None
+            and a.compiled.entry_intent == "MARKET"
+            and b.compiled.entry_intent == "MARKET"):
+        return (f"opposite live MARKET thesis versus candidate [{a.index}] — "
+                "net exposure cancels while two spreads remain")
     za, zb = a.zone(), b.zone()
     if not za or not zb:
         return None

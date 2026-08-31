@@ -124,6 +124,9 @@ class BudgetReport:
     resolved_trades: int
     r_value_usd: Optional[float]
     coverage: float
+    #: Bars the analyst never answered on. Held OUT of the coverage denominator
+    #: and reported on its own line — see `report()`.
+    blind: int = 0
 
     def render(self) -> str:
         out = [f"INFORMATION BUDGET (#9, {BUDGET_VERSION})", "",
@@ -133,6 +136,10 @@ class BudgetReport:
         if self.coverage < 0.9:
             out.append("  NOTE: incomplete coverage — older rows predate the stamp, "
                        "so totals are a LOWER BOUND")
+        if self.blind:
+            out.append(f"  BLIND BARS               : {self.blind} — the analyst "
+                       f"never answered, so these cost nothing measurable and "
+                       f"produced nothing. NOT in the coverage figure above.")
         out += ["", "BY CATEGORY"]
         out += [l.render(self.r_value_usd) for l in self.lines]
         out += ["", f"  TOTAL INFERENCE          ${self.total_usd:.2f} over "
@@ -168,7 +175,16 @@ def report(rows: Sequence[dict], *, pricing: Optional[Pricing] = None,
     """
     pricing = pricing or Pricing()
     stamped = _usage_rows(rows)
-    decisions = [r for r in rows if r.get("kind")]
+    # BLIND rows are held OUT of the coverage denominator. Coverage answers
+    # "what fraction of decisions carry a cost stamp", and a bar the analyst
+    # never answered on is not a decision — nothing decided anything, and there
+    # is no completed call to stamp. Counting them would deflate coverage below
+    # 0.9 during any outage and trip the NOTE above, which explains the shortfall
+    # as "older rows predate the stamp". That explanation would be FALSE: the
+    # cause would be an analyst that was down, and the report would be asserting
+    # a diagnosis nobody measured. Counted separately instead.
+    blind = [r for r in rows if str(r.get("kind", "")) == "BLIND"]
+    decisions = [r for r in rows if r.get("kind") and str(r.get("kind")) != "BLIND"]
     coverage = len(stamped) / len(decisions) if decisions else 0.0
 
     groups: dict[str, list[dict]] = defaultdict(list)
@@ -197,7 +213,7 @@ def report(rows: Sequence[dict], *, pricing: Optional[Pricing] = None,
     res = resolved_outcomes(list(rows))
     realised = sum(o["realised_r"] for o in res)
     return BudgetReport(lines, total, len(stamped), realised, len(res),
-                        r_value_usd, coverage)
+                        r_value_usd, coverage, len(blind))
 
 
 # --------------------------------------------------------------------------
@@ -287,5 +303,5 @@ def load(paths: Iterable) -> list[dict]:
     for p in paths:
         p = Path(p)
         if p.exists():
-            rows += [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+            rows += [json.loads(l) for l in p.read_text(encoding='utf-8').splitlines() if l.strip()]
     return rows

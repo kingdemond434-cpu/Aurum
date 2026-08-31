@@ -430,7 +430,7 @@ def incremental_value_note() -> str:
 def load_capture(path: Path) -> list[dict]:
     if not Path(path).exists():
         return []
-    return [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
+    return [json.loads(l) for l in Path(path).read_text(encoding='utf-8').splitlines() if l.strip()]
 
 
 def report(recs: Sequence[Reconstruction], rows: Sequence[dict],

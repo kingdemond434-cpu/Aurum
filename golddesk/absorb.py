@@ -271,7 +271,7 @@ class Absorber:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(self.to_json())
+        tmp.write_text(self.to_json(), encoding="utf-8")
         tmp.replace(p)
 
     @staticmethod
@@ -279,7 +279,7 @@ class Absorber:
         p = Path(path)
         if not p.exists():
             return Absorber()
-        d = json.loads(p.read_text())
+        d = json.loads(p.read_text(encoding='utf-8'))
         ab = Absorber()
         for row in d.get("decisions", ()):
             f = Finding(**row["finding"])

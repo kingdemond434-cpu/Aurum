@@ -131,7 +131,7 @@ class TestFetchFailsHonestlyOrNotAtAll:
         p = tmp_path / "aisc.json"
         m = fetch_aisc(getter=lambda u: "AISC $1,395/oz", cache_path=p)
         assert m.provenance is Provenance.MEASURED and m.value == 1395.0
-        assert json.loads(p.read_text())["provenance"] == "MEASURED"
+        assert json.loads(p.read_text(encoding='utf-8'))["provenance"] == "MEASURED"
 
     def test_a_failure_falls_back_to_cache_as_STALE_never_as_MEASURED(self, tmp_path):
         p = tmp_path / "aisc.json"
