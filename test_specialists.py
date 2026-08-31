@@ -11,7 +11,8 @@ import pytest
 from golddesk.snapshot import SnapshotBuilder
 from golddesk.specialists import (
     DESK_ROLES, MIN_CHANGED, Council, SequenceSpecialist, SpecialistRead,
-    UnavailableSpecialist, build_desk_council, marginal_value)
+    UnavailableSpecialist, build_desk_council, built_in_sensor_specialists,
+    marginal_value)
 
 UTC = timezone.utc
 T0 = datetime(2026, 8, 17, 12, 0, tzinfo=UTC)
@@ -178,6 +179,28 @@ def test_named_desk_has_all_eight_honestly_unavailable_seats():
     assert [r.name for r in rep["reads"]] == [r.name for r in DESK_ROLES]
     assert rep["available"] == 0
     assert all(not r.available for r in rep["reads"])
+
+
+def test_live_builtin_sensors_fill_only_seats_with_real_snapshot_inputs():
+    b = SnapshotBuilder("XAUUSD", "M5", T0)
+    bars = [Bar(T0 - timedelta(minutes=5 * (30 - i)),
+                2000 + i, 2003 + i, 1997 + i, 2001 + i) for i in range(30)]
+    b.add_bars("entry", bars, "M5", count=30)
+    for key, value in {
+        "context.trend_direction": "UP", "context.trend_health": "STRONG",
+        "context.displacement_state": "CONFIRMED", "session": "LONDON",
+        "tick_age_s": 0.2, "sensor.live_frame_count": 5,
+        "macro.dxy": -0.3,
+    }.items():
+        b.add(key, value, T0)
+    rep = build_desk_council(built_in_sensor_specialists()).report(b.build())
+    by_name = {r.name: r for r in rep["reads"]}
+    assert rep["available"] == 5
+    assert by_name["Atlas"].available and "dxy" in by_name["Atlas"].why
+    assert by_name["Lumen"].direction == "LONG"
+    assert by_name["Chronos"].available
+    assert by_name["Hephaestus"].available
+    assert not by_name["Argus"].available and not by_name["Orion"].available
 
 
 def test_report_is_stamped_with_the_frozen_snapshot_identity():

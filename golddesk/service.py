@@ -860,7 +860,7 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     non-MT5 feed cannot quietly supply its own.
     """
     from .providers import build_provider_chain
-    from .specialists import build_desk_council
+    from .specialists import build_desk_council, built_in_sensor_specialists
     cfg = cfg or ServiceConfig(symbol=symbol)
     if timeframes:
         cfg.timeframes = tuple(t.upper() for t in timeframes)
@@ -1069,7 +1069,9 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                     wake_on_bar_close=wake_on_bar_close,
                     entry_tf=cfg.entry_tf,
                     quote_provider=feed.quote,
-                    specialist_council=build_desk_council(specialists))
+                    specialist_council=build_desk_council(
+                        built_in_sensor_specialists() if specialists is None
+                        else specialists))
 
     # WHO HAS AUTHORITY over the open position. An explicit production decision:
     # the desk ships with Claude forming the entry judgement and a deterministic

@@ -1715,10 +1715,23 @@ class LiveDesk:
         b = SnapshotBuilder(brief.symbol, self.tf, as_of)
         b.add_bars("entry", bars[:i + 1], self.tf, count=40)
         for key, val in (("bid", brief.bid), ("ask", brief.ask),
-                         ("spread", brief.spread), ("atr", brief.atr)):
+                         ("spread", brief.spread), ("atr", brief.atr),
+                         ("tick_age_s", brief.tick_age_s)):
             if val is not None:
                 b.add(key, float(val), as_of, source="feed")
         b.add("session", brief.session, as_of, source="calendar")
+        b.add("sensor.live_frame_count", sum(
+            1 for tf in ("M1", "M5", "M15", "H1", "H4")
+            if len(self._live_frames.get(tf) or ()) >= 30), as_of,
+            source="live-chart-packet")
+        macro = getattr(brief, "macro", None)
+        if macro is not None and getattr(macro, "usable", False):
+            b.add("macro.age_hours", float(macro.age_hours), as_of,
+                  source="macro-context")
+            for key, val in (getattr(macro, "states", {}) or {}).items():
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    b.add(f"macro.{key}", float(val), as_of,
+                          source="macro-context")
         for key, val in brief.context.__dict__.items():
             b.add(f"context.{key}", val, as_of, source="features")
         if brief.trigger_price is not None:

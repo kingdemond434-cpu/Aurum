@@ -475,12 +475,16 @@ def main() -> int:
     shadow = not args.live
     vision = Vision.NUMERIC_ONLY if args.numeric_only else Vision.NUMERIC_PLUS_CHARTS
     print(f"\nstarting: shadow={shadow}  vision={vision.value}")
-    print(f"  ENTRY judgement  : Claude ({'charts + numeric' if not args.numeric_only else 'numeric only'})")
+    analyst_label = ("GPT via ChatGPT subscription" if args.provider.startswith("codex:")
+                     else "Claude via subscription" if args.provider.startswith("claudecode:")
+                     else args.provider)
+    print(f"  ENTRY judgement  : {analyst_label} "
+          f"({'charts + numeric' if not args.numeric_only else 'numeric only'})")
     print(f"  ARITHMETIC/RISK  : deterministic compiler — always")
     print(f"  MANAGEMENT       : {args.management}"
-          + ("  <- Claude has authority over the open position"
+          + (f"  <- {analyst_label} has authority over the open position"
              if args.management == "contextual" else
-             "  <- Claude does NOT manage the open position"))
+             f"  <- {analyst_label} does NOT manage the open position"))
     print(f"  shadow policies  : {'on' if args.shadow_management else 'OFF'}"
           + ("  (contextual included — this calls the API per step)"
              if args.shadow_contextual else "  (contextual excluded — costs money)"))
