@@ -150,12 +150,18 @@ def ev_gate(rr: float, cost_r: float, mechanism: str,
             cohorts: Optional[dict[str, CohortStat]] = None,
             *, fallback_min_rr: float = 1.5,
             min_ev_r: float = 0.0,
-            shadow: bool = False) -> EVVerdict:
+            novelty_level: Literal["LOW", "MEDIUM", "HIGH"] = "LOW") -> EVVerdict:
     """Take when expected value is positive. Frequency follows from that.
 
     `min_ev_r` is the only economic bar: a trade must add expected value after
     costs. It is NOT a selectivity dial — raising it to look disciplined is
     exactly the behaviour the objective forbids.
+
+    `novelty_level` is an epistemic datum, not a quality judgement. HIGH novelty
+    means the desk is more ignorant, so the cold-start prior widens slightly
+    (see `entry.novelty_uncertainty`). It is a modest, registered, DEMOTABLE
+    charge that dies the moment this mechanism has its own cohort — never a ban,
+    and never applied on the measured-cohort path.
     """
     stat = (cohorts or {}).get(mechanism)
     if stat is not None and stat.n > 0:
@@ -163,9 +169,10 @@ def ev_gate(rr: float, cost_r: float, mechanism: str,
         take = ev > min_ev_r
         note = ("" if stat.informative else
                 f" (thin cohort n={stat.n}, shrunk toward prior)")
+        nov = "" if novelty_level == "LOW" else f" (novelty {novelty_level})"
         return EVVerdict(take, ev, stat.hit_rate_shrunk, "COHORT",
                          f"EV {ev:+.3f}R at measured hit {stat.hit_rate_shrunk:.0%} "
-                         f"on {stat.n} resolved{note}")
+                         f"on {stat.n} resolved{note}{nov}")
 
     # COLD-START UNCERTAINTY PRIOR — not a quality standard.
     #
@@ -173,47 +180,32 @@ def ev_gate(rr: float, cost_r: float, mechanism: str,
     # falls back to requiring enough asymmetry that a below-average hit rate
     # still pays. That is a defensible response to ignorance and an indefensible
     # permanent rule: it blocks real trades on the strength of a guess, and the
-    # trades it blocks are exactly the NOVEL mechanisms the desk needs history
+    # trades it blocks are exactly the novel mechanisms the desk needs history
     # for. It is therefore a DISCRETIONARY restriction like any other, it is
     # registered, its false-negative cost is measured from the refusal ledger's
     # forward paths, and it stops blocking the moment that measurement says it
     # costs more than it saves.
-    #
-    # THE DEADLOCK THIS BREAKS. The rationale above promises the prior "stops
-    # blocking the moment that measurement says it costs more than it saves" --
-    # and that measurement can never be made. Demotion runs off the review,
-    # the review needs resolved outcomes, and this gate blocks the trades that
-    # would produce them. Prior blocks unknown mechanisms -> no history accrues
-    # -> the review returns UNDETERMINED -> the prior never demotes -> it blocks
-    # forever. A gate holding its own escape hatch shut.
-    #
-    # IN SHADOW THERE IS NO LOSS TO AVOID. This restriction exists to protect
-    # capital from mechanisms whose hit rate is unknown. Advisory-only mode puts
-    # no capital at risk, so the entire BENEFIT side of the trade-off is zero,
-    # while the COST side -- evidence never gathered -- is the whole reason the
-    # desk is running at all. Blocking here buys nothing and pays the full
-    # learning rate for it.
-    #
-    # NOT a general loosening. The moment the desk is armed, `shadow` is False
-    # and the prior enforces exactly as before. Live risk is unchanged; what
-    # changed is that measuring is no longer forbidden.
     from .constitution import is_enforcing
     breakeven = (1.0 + cost_r) / (1.0 + rr)
-    meets = rr >= fallback_min_rr
-    registered = is_enforcing("entry.fallback_min_rr")
-    enforcing = registered and not shadow
+    req = fallback_min_rr
+    enforcing = is_enforcing("entry.fallback_min_rr")
+    # NOVELTY = UNCERTAINTY: a HIGH-novelty mechanism gets a slightly wider
+    # cold-start prior until its own cohort exists. Registered as a separate,
+    # demotable restriction so its cost can be measured against everything
+    # else's. Never blocks a HIGH-novelty read that clears the (higher) bar.
+    nov_adj = {"LOW": 1.0, "MEDIUM": 1.10, "HIGH": 1.25}
+    nov_surcharge, nov_text = 1.0, ""
+    if is_enforcing("entry.novelty_uncertainty"):
+        nov_surcharge = nov_adj.get(novelty_level, 1.0)
+        if nov_surcharge > 1.0:
+            nov_text = f"; {novelty_level} novelty widened prior to {req * nov_surcharge:.2f}"
+    meets = rr >= req * nov_surcharge
     take = meets or not enforcing
-    if not registered:
-        stance = "prior DEMOTED (advisory only)"
-    elif shadow:
-        stance = ("prior NOT ENFORCED IN SHADOW — no capital at risk, and "
-                  "blocking here is what starves its own demotion review")
-    else:
-        stance = "prior ENFORCING"
+    stance = "prior ENFORCING" if enforcing else "prior DEMOTED (advisory only)"
     return EVVerdict(take, float("nan"), breakeven, "COLD_START_PRIOR",
                      f"no resolved history for {mechanism!r}; "
-                     f"R:R {rr:.2f} vs cold-start prior {fallback_min_rr:.2f} "
-                     f"(breakeven hit {breakeven:.0%}) — {stance}")
+                     f"R:R {rr:.2f} vs cold-start prior {req:.2f}"
+                     f"{nov_text} (breakeven hit {breakeven:.0%}) — {stance}")
 
 
 # --------------------------------------------------------------------------
@@ -232,50 +224,17 @@ class Heat:
     correlation_haircut: float = 0.65     # same-symbol same-direction overlap
     max_daily_loss_r: float = 3.0
 
-    #: Whether hitting the daily loss REFUSES the signal, or merely says so.
-    #:
-    #: ADVISORY BY DEFAULT, BECAUSE THIS DESK HOLDS NO CAPITAL. A daily-loss cap
-    #: is ruin control, and ruin control protects an account. Aurum has no
-    #: account: it sends signals, and the operator decides what to take and at
-    #: what size. So refusing here does not prevent a loss — it prevents the
-    #: OPERATOR SEEING a setup, and hands them less information on precisely the
-    #: day they have most reason to want it. The exposure being managed is
-    #: theirs, and they are the only one who can manage it.
-    #:
-    #: MEASURED, 2026-08-28: 28 of 78 recent refusals (36%) were this one line —
-    #: the single largest suppressor of output on the desk, and none of it was
-    #: the analyst declining a setup.
-    #:
-    #: THE NUMBER IS NOT DELETED, which is the part that matters. day_loss_r is
-    #: still tracked, still reported, still sizes through
-    #: allocation.drawdown_scalar, and the state still rides in the ledger row —
-    #: so "did signals sent after a -3R day do worse" stays an answerable
-    #: question instead of becoming an assumption. What changed is that the
-    #: thing being measured no longer prevents the measurement.
-    #:
-    #: Set True the moment anything here places its own orders. That is what
-    #: makes this a property of an ADVISORY desk rather than a loosening.
-    daily_loss_blocks: bool = False
-
     def room_for(self, open_risks: Sequence[float], same_direction: int,
                  new_risk_r: float, day_loss_r: float) -> tuple[bool, str]:
-        over_daily = day_loss_r <= -self.max_daily_loss_r
-        if over_daily and self.daily_loss_blocks:
+        if day_loss_r <= -self.max_daily_loss_r:
             return False, f"daily loss {day_loss_r:.2f}R at limit"
-        # CARRIED, NOT ENFORCED. The reason string lands in the ledger row, so a
-        # signal sent past the cap is labelled as such and stays separable in
-        # every later analysis.
-        note = (f" [daily loss {day_loss_r:.2f}R past the {self.max_daily_loss_r:.2f}R "
-                f"advisory cap — ADVISORY on a desk that holds no capital]"
-                if over_daily else "")
         effective = sum(open_risks) + new_risk_r * (
             1.0 + self.correlation_haircut * same_direction)
         if effective > self.max_open_risk_r:
             return False, (f"portfolio heat {effective:.2f}R would exceed "
                            f"{self.max_open_risk_r:.2f}R "
-                           f"({len(open_risks)} open, {same_direction} same-direction)"
-                           + note)
-        return True, f"heat {effective:.2f}R of {self.max_open_risk_r:.2f}R{note}"
+                           f"({len(open_risks)} open, {same_direction} same-direction)")
+        return True, f"heat {effective:.2f}R of {self.max_open_risk_r:.2f}R"
 
 
 # --------------------------------------------------------------------------

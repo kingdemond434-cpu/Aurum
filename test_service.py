@@ -187,7 +187,7 @@ def test_p0_3_closed_bar_contract():
           f"used {svc.state.last_bar_ts}, newest closed is {newest} "
           f"(previous was {series[-2].ts.isoformat()})")
     check("the desk's bar window ends at the newest closed bar",
-          svc._bars and svc._bars[-1].ts == series[-1].ts)
+          svc._channels['M15']['bars'] and svc._channels['M15']['bars'][-1].ts == series[-1].ts)
     shutil.rmtree(out, ignore_errors=True)
 
 

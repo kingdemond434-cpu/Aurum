@@ -30,25 +30,17 @@ from pathlib import Path
 from typing import Iterator, Literal, Optional, Protocol, Sequence
 
 from .analyst import (AnalystRead, CompiledSignal, Context, Level, LevelKind,
-                      MarketBrief, Refusal, Setup, Thresholds, compile_signal)
+                      MarketBrief, PathForecast, AdversarialReview, Refusal,
+                      Setup, Thresholds, compile_signal)
 from .costs import CostModel
 from .features import (Bar, StructureState, atr, classify, session_of, swings,
                        visible_swings)
-from .candle_character import block as candle_character_block
-from .flows import load as flows_load
-from .day_state import read as day_state_read
-from .gold_trend import read as gold_trend_read
-from .macro_context import MacroContext
 from .ledger import (Bar as LBar, DecisionKind, DecisionRecord, Ledger, PathRef,
                      resolve_forward)
 from .notify import Sink, build_sink
 from .watcher import Watcher
 
 log = logging.getLogger(__name__)
-
-#: Where the flows collector leaves its cache. Read on the decision path, never fetched there:
-#: a decision must not wait on -- or fail because of -- a third-party website.
-FLOWS_CACHE = Path(__file__).resolve().parent.parent / "state" / "flows.json"
 
 
 # --------------------------------------------------------------------------
@@ -132,46 +124,43 @@ class MT5BarSource:
 # build_brief — real, no seam
 # --------------------------------------------------------------------------
 
-def _prior_day_bars(bars: Sequence[Bar], i: int) -> list[Bar]:
-    """Every bar of the most recent calendar day STRICTLY BEFORE bars[i]'s day.
+def _raw_path_lines(bars: Sequence[Bar], i: int, atr: float, n: int = 12) -> list[str]:
+    """The last n closed bars as arithmetic: shape without the picture.
 
-    CAUSAL, like every other input to a brief: it walks backwards from i and can
-    never see a bar the desk has not reached. Returns [] rather than guessing
-    when the window holds only one day -- an empty prior day is a real answer,
-    and inventing yesterday's range from today's bars would put a fabricated
-    level in front of the analyst wearing a confirmed label.
+    Body, upper/lower wick, close position, range relative to ATR and net
+    return — the same information a chart carries, in numbers the model can
+    reason over without trusting a renderer.
     """
-    if i <= 0 or i >= len(bars):
-        return []
-    today = bars[i].ts.date()
-    prior_date = None
-    out: list[Bar] = []
-    for b in reversed(bars[:i]):
-        d = b.ts.date()
-        if d == today:
+    out: list[str] = []
+    for b in bars[max(0, i - n + 1):i + 1]:
+        rng = b.high - b.low
+        if rng <= 0:
             continue
-        if prior_date is None:
-            prior_date = d
-        if d != prior_date:
-            break
-        out.append(b)
-    return list(reversed(out))
+        body = abs(b.close - b.open)
+        lo = min(b.open, b.close)
+        hi = max(b.open, b.close)
+        upper = max(0.0, b.high - hi) / rng * 100.0
+        lower = max(0.0, lo - b.low) / rng * 100.0
+        body_pct = body / rng * 100.0
+        close_pos = (b.close - b.low) / rng * 100.0
+        ret = (b.close / b.open - 1.0) * 100.0 if b.open else 0.0
+        rel = rng / atr if atr > 0 else 0.0
+        out.append(
+            f"{b.ts.strftime('%m-%d %H:%M')}  O {b.open:.2f} H {b.high:.2f} "
+            f"L {b.low:.2f} C {b.close:.2f}  BODY {body_pct:>3.0f}% "
+            f"UPW {upper:>2.0f}% LOWW {lower:>2.0f}% CPP {close_pos:>2.0f}% "
+            f"RNG/ATR {rel:>3.1f} RET {ret:+.2f}%"
+        )
+    return out
 
 
 def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                 sw: Sequence, bid: float, ask: float, tick_age_s: float,
                 htf: Optional[StructureState] = None,
                 timeline: Sequence[str] = (), symbol: str = "XAUUSD",
-                timeframe: str = "D1",
-                macro: Optional[MacroContext] = None,
+                timeframe: str = "D1", macro=None,
                 crossmarket: Optional[str] = None) -> MarketBrief:
-    """Assemble the analyst brief from deterministic state. Levels get stable ids.
-
-    `macro` is optional and defaults to None, which renders as UNMEASURED
-    rather than as a neutral backdrop -- a caller with no macro feed must
-    produce a brief that SAYS so, because omitting the section leaves the model
-    unable to tell a missing read from one that was never going to be there.
-    """
+    """Assemble the analyst brief from deterministic state. Levels get stable ids."""
     vis = visible_swings(sw, i)
     levels: list[Level] = []
     n = 1
@@ -187,49 +176,7 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                         round(min(b.low for b in day), 2), timeframe, 0, True)); n += 1
     if st.trigger_price is not None:
         levels.append(Level(f"L{n}", LevelKind.RECLAIM, round(st.trigger_price, 2),
-                            timeframe, 0, True)); n += 1
-
-    # PRIOR-DAY EXTREMES. LevelKind has carried PRIOR_DAY_HIGH and PRIOR_DAY_LOW
-    # since the enum was written and NOTHING EVER BUILT THEM -- two named,
-    # confirmed, entirely ordinary reference points that the analyst could see
-    # in the vocabulary and never in the table. They matter most in exactly the
-    # case that was failing: price making a new session low still has
-    # yesterday's low beneath it, so the trade that had "no level below L10 to
-    # run to" usually did have one, a day older.
-    #
-    # Real observed structure, so NOT projected: these may carry a stop.
-    prior = _prior_day_bars(bars, i)
-    if prior:
-        levels.append(Level(f"L{n}", LevelKind.PRIOR_DAY_HIGH,
-                            round(max(b.high for b in prior), 2), timeframe,
-                            i - len(prior), True)); n += 1
-        levels.append(Level(f"L{n}", LevelKind.PRIOR_DAY_LOW,
-                            round(min(b.low for b in prior), 2), timeframe,
-                            i - len(prior), True)); n += 1
-
-    # ATR PROJECTIONS, past the session extremes only.
-    #
-    # Deliberately anchored BEYOND the extremes rather than around spot: inside
-    # the range there are already real levels to aim at, and adding derived ones
-    # there would compete with structure for no gain. Past the extreme is where
-    # the table is empty and where a trending market spends its day.
-    #
-    # Multiples are 1x and 2x ATR from the extreme. Not tuned -- deliberately
-    # round, because a fitted multiple would be this desk choosing its own
-    # target distribution and calling it measurement.
-    #
-    # projected=True, so compile_signal will refuse them as a stop or an entry.
-    atr = st.atr if getattr(st, "atr", None) else 0.0
-    if atr > 0:
-        sess_hi = max(b.high for b in day)
-        sess_lo = min(b.low for b in day)
-        for mult in (1.0, 2.0):
-            levels.append(Level(f"L{n}", LevelKind.ATR_PROJECTION,
-                                round(sess_lo - mult * atr, 2), timeframe, 0,
-                                True, projected=True)); n += 1
-            levels.append(Level(f"L{n}", LevelKind.ATR_PROJECTION,
-                                round(sess_hi + mult * atr, 2), timeframe, 0,
-                                True, projected=True)); n += 1
+                            timeframe, 0, True))
 
     if htf is None:
         align = "NEUTRAL"
@@ -246,54 +193,15 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
         pullback_depth=st.pullback_depth,
         distance_from_session_extreme=st.distance_from_session_extreme)
 
-    # CAUSAL: bars[:i+1], never bars[i+1:] -- gold_trend_read's own leak test
-    # asserts the read at a cutoff cannot move when later bars change, and
-    # that guarantee only holds if the caller upholds its half by never
-    # passing bars the desk has not reached yet.
-    trend = gold_trend_read(bars[:i + 1])
-    # Same causal contract as trend above -- only bars[:i+1], never a peek
-    # forward. See day_state.read()'s own docstring for why that is enough:
-    # it only ever reads calendar days strictly before the last bar's date.
-    dstate = day_state_read(bars[:i + 1])
-
-    # THE HALF OF A CHART THAT IS NOT A LEVEL, AS NUMBERS. ANALYST_SYSTEM asks the model to read
-    # "compression and expansion, wick character, whether bodies are closing at the extremes or
-    # the middle, whether a move looks impulsive or grinding" off a chart image -- and this desk
-    # runs --numeric-only, because the Claude Code CLI accepts no image input at all. So the
-    # analyst was being asked for a reading it had no way to take. These ratios carry that same
-    # information at zero marginal cost, on the subscription, and with no rendering through which
-    # annotations could write the answer (candle_character.py records the desk's own measurement
-    # of exactly that failure).
-    #
-    # Same causal contract as `trend` and `dstate` above: bars[:i + 1], never a peek forward.
-    # FLOWS: who is actually holding the metal. Read from the cache the collector maintains --
-    # never fetched on the decision path, because a decision must not wait on, or fail with, a
-    # third-party website. An absent or stale cache renders UNMEASURED inside the block itself.
-    # CROSS-MARKET, read from the execution terminal rather than a web feed.
-    #
-    # drivers_free fetches DXY/S&P/VIX from Yahoo, and on 2026-08-27 Yahoo
-    # returned "possibly delisted" for all three at once -- three of the most
-    # quoted series in the world do not delist on the same afternoon, so that
-    # was the API. Every brief that day carried MACRO CONTEXT: UNMEASURED while
-    # the desk held an authenticated connection to a broker quoting silver, the
-    # dollar and indices on the SAME CLOCK as its own bars.
-    #
-    # Passed in rather than fetched here: build_brief is pure and must stay
-    # testable with no terminal, and a decision must never block on I/O.
-    blocks = [candle_character_block(bars[:i + 1]),
-              flows_load(FLOWS_CACHE).to_prompt()]
-    if crossmarket:
-        blocks.append(crossmarket)
-    blocks = tuple(blocks)
-
+    blocks = tuple([crossmarket] if crossmarket else ())
     return MarketBrief(
         symbol=symbol, as_of_utc=bars[i].ts, session=session_of(bars[i].ts),
         bid=round(bid, 2), ask=round(ask, 2), spread=round(ask - bid, 2),
         tick_age_s=tick_age_s, atr=round(st.atr, 2), context=ctx, levels=levels,
         trigger_price=None if st.trigger_price is None else round(st.trigger_price, 2),
-        trigger_utc=bars[i].ts, timeline=tuple(timeline), trend=trend,
-        bar_close=round(bars[i].close, 2),
-        day_state=dstate, macro=macro, blocks=blocks)
+        trigger_utc=bars[i].ts, bar_close=round(bars[i].close, 2),
+        timeline=tuple(timeline), macro=macro, blocks=blocks,
+        raw_path=tuple(_raw_path_lines(bars, i, st.atr)))
 
 
 # --------------------------------------------------------------------------
@@ -309,12 +217,35 @@ class DeterministicAnalyst:
     """ARM A. The desk's own rules, no model. Not a mock — the baseline itself."""
     name = "A-deterministic"
 
+    @staticmethod
+    def _path(narr: str) -> PathForecast:
+        # Deterministic, therefore easy to calibrate: the rule reads the same
+        # state the way the model does, and its path is a belief the forward
+        # ledger resolves exactly like any model's.
+        return PathForecast(p_plus_half_r=0.65, p_plus_1r=0.50, p_plus_2r=0.35,
+                            p_minus_1r_first=0.40, expected_mfe_r=1.80,
+                            expected_mae_r=0.70, expected_r=1.0,
+                            expected_holding_hours=6.0, path_narrative=narr)
+
+    @staticmethod
+    def _adversarial(mech: str) -> AdversarialReview:
+        return AdversarialReview(
+            thesis=f"rule-based {mech} signal on measured structure",
+            counter_cases="1. the displacement/sweep is noise not order; "
+                          "2. the stop sits inside the next session's range; "
+                          "3. a counter-move arrives before the runner",
+            missing="the model eyes it trades; the rule does not check context",
+            forced="stops beyond the reclaimed/displaced level",
+            timing="fired by the deterministic watcher on structure state",
+            monetization="mean reversion toward the trade origin when forced flow exhausts")
+
     def read(self, b: MarketBrief) -> AnalystRead:
         c = b.context
-        none = AnalystRead(setup=Setup.NO_SETUP, direction="NONE", entry_ref="NONE",
-                           stop_ref="NONE", tp1_ref="NONE", tp2_ref="NONE",
-                           mechanism_name="none", confidence=1, read="no rule matched",
-                           why="n/a", why_not="n/a", invalidation="n/a")
+        none = AnalystRead(action="NO_TRADE", setup=Setup.NO_SETUP, direction="NONE",
+                           entry_ref="NONE", stop_ref="NONE", tp1_ref="NONE",
+                           tp2_ref="NONE", mechanism_name="none", confidence=1,
+                           read="no rule matched", why="n/a", why_not="n/a",
+                           invalidation="n/a")
         highs = [l for l in b.levels if l.kind is LevelKind.SWING_HIGH]
         lows = [l for l in b.levels if l.kind is LevelKind.SWING_LOW]
         if not highs or not lows:
@@ -326,14 +257,20 @@ class DeterministicAnalyst:
             if c.trend_direction == "UP":
                 return AnalystRead(setup=Setup.TREND_CONTINUATION, direction="LONG",
                     entry_ref="MARKET", stop_ref=lows[-1].id, tp1_ref="NONE",
-                    tp2_ref=highs[-1].id, mechanism_name="displacement-continuation", confidence=3,
+                    tp2_ref=highs[-1].id, mechanism_name="displacement-continuation",
+                    setup_tag="displacement-continuation", confidence=3,
+                    path=self._path("displacement resumes to TP2 after a shallow pullback"),
+                    adversarial=self._adversarial("displacement-continuation"),
                     read="displacement with shallow pullback in an uptrend",
                     why="unfilled demand at the displacement origin",
                     why_not="rule-based; no contextual check",
                     invalidation=f"close below {lows[-1].id}")
             return AnalystRead(setup=Setup.TREND_CONTINUATION, direction="SHORT",
                 entry_ref="MARKET", stop_ref=highs[-1].id, tp1_ref="NONE",
-                tp2_ref=lows[-1].id, mechanism_name="displacement-continuation", confidence=3,
+                tp2_ref=lows[-1].id, mechanism_name="displacement-continuation",
+                setup_tag="displacement-continuation", confidence=3,
+                path=self._path("displacement resumes to TP2 after a shallow pullback"),
+                adversarial=self._adversarial("displacement-continuation"),
                 read="displacement with shallow pullback in a downtrend",
                 why="unfilled supply at the displacement origin",
                 why_not="rule-based; no contextual check",
@@ -343,7 +280,10 @@ class DeterministicAnalyst:
             if c.trend_direction != "DOWN":
                 return AnalystRead(setup=Setup.SWING_REVERSAL, direction="LONG",
                     entry_ref="MARKET", stop_ref=lows[-1].id, tp1_ref="NONE",
-                    tp2_ref=highs[-1].id, mechanism_name="sweep-reclaim-trap", confidence=3,
+                    tp2_ref=highs[-1].id, mechanism_name="sweep-reclaim-trap",
+                    setup_tag="sweep-reclaim", confidence=3,
+                    path=self._path("swept stops fire, reclaim holds, price returns to the breakout origin"),
+                    adversarial=self._adversarial("sweep-reclaim-trap"),
                     read="sweep and reclaim of the swing low",
                     why="sellers trapped below the reclaim",
                     why_not="rule-based; no contextual check",
@@ -378,25 +318,9 @@ class RiskLimits:
     portfolio heat in opportunity.Heat, which is denominated in risk.
     """
     max_risk_per_trade_pct: float = 0.5
-    max_daily_loss_r: float = 3.0        # advisory on an advisory desk; see below
+    max_daily_loss_r: float = 3.0        # ruin control, not selectivity
     max_open_risk_r: float = 2.0         # total R live across all positions
     correlation_haircut: float = 0.65    # same-symbol same-direction overlap
-
-    #: The same switch as opportunity.Heat.daily_loss_blocks, on the live path.
-    #: The two MUST agree, or the universe arm and the single-read arm would
-    #: refuse differently for the same reason and the comparison between them
-    #: would be measuring the discrepancy instead of the reads.
-    #:
-    #: False because Aurum HOLDS NO CAPITAL. A daily-loss cap is ruin control,
-    #: and ruin control protects an account; this desk has none. It sends
-    #: signals and the operator decides what to take. Refusing here does not
-    #: prevent a loss — it prevents the operator seeing the setup, on exactly
-    #: the day they have most reason to want it.
-    #:
-    #: MEASURED 2026-08-28: 28 of 78 recent refusals (36%) were this line, the
-    #: largest single suppressor of output on the desk. Set True the moment
-    #: anything here places its own orders.
-    daily_loss_blocks: bool = False
 
 
 @dataclass
@@ -419,23 +343,16 @@ class RiskState:
 
 def risk_check(sig: CompiledSignal, st: RiskState, lim: RiskLimits) -> tuple[bool, str]:
     """Solvency only. Nothing here refuses a trade for being the Nth today."""
-    over_daily = st.day_loss_r <= -lim.max_daily_loss_r
-    if over_daily and lim.daily_loss_blocks:
+    if st.day_loss_r <= -lim.max_daily_loss_r:
         return False, f"daily loss {st.day_loss_r:.2f}R at ruin limit"
-    # CARRIED, NOT ENFORCED. The note lands in the ledger row, so a signal sent
-    # past the cap stays labelled and separable in every later analysis — which
-    # is the whole reason the number is kept rather than deleted.
-    note = (f" [daily loss {st.day_loss_r:.2f}R past the "
-            f"{lim.max_daily_loss_r:.2f}R advisory cap — ADVISORY on a desk "
-            f"that holds no capital]" if over_daily else "")
     same_dir = sum(1 for d in st.open_directions if d == sig.direction)
     new_risk = 1.0                                   # each trade risks 1R by construction
     effective = sum(st.open_risks) + new_risk * (1.0 + lim.correlation_haircut * same_dir)
     if effective > lim.max_open_risk_r:
         return False, (f"portfolio heat {effective:.2f}R would exceed "
                        f"{lim.max_open_risk_r:.2f}R ({st.open_positions} open, "
-                       f"{same_dir} same-direction)" + note)
-    return True, f"heat {effective:.2f}R of {lim.max_open_risk_r:.2f}R{note}"
+                       f"{same_dir} same-direction)")
+    return True, f"heat {effective:.2f}R of {lim.max_open_risk_r:.2f}R"
 
 
 # --------------------------------------------------------------------------
@@ -546,10 +463,13 @@ class ShadowRunner:
                 brief_render=brief.render(), decided_by=by, decision=decision,
                 reason=reason, path_ref=pref, outcome=out))
 
-        if read.setup is Setup.NO_SETUP:
+        if read.is_no_trade():
             self.stats.refusals_model += 1
-            note(DecisionKind.REFUSAL_MODEL, "MODEL", {"setup": "NO_SETUP"},
-                 "analyst: NO_SETUP", "LONG", brief.atr)
+            verdict = "NO_TRADE" if read.action == "NO_TRADE" else "NO_SETUP"
+            note(DecisionKind.REFUSAL_MODEL, "MODEL",
+                 {"setup": read.setup.value, "action": read.action,
+                  "novelty": read.novelty},
+                 f"analyst: {verdict}", "LONG", brief.atr)
             return
 
         res = compile_signal(brief, read, self.thresholds, self.cost_model)

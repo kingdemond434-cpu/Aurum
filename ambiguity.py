@@ -22,7 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from golddesk.analyst import AnalystRead, Refusal, Setup, Thresholds, compile_signal
+from golddesk.analyst import (AdversarialReview, AnalystRead, PathForecast,
+                              Refusal, Setup, Thresholds, compile_signal)
 from golddesk.features import atr, classify, swings
 from golddesk.runner import ParquetBarSource, build_brief
 
@@ -55,7 +56,16 @@ def main() -> int:
                            entry_ref="MARKET", stop_ref=lo.id, tp1_ref=hi.id,
                            tp2_ref=hi.id, mechanism_name="ambiguity-probe",
                            confidence=3, read="probe", why="probe",
-                           why_not="probe", invalidation="probe")
+                           why_not="probe", invalidation="probe",
+                           path=PathForecast(p_plus_1r=0.5, p_minus_1r_first=0.45,
+                                             expected_mfe_r=1.8, expected_mae_r=0.8,
+                                             expected_r=1.0,
+                                             expected_holding_hours=6.0,
+                                             path_narrative="probe path"),
+                           adversarial=AdversarialReview(
+                               thesis="probe", counter_cases="probe",
+                               missing="probe", forced="probe",
+                               timing="probe", monetization="probe"))
         sig = compile_signal(brief, read, Thresholds(fallback_min_rr=1.2))
         if isinstance(sig, Refusal):
             continue

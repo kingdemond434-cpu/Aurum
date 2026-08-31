@@ -24,7 +24,8 @@ from __future__ import annotations
 import sys
 from datetime import datetime, timedelta, timezone
 
-from golddesk.analyst import AnalystRead, MarketBrief, Setup, Thresholds
+from golddesk.analyst import (AdversarialReview, AnalystRead, MarketBrief,
+                              PathForecast, Setup, Thresholds)
 from golddesk.costs import CostModel
 from golddesk.opportunity import CohortStat, Heat
 from golddesk.universe import (MAX_CANDIDATES, AnalystUniverse, Candidate,
@@ -79,7 +80,16 @@ def read(mech: str, direction: str, stop: str, tp: str,
                        mechanism_name=mech, confidence=conf,
                        read="constructed", why="constructed mechanism",
                        why_not="constructed counter-case",
-                       invalidation="constructed invalidation")
+                       invalidation="constructed invalidation",
+                       path=PathForecast(p_plus_1r=0.5, p_minus_1r_first=0.45,
+                                         expected_mfe_r=1.8, expected_mae_r=0.8,
+                                         expected_r=1.0,
+                                         expected_holding_hours=6.0,
+                                         path_narrative="constructed path"),
+                       adversarial=AdversarialReview(
+                           thesis="constructed", counter_cases="constructed",
+                           missing="constructed", forced="constructed",
+                           timing="constructed", monetization="constructed"))
 
 
 def main() -> int:

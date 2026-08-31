@@ -6,7 +6,7 @@ import pytest
 
 from golddesk.analyst import Context, MarketBrief
 from golddesk.providers import (
-    AnalystError, AnalystProvider, CodexCliAnalyst, FailoverAnalyst,
+    AnalystError, AnalystProvider, AnalystQuotaError, CodexCliAnalyst, FailoverAnalyst,
     ProviderRead, build_provider_chain)
 
 VALID = {
@@ -75,6 +75,33 @@ def test_failover_uses_the_next_provider_and_records_the_failure():
     assert result.provider == "good"
     assert result.usage["failover_index"] == 1
     assert "offline" in result.usage["failover_errors"][0]
+
+
+def test_three_blind_primary_calls_open_circuit_and_fourth_skips_primary():
+    primary, fallback = Broken(), Good()
+    primary.calls = 0
+    original = primary.read
+    def counted(*args, **kwargs):
+        primary.calls += 1
+        return original(*args, **kwargs)
+    primary.read = counted
+    chain = FailoverAnalyst([primary, fallback], blind_threshold=3)
+    for _ in range(4):
+        assert chain.read(brief()).provider == "good"
+    assert primary.calls == 3
+
+
+def test_quota_opens_primary_circuit_immediately():
+    class Quota(Broken):
+        def __init__(self): self.calls = 0
+        def read(self, brief, charts=()):
+            self.calls += 1
+            raise AnalystQuotaError("weekly limit")
+    primary, fallback = Quota(), Good()
+    chain = FailoverAnalyst([primary, fallback])
+    assert chain.read(brief()).provider == "good"
+    assert chain.read(brief()).provider == "good"
+    assert primary.calls == 1
 
 
 def test_a_valid_no_setup_is_a_verdict_not_a_failover_trigger():

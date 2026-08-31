@@ -385,6 +385,9 @@ def main() -> int:
     ap.add_argument("--fallback-provider", default="codex:gpt-5.6-sol",
                     help="local ChatGPT fallback used only after a real primary "
                          "failure; defaults to gpt-5.6-sol at high reasoning")
+    ap.add_argument("--timeframes", default="M5,M15,H1,H4",
+                    help="comma-separated causal evaluation arms; each acts only "
+                         "on its own closed bars")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
@@ -515,6 +518,8 @@ def main() -> int:
                         shadow_management=args.shadow_management,
                         shadow_contextual=args.shadow_contextual,
                         universe_mode=args.universe,
+                        timeframes=tuple(t.strip().upper() for t in
+                                         args.timeframes.split(",") if t.strip()),
                         enable_macro=not args.no_macro,
                         wake_on_bar_close=args.wake_every_bar,
                         fallback_provider_specs=((args.fallback_provider,)

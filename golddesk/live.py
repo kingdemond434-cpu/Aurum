@@ -330,8 +330,12 @@ class LiveDesk:
                  macro_refresh: timedelta = timedelta(hours=6),
                  macro_timeout_s: float = 25.0,
                  wake_on_bar_close: bool = False,
-                 specialist_council: Optional[Council] = None):
+                 specialist_council: Optional[Council] = None,
+                 entry_tf: str = ENTRY_TF, quote_provider=None,
+                 max_decision_drift_atr: float = 0.75):
         self.provider, self.ledger = provider, ledger
+        self.quote_provider = quote_provider
+        self.max_decision_drift_atr = max(0.1, float(max_decision_drift_atr))
         self.sink = sink or build_sink(None)
         self.shadow = shadow
         self.thresholds, self.cost_model = thresholds, cost_model
@@ -340,6 +344,7 @@ class LiveDesk:
         # under a subscription and what it still costs.
         self.watcher = Watcher(heartbeat=heartbeat, min_gap=min_gap,
                                wake_on_bar_close=wake_on_bar_close)
+        self.watchers: dict[str, Watcher] = {entry_tf: self.watcher}
         self.vision, self.cohorts = vision, cohorts
         self.book = book
         self.obs_heartbeat = observer_heartbeat
@@ -390,6 +395,10 @@ class LiveDesk:
         # How many entry-timeframe bars make one HTF candle. 16 M15 = H4.
         # Used for TRUE OHLC aggregation, never for sampling.
         self.htf_factor = htf_factor
+        self.entry_tf = entry_tf
+        self._current_tf: Optional[str] = None
+        self._current_htf_factor: Optional[int] = None
+        self._current_htf_name: Optional[str] = None
         self.measure_position_constraint = measure_position_constraint
         # MACRO. A zero-arg callable returning a MacroContext -- normally
         # macro_context.from_drivers(build_drivers(...)). None means no feed and
@@ -471,6 +480,10 @@ class LiveDesk:
         self._last_state: Optional[StructureState] = None
         self._last_bars: Optional[Sequence[Bar]] = None
         self._last_idx: int = 0
+
+    @property
+    def tf(self) -> str:
+        return self._current_tf or self.entry_tf
 
     # -- open positions ---------------------------------------------------
     @property
@@ -703,7 +716,12 @@ class LiveDesk:
     def on_bar(self, bars: Sequence[Bar], i: int, sw, atrs,
                htf_state: Optional[StructureState],
                quote: tuple[float, float, float], timeline: Sequence[str],
-               intrabar: Optional[Sequence[tuple[datetime, float]]] = None) -> None:
+               intrabar: Optional[Sequence[tuple[datetime, float]]] = None,
+               tf: Optional[str] = None, htf_factor: Optional[int] = None,
+               htf_name: Optional[str] = None) -> None:
+        self._current_tf = tf or self.entry_tf
+        self._current_htf_factor = htf_factor or self.htf_factor
+        self._current_htf_name = htf_name or HTF
         st = classify(bars, i, sw, atrs)
         if st is None:
             return
@@ -731,7 +749,7 @@ class LiveDesk:
                 bid, ask, age = quote
                 try:
                     b2 = build_brief(bars, i, st, sw, bid, ask, age, htf_state,
-                                     timeline, timeframe=ENTRY_TF,
+                                     timeline, timeframe=self.tf,
                                      macro=self._macro)
                     self._record(bars, i, b2, DecisionKind.REFUSAL_COMPILER, "POLICY",
                                  {"declined": "UNEVALUATED",
@@ -743,7 +761,10 @@ class LiveDesk:
                     log.debug("could not journal position-constraint cost: %s", e)
             return
 
-        w = self.watcher.observe(st, session_of(ts), ts)
+        w = self.watchers.setdefault(
+            self.tf, Watcher(heartbeat=self.watcher.heartbeat,
+                             min_gap=self.watcher.min_gap)).observe(
+                                 st, session_of(ts), ts)
         if not w.wake:
             return
         self.stats.wakes += 1
@@ -765,7 +786,7 @@ class LiveDesk:
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             macro=self._macro,
                             crossmarket=self._crossmarket,
-                            timeframe=ENTRY_TF)
+                            timeframe=self.tf)
         ledger_rows = self.ledger.read_all()
         try:
             from .memory_pack import build_memory_pack
@@ -808,6 +829,17 @@ class LiveDesk:
             except Exception as e:                    # noqa: BLE001
                 log.warning("specialist accountability skipped at %s: %s", ts, e)
 
+        # Stable, forward-resolved lessons only. This teaches from losing and
+        # missed trades without adding a new refusal rule or turning one stop
+        # into timidity; weak samples remain observations, not authority.
+        try:
+            from .lessons import build_lessons
+            lesson_block = build_lessons(ledger_rows)
+            if lesson_block:
+                brief = replace(brief, blocks=tuple(brief.blocks) + (lesson_block,))
+        except Exception as e:                         # evidence cannot halt trading
+            log.warning("lessons block skipped at %s: %s", ts, e)
+
         try:
             imgs = self._render_charts(bars, i)
         except AnalystError as e:
@@ -831,12 +863,45 @@ class LiveDesk:
                 self._record_blind(bars, i, brief, ts, "read", e)
                 return
 
-        if pr.read.setup is Setup.NO_SETUP:
+        if getattr(pr.read, "action", None) == "NO_TRADE" or pr.read.setup is Setup.NO_SETUP:
             self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL, "MODEL",
-                         {"setup": "NO_SETUP", "analyst_read": pr.read.model_dump(),
+                         {"setup": pr.read.setup.value,
+                          "action": getattr(pr.read, "action", "NO_TRADE"),
+                          "analyst_read": pr.read.model_dump(),
                           "vision": self.vision.value, "charts_sent": len(imgs),
-                          **pr.stamp()}, "analyst: NO_SETUP", "LONG", brief.atr)
+                          **pr.stamp()}, "analyst: NO_TRADE", "LONG", brief.atr)
             return
+
+        # Subscription-backed analysts can think for a minute or more. Never
+        # compile a MARKET proposal against the fossil quote they started with:
+        # refresh first, reprice the same thesis, and only refuse when the move
+        # during inference was so large that "enter now" is no longer the state
+        # the analyst judged. This directly prevents instant stale-entry stops.
+        if self.quote_provider is not None:
+            try:
+                live_bid, live_ask, live_age = self.quote_provider()
+                old_mid = brief.mid
+                live_mid = (live_bid + live_ask) / 2.0
+                drift_atr = abs(live_mid - old_mid) / max(brief.atr, 1e-9)
+                brief = replace(brief, bid=round(live_bid, 2), ask=round(live_ask, 2),
+                                spread=round(live_ask - live_bid, 2),
+                                tick_age_s=live_age)
+                usage = dict(pr.usage)
+                usage.update({"decision_drift_atr": round(drift_atr, 4),
+                              "quote_refreshed_after_read": True})
+                pr = ProviderRead(pr.read, pr.provider, pr.model, pr.latency_ms, usage)
+                if (pr.read.entry_ref == "MARKET"
+                        and drift_atr > self.max_decision_drift_atr):
+                    self._record(
+                        bars, i, brief, DecisionKind.REFUSAL_COMPILER, "COMPILER",
+                        {"declined": pr.read.direction, "analyst_read": pr.read.model_dump(),
+                         **pr.stamp()},
+                        f"analysis expired during inference: quote moved {drift_atr:.2f} ATR",
+                        pr.read.direction, brief.atr)
+                    return
+            except Exception as e:                    # refresh failure is explicit
+                self._record_blind(bars, i, brief, ts, "post-read quote refresh", e)
+                return
 
         # Re-entry gate applies ONLY to a proposal repeating the prior trade's
         # direction while its context survives. An opposite-direction read is a
@@ -856,7 +921,7 @@ class LiveDesk:
             self._notify(f"*RE-ENTRY* {pr.read.direction} — {v.reason}")
 
         res = compile_signal(brief, pr.read, self.thresholds, self.cost_model,
-                             self.cohorts, shadow=self.shadow)
+                             self.cohorts)
         if isinstance(res, Refusal):
             router = "edge router" in res.reason
             self._record(bars, i, brief,
@@ -1114,9 +1179,19 @@ class LiveDesk:
         # 16th M15 bar, which produces fifteen-minute candles spaced four hours
         # apart and labels them H4 — misstating the higher timeframe's range,
         # and therefore its swings, sweeps and displacement, on every chart.
-        for label, factor, n in ((f"{HTF}-context", self.htf_factor, 90),
-                                 ("H1-context", self.htf_factor // 4, 90),
-                                 (f"{ENTRY_TF}-entry", 1, 120)):
+        fac = self._current_htf_factor or self.htf_factor
+        hname = self._current_htf_name or HTF
+        mid = max(1, fac // 4)
+        tf_min = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60,
+                  "H4": 240, "D1": 1440}.get(self.tf, 15)
+        mid_min = tf_min * mid
+        mid_name = {15: "M15", 30: "M30", 60: "H1", 120: "H2", 240: "H4",
+                    360: "H6", 480: "H8", 720: "H12", 1440: "D1"}.get(
+                        mid_min, f"{mid_min}min")
+        for label, factor, n in ((f"{hname}-context", fac, 90),
+                                 (f"{mid_name}-context", mid, 90),
+                                 (f"{self.tf}-zoom", 1, 48),
+                                 (f"{self.tf}-entry", 1, 120)):
             if factor < 1:
                 continue
             # Only closed source bars, and enough of them to fill the window.
@@ -1397,11 +1472,11 @@ class LiveDesk:
             invalidation_touched=False)
         anchors = []
         if st.swing_low:
-            anchors.append(Anchor("A_SL", "SWING_LOW", st.swing_low.price, ENTRY_TF, True))
+            anchors.append(Anchor("A_SL", "SWING_LOW", st.swing_low.price, self.tf, True))
         if st.swing_high:
-            anchors.append(Anchor("A_SH", "SWING_HIGH", st.swing_high.price, ENTRY_TF, True))
+            anchors.append(Anchor("A_SH", "SWING_HIGH", st.swing_high.price, self.tf, True))
         if st.trigger_price is not None:
-            anchors.append(Anchor("A_TRG", "RECLAIM", st.trigger_price, ENTRY_TF, True))
+            anchors.append(Anchor("A_TRG", "RECLAIM", st.trigger_price, self.tf, True))
 
         spread = self.last_spread if self.last_spread is not None else 0.48
         bid = self.last_bid if self.last_bid is not None else price - spread / 2
@@ -1597,8 +1672,8 @@ class LiveDesk:
         """
         from golddesk.snapshot import SnapshotBuilder
         as_of = bars[i].ts
-        b = SnapshotBuilder(brief.symbol, ENTRY_TF, as_of)
-        b.add_bars("entry", bars[:i + 1], ENTRY_TF, count=40)
+        b = SnapshotBuilder(brief.symbol, self.tf, as_of)
+        b.add_bars("entry", bars[:i + 1], self.tf, count=40)
         for key, val in (("bid", brief.bid), ("ask", brief.ask),
                          ("spread", brief.spread), ("atr", brief.atr)):
             if val is not None:
@@ -1904,5 +1979,5 @@ class LiveDesk:
             | {"session": brief.session} | self._trend_ctx(brief)
             | snap_keys,
             brief_render=brief.render(), decided_by=by, decision=decision,
-            reason=reason, path_ref=PathRef.of(brief.symbol, ENTRY_TF, lb),
+            reason=reason, path_ref=PathRef.of(brief.symbol, self.tf, lb),
             outcome=resolve_forward(lb, bars[i].ts, bars[i].close, direction, risk_price)))

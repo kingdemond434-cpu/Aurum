@@ -41,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from golddesk.analyst import AnalystRead, Setup, Thresholds
+from golddesk.analyst import AdversarialReview, AnalystRead, PathForecast, Setup, Thresholds
 from golddesk.backtest import Arm, Backtest, check_pairing, load_fine_series
 from golddesk.features import Bar
 from golddesk.live import Resolution
@@ -67,7 +67,16 @@ class FixtureProvider(AnalystProvider):
                         entry_ref="MARKET", stop_ref=lo.id, tp1_ref=hi.id,
                         tp2_ref=hi.id, mechanism_name="fixture-mech", confidence=3,
                         read="fixture", why="fixture", why_not="fixture",
-                        invalidation="fixture")
+                        invalidation="fixture",
+                        path=PathForecast(p_plus_1r=0.5, p_minus_1r_first=0.45,
+                                          expected_mfe_r=1.8, expected_mae_r=0.8,
+                                          expected_r=1.0,
+                                          expected_holding_hours=6.0,
+                                          path_narrative="fixture path"),
+                        adversarial=AdversarialReview(
+                            thesis="fixture", counter_cases="fixture",
+                            missing="fixture", forced="fixture",
+                            timing="fixture", monetization="fixture"))
         return ProviderRead(r, self.name, self.model, 0.0, {"in": 0, "out": 0})
 
     def choose_option(self, system, prompt, option_ids):

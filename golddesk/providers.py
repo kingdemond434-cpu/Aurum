@@ -47,6 +47,11 @@ class AnalystError(RuntimeError):
     pass
 
 
+class AnalystQuotaError(AnalystError):
+    """A subscription ceiling, not an invocation defect or transient parse."""
+    pass
+
+
 class AnalystProvider(abc.ABC):
     """The whole contract. Implement read(); everything else is shared."""
 
@@ -657,6 +662,20 @@ class ClaudeCodeAnalyst(AnalystProvider):
     AUTH_MARKERS = ("failed to authenticate", "oauth session expired",
                     "please run /login", "invalid api key",
                     "authentication_error", "credentials could not be refreshed")
+    QUOTA_MARKERS = ("weekly limit", "usage limit", "rate_limit_error",
+                     '"api_error_status":429', "api_error_status: 429")
+
+    @classmethod
+    def _quota_failure(cls, stdout: str, stderr: str) -> Optional[str]:
+        blob = (stdout or "") + "\n" + (stderr or "")
+        if not any(m in blob.lower() for m in cls.QUOTA_MARKERS):
+            return None
+        try:
+            i, j = blob.find("{"), blob.rfind("}")
+            data = json.loads(blob[i:j + 1]) if i >= 0 and j > i else {}
+            return str(data.get("result") or blob.strip())[:300]
+        except Exception:                              # noqa: BLE001
+            return blob.strip()[:300]
 
     @classmethod
     def _auth_failure(cls, stdout: str, stderr: str) -> Optional[str]:
@@ -808,6 +827,11 @@ class ClaudeCodeAnalyst(AnalystProvider):
             # be rejected.
             return self._invoke(prompt, system, effort=self.FALLBACK_EFFORT,
                                 timeout_s=self.FALLBACK_TIMEOUT_S, drop=drop)
+        quota = self._quota_failure(out_s, err_s) if rc != 0 else None
+        if quota is not None:
+            raise AnalystQuotaError(
+                f"Claude subscription quota unavailable: {quota}; switch to "
+                "the configured GPT/ChatGPT subscription backend immediately")
         auth = self._auth_failure(out_s, err_s) if rc != 0 else None
         if auth is not None:
             # NOT A FLAG. The ladder below and this branch are triggered by an
@@ -1193,30 +1217,61 @@ class FailoverAnalyst(AnalystProvider):
 
     name = "failover"
 
-    def __init__(self, providers: Sequence[AnalystProvider]):
+    def __init__(self, providers: Sequence[AnalystProvider],
+                 blind_threshold: int = 3, cooldown_s: float = 3600.0):
         self.providers = list(providers)
         if not self.providers:
             raise ValueError("failover chain is empty")
         self.model = " -> ".join(
             f"{p.name}:{getattr(p, 'model', '')}" for p in self.providers)
+        self.blind_threshold = max(1, int(blind_threshold))
+        self.cooldown_s = max(1.0, float(cooldown_s))
+        self._primary_failures = 0
+        self._primary_circuit_until = 0.0
+
+    def _provider_order(self):
+        if len(self.providers) > 1 and time.monotonic() < self._primary_circuit_until:
+            return list(enumerate(self.providers[1:], start=1))
+        return list(enumerate(self.providers))
+
+    def _failed(self, index: int, error: Exception) -> None:
+        if index != 0 or len(self.providers) < 2:
+            return
+        self._primary_failures += 1
+        if isinstance(error, AnalystQuotaError) or self._primary_failures >= self.blind_threshold:
+            self._primary_circuit_until = time.monotonic() + self.cooldown_s
+            why = ("quota" if isinstance(error, AnalystQuotaError)
+                   else f"{self._primary_failures} consecutive blind calls")
+            log.warning("primary analyst circuit OPEN (%s); routing directly to %s",
+                        why, self.providers[1].name)
+
+    def _succeeded(self, index: int) -> None:
+        if index == 0:
+            self._primary_failures = 0
+            self._primary_circuit_until = 0.0
 
     def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
         errors = []
-        for i, provider in enumerate(self.providers):
+        attempted = []
+        for i, provider in self._provider_order():
+            attempted.append(provider.name)
             try:
                 provider_charts = () if provider.name == "claudecode" else charts
                 result = provider.read(brief, provider_charts)
+                self._succeeded(i)
                 usage = dict(result.usage)
                 usage.update({
                     "failover_index": i,
-                    "failover_attempts": [p.name for p in self.providers[:i + 1]],
+                    "failover_attempts": list(attempted),
                     "failover_errors": errors,
+                    "primary_circuit_open": i > 0 and not errors,
                     "charts_available": len(charts),
                     "charts_sent": len(provider_charts),
                 })
                 return ProviderRead(result.read, result.provider, result.model,
                                     result.latency_ms, usage)
             except Exception as e:                       # noqa: BLE001
+                self._failed(i, e)
                 errors.append(f"{provider.name}: {type(e).__name__}: {e}")
                 log.warning("analyst provider %s failed; trying fallback: %s",
                             provider.name, e)
@@ -1225,15 +1280,19 @@ class FailoverAnalyst(AnalystProvider):
     def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
         """Fail over the full universe call, not a wrapped single-read call."""
         errors = []
-        for i, provider in enumerate(self.providers):
+        attempted = []
+        for i, provider in self._provider_order():
+            attempted.append(provider.name)
             try:
                 provider_charts = () if provider.name == "claudecode" else charts
                 result, universe = provider.survey(brief, provider_charts)
+                self._succeeded(i)
                 usage = dict(result.usage)
                 usage.update({
                     "failover_index": i,
-                    "failover_attempts": [p.name for p in self.providers[:i + 1]],
+                    "failover_attempts": list(attempted),
                     "failover_errors": errors,
+                    "primary_circuit_open": i > 0 and not errors,
                     "charts_available": len(charts),
                     "charts_sent": len(provider_charts),
                 })
@@ -1241,6 +1300,7 @@ class FailoverAnalyst(AnalystProvider):
                                      result.latency_ms, usage)
                 return stamp, universe
             except Exception as e:                       # noqa: BLE001
+                self._failed(i, e)
                 errors.append(f"{provider.name}: {type(e).__name__}: {e}")
                 log.warning("analyst provider %s survey failed; trying fallback: %s",
                             provider.name, e)

@@ -64,6 +64,13 @@ SERVICE_VERSION = "service-2026-08-14-a"
 # WHETHER to ask; the answer still has to pass the last_bar_ts guard.
 TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240,
               "D1": 1440}
+TF_HTF = {"M1": ("H1", 60), "M5": ("H1", 12), "M15": ("H4", 16),
+          "M30": ("H4", 8), "H1": ("D1", 24), "H4": ("D1", 6), "D1": ("D1", 1)}
+
+
+def channel_history_bars(tf: str, history_bars: int) -> int:
+    """Enough source bars for the arm's context chart and state."""
+    return max(history_bars, TF_HTF.get(tf, ("H4", 16))[1] * 92 + 50)
 
 
 @dataclass
@@ -72,6 +79,7 @@ class ServiceConfig:
     entry_tf: str = ENTRY_TF
     htf: str = HTF
     history_bars: int = 600
+    timeframes: tuple = ("M15",)
     poll_seconds: float = 1.0
     # Reconnect backoff, bounded so a long outage does not become a long sleep.
     backoff_initial_s: float = 2.0
@@ -124,6 +132,7 @@ class ServiceState:
     """Everything needed to resume mid-trade after a restart."""
     version: str = SERVICE_VERSION
     last_bar_ts: Optional[str] = None
+    last_bar_tfs: dict = field(default_factory=dict)
     open_trade: Optional[dict] = None
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     restarts: int = 0
@@ -142,9 +151,10 @@ class DeskService:
         self._stop = False
         self._last_tick_advance = time.monotonic()
         self._last_heartbeat = 0.0
-        self._bars: list[Bar] = []
+        self._bars: list[Bar] = []       # home-arm compatibility aliases
         self._sw: list = []
         self._atrs: list = []
+        self._channels: dict[str, dict] = {}
         self._rehydrated = False
         self._venue_shut = False
         self._halted = False
@@ -561,8 +571,9 @@ class DeskService:
             # hundred candles at 14:03:07 cannot possibly return one the desk
             # has not seen. The old loop asked anyway, once a second — the single
             # largest and least useful request the service made.
-            if self._bar_boundary_passed():
-                self._maybe_close_bar(quote=(bid, ask, age))
+            for tf in self._tf_list():
+                if self._bar_boundary_passed(tf):
+                    self._maybe_close_bar(tf, quote=(bid, ask, age))
 
             if time.monotonic() - self._last_heartbeat > self.cfg.heartbeat_every_s:
                 self._last_heartbeat = time.monotonic()
@@ -575,7 +586,7 @@ class DeskService:
             time.sleep(self.cfg.poll_seconds if self.desk.open_trades
                        else self.cfg.idle_poll_seconds)
 
-    def _bar_boundary_passed(self) -> bool:
+    def _bar_boundary_passed(self, tf: Optional[str] = None) -> bool:
         """Could a new entry-timeframe bar plausibly have closed since the last?
 
         Pure clock arithmetic, no network. Returns True in a short window after
@@ -588,14 +599,17 @@ class DeskService:
         is processed exactly once. This only removes requests that could not
         possibly have returned new information.
         """
-        mins = TF_MINUTES.get(self.cfg.entry_tf)
+        tf = tf or self.cfg.entry_tf
+        mins = TF_MINUTES.get(tf)
         if not mins:
             return True                       # unknown timeframe: never gate
-        if not self.state.last_bar_ts:
+        last_raw = (self.state.last_bar_tfs.get(tf) or
+                    (self.state.last_bar_ts if tf == self.cfg.entry_tf else None))
+        if not last_raw:
             return True
         now = datetime.now(timezone.utc)
         try:
-            last = datetime.fromisoformat(self.state.last_bar_ts)
+            last = datetime.fromisoformat(last_raw)
         except ValueError:
             return True
         if last.tzinfo is None:
@@ -605,13 +619,24 @@ class DeskService:
         return now >= due - timedelta(seconds=self.cfg.bar_poll_lead_s)
 
     def _warm(self) -> None:
-        self._bars = list(self.feed.bars(self.cfg.entry_tf, self.cfg.history_bars))
-        self._sw = swings(self._bars)
-        self._atrs = atr(self._bars)
-        log.info("warmed with %d %s bars, last close %s", len(self._bars),
-                 self.cfg.entry_tf, self._bars[-1].ts if self._bars else "-")
+        for tf in self._tf_list():
+            bars = list(self.feed.bars(tf, channel_history_bars(tf, self.cfg.history_bars)))
+            self._channels[tf] = {"bars": bars, "sw": swings(bars), "atrs": atr(bars),
+                                  "htf_cache": None, "htf_cached_at": 0.0}
+            log.info("warmed %s: %d bars, last close %s", tf, len(bars),
+                     bars[-1].ts if bars else "-")
+        home = self._channels.get(self.cfg.entry_tf, {})
+        self._bars, self._sw, self._atrs = (home.get("bars", []), home.get("sw", []),
+                                            home.get("atrs", []))
 
-    def _maybe_close_bar(self, quote: Optional[tuple] = None) -> None:
+    def _tf_list(self) -> tuple:
+        tfs = list(self.cfg.timeframes) or [self.cfg.entry_tf]
+        if self.cfg.entry_tf not in tfs:
+            tfs.insert(0, self.cfg.entry_tf)
+        return tuple(dict.fromkeys(t.upper() for t in tfs if t.upper() in TF_MINUTES))
+
+    def _maybe_close_bar(self, tf: Optional[str] = None,
+                         quote: Optional[tuple] = None) -> None:
         """Process a bar exactly once, on its close, never while forming.
 
         `quote` is the one the loop already fetched this iteration. Passing it
@@ -619,7 +644,8 @@ class DeskService:
         an M15 desk that difference cannot change a decision, and the request
         cost is paid on every close.
         """
-        bars = self.feed.bars(self.cfg.entry_tf, self.cfg.history_bars)
+        tf = tf or self.cfg.entry_tf
+        bars = list(self.feed.bars(tf, channel_history_bars(tf, self.cfg.history_bars)))
         if len(bars) < 2:
             return
         # LiveFeed.bars() drops the forming bar itself and documents that it
@@ -628,25 +654,33 @@ class DeskService:
         # leaving the desk a full entry-timeframe candle behind the market while
         # every timestamp still looked correct.
         closed = bars[-1]
-        if self.state.last_bar_ts == closed.ts.isoformat():
+        last = self.state.last_bar_tfs.get(tf)
+        if last is None and tf == self.cfg.entry_tf:
+            last = self.state.last_bar_ts
+        if last == closed.ts.isoformat():
             return
-        self._bars = list(bars)
-        self._sw = swings(self._bars)
-        self._atrs = atr(self._bars)
-        i = len(self._bars) - 1
-        htf_state = self._htf_state()
+        ch = self._channels.setdefault(tf, {})
+        ch["bars"], ch["sw"], ch["atrs"] = bars, swings(bars), atr(bars)
+        if tf == self.cfg.entry_tf:
+            self._bars, self._sw, self._atrs = bars, ch["sw"], ch["atrs"]
+        i = len(bars) - 1
+        htf_state = self._htf_state(tf)
         bid, ask, age = quote if quote is not None else self.feed.quote()
+        htf_name, htf_factor = TF_HTF.get(tf, (self.cfg.htf, 16))
         try:
-            self.desk.on_bar(self._bars, i, visible_swings(self._sw, i), self._atrs,
+            self.desk.on_bar(bars, i, visible_swings(ch["sw"], i), ch["atrs"],
                              htf_state, (bid, ask, age),
-                             (f"{self.cfg.entry_tf} close {closed.ts:%Y-%m-%d %H:%M}",))
+                             (f"{tf} close {closed.ts:%Y-%m-%d %H:%M}",),
+                             tf=tf, htf_factor=htf_factor, htf_name=htf_name)
         except Exception as e:
-            log.exception("on_bar failed at %s: %s", closed.ts, e)
-        self.state.last_bar_ts = closed.ts.isoformat()
+            log.exception("on_bar failed at %s %s: %s", tf, closed.ts, e)
+        self.state.last_bar_tfs[tf] = closed.ts.isoformat()
+        if tf == self.cfg.entry_tf:
+            self.state.last_bar_ts = closed.ts.isoformat()
         self.state.bars_processed += 1
         self.checkpoint()
 
-    def _htf_state(self):
+    def _htf_state(self, tf: Optional[str] = None):
         """Higher-timeframe structure from TRUE aggregation, never sampling.
 
         CACHED. At M15 entry and H4 context, the H4 structure is identical
@@ -655,12 +689,14 @@ class DeskService:
         time rather than on count so an unusual timeframe pairing cannot make it
         stale by accident.
         """
+        tf = tf or self.cfg.entry_tf
+        ch = self._channels.setdefault(tf, {"htf_cache": None, "htf_cached_at": 0.0})
         now = time.monotonic()
-        if (self._htf_cache is not None
-                and now - self._htf_cached_at < self.cfg.htf_cache_seconds):
-            return self._htf_cache
+        if (ch.get("htf_cache") is not None
+                and now - ch.get("htf_cached_at", 0.0) < self.cfg.htf_cache_seconds):
+            return ch["htf_cache"]
         try:
-            htf_bars = self.feed.bars(self.cfg.htf, 200)
+            htf_bars = self.feed.bars(TF_HTF.get(tf, (self.cfg.htf, 16))[0], 200)
             if len(htf_bars) < 30:
                 return None
             # Same contract, same fix. Dropping one more here made the higher
@@ -670,10 +706,10 @@ class DeskService:
             hsw, hatrs = swings(closed), atr(closed)
             st = classify(closed, len(closed) - 1,
                           visible_swings(hsw, len(closed) - 1), hatrs)
-            self._htf_cache, self._htf_cached_at = st, now
+            ch["htf_cache"], ch["htf_cached_at"] = st, now
             return st
         except Exception as e:
-            log.debug("htf state unavailable: %s", e)
+            log.debug("htf state unavailable for %s: %s", tf, e)
             # Do NOT cache a failure as "no HTF context" — a transient error
             # would then suppress higher-timeframe state for the whole window.
             return None
@@ -725,6 +761,7 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   shadow_management: bool = True,
                   shadow_contextual: bool = False,
                   universe_mode: bool = False,
+                  timeframes: Sequence[str] = ("M15",),
                   calendar=None,
                   spread_profile_path: str = "config/spread_profile.json",
                   declared_spread: Optional[float] = None,
@@ -743,6 +780,11 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     from .providers import build_provider_chain
     from .specialists import build_desk_council
     cfg = cfg or ServiceConfig(symbol=symbol)
+    if timeframes:
+        cfg.timeframes = tuple(t.upper() for t in timeframes)
+        if cfg.entry_tf not in cfg.timeframes:
+            cfg.entry_tf = cfg.timeframes[0]
+    log.info("evaluation arms: %s (home %s)", ",".join(cfg.timeframes), cfg.entry_tf)
     if feed_backend == "oanda":
         from .feed_oanda import OandaClient
         client = OandaClient(instrument=os.environ.get("OANDA_INSTRUMENT", "XAU_USD"))
@@ -943,6 +985,8 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                     calendar=calendar, regime_history=history,
                     macro_provider=macro_fn,
                     wake_on_bar_close=wake_on_bar_close,
+                    entry_tf=cfg.entry_tf,
+                    quote_provider=feed.quote,
                     specialist_council=build_desk_council(specialists))
 
     # WHO HAS AUTHORITY over the open position. An explicit production decision:

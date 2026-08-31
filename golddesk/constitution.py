@@ -34,6 +34,17 @@ SILENT RESTRICTIONS ARE A BUILD FAILURE
 
 from __future__ import annotations
 
+CONSTITUTION_VERSION = "const-2026-08-31-ai-discovery"
+
+AI_DISCOVERY_CONSTITUTION = (
+    "AI is the primary source of thesis generation.",
+    "No finite strategy-family whitelist controls what it may notice; labels are post-hoc.",
+    "Deterministic code measures and constrains but never invents a directional thesis.",
+    "Specialists provide evidence, not votes or trades.",
+    "Historical mechanisms are memory, novel mechanisms may enter shadow, and quality is "
+    "judged by forward outcomes rather than conformity.",
+)
+
 import ast
 import json
 import logging
@@ -45,23 +56,6 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Sequence
 
 log = logging.getLogger(__name__)
-
-CONSTITUTION_VERSION = "const-2026-08-31-ai-discovery"
-
-# This boundary is architecture, not prompt flavour. Quant machinery measures
-# and constrains; AI discovers and decides. Tests and operator-facing audits can
-# import this exact declaration instead of inferring the system's purpose from a
-# changing collection of setup tags.
-AI_DISCOVERY_CONSTITUTION = (
-    "AI is the primary source of thesis generation.",
-    "No finite strategy-family whitelist controls what the AI may notice.",
-    "Deterministic code never invents a directional thesis.",
-    "Specialists provide evidence, not votes or trades.",
-    "The compiler may reject invalid or unprofitable proposals but never replaces the AI thesis.",
-    "Historical mechanisms are memory, not mandatory templates.",
-    "Novel mechanisms enter shadow immediately and are measured prospectively.",
-    "AI performance is judged by forward outcomes, not taxonomy conformity.",
-)
 
 
 class Kind(str, Enum):
@@ -150,8 +144,25 @@ REGISTRY: list[Restriction] = [
                 "evidence-based, and demotes itself when evidence weakens"),
     Restriction("entry.novel_shadow", "analyst:ANALYST_SYSTEM", Kind.DISCRETIONARY,
                 "sizing of NOVEL mechanisms before they have history",
-                "exploration/validation boundary; its forgone value MUST be "
-                "measured or it becomes permanent conservatism"),
+                "ABOLISHED (see entry.novelty_uncertainty). The desk no longer "
+                "files reads into fixed families, and a novel mechanism is no "
+                "longer shadowed until it earns visibility. Novelty is now a "
+                "reported uncertainty state (novelty LOW/MEDIUM/HIGH), routed "
+                "through a registered, demotable cold-start charge instead of a "
+                "blanket ban. Entry kept as REMOVED so old ledger rows stay "
+                "attributable",
+                status=Status.REMOVED, review_days=30),
+    Restriction("entry.novelty_uncertainty", "opportunity:ev_gate",
+                Kind.DISCRETIONARY,
+                "a HIGH-novelty mechanism meeting a slightly wider cold-start "
+                "prior while it has no resolved history",
+                "novelty IS uncertainty: the honest response to 'I have not "
+                "seen this' is a modest, transparent widening of the cold-start "
+                "prior, never a ban. It applies only on the fallback path, "
+                "dies the moment the mechanism's cohort exists, is measured on "
+                "the refusal ledger's forward paths, and demotes like any "
+                "restriction if the evidence says it costs more than it saves",
+                review_days=14),
     Restriction("reentry.policy", "policies:ReentryPolicy.evaluate", Kind.DISCRETIONARY,
                 "repeat entries in the prior direction while its context lives",
                 "prevents revenge re-entry; every parameter is a hypothesis"),
@@ -314,14 +325,14 @@ def verify_no_silent_restrictions(pkg_dir: Path) -> tuple[bool, list[str]]:
         if path.name in ("__init__.py", "constitution.py", "drift_audit.py"):
             continue
         try:
-            tree = ast.parse(path.read_text(encoding='utf-8'))
+            tree = ast.parse(path.read_text())
         except SyntaxError as e:
             problems.append(f"{path.name}: unparseable ({e})")
             continue
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            src = ast.get_source_segment(path.read_text(encoding='utf-8'), node) or ""
+            src = ast.get_source_segment(path.read_text(), node) or ""
             refuses = ("refuse(" in src or "Refusal(" in src
                        or "ReentryVerdict(False" in src or "return False," in src)
             if refuses and node.name not in DECLARED_SITES:
@@ -441,8 +452,10 @@ def measure(rows: Sequence[dict], reason_to_id: Optional[dict] = None,
 
 DEFAULT_REASON_MAP = {
     "analyst: NO_SETUP": "analyst.no_setup",
+    "analyst: NO_TRADE": "analyst.no_setup",
     "expectancy gate": "entry.expectancy_gate",
     "no resolved history": "entry.fallback_min_rr",
+    "novelty": "entry.novelty_uncertainty",
     "inverted": "entry.geometry",
     "unconfirmed level": "entry.geometry",
     "spread": "entry.spread_fraction",
