@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "28 sleeve(s) accruing, published 0.2h ago",
+          "detail": "16 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,8 +88,8 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "last run exited 1 \u2014 the desk itself is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 1.4h old",
+          "detail": "newest row 1.7h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 1.4h ago",
+          "detail": "written 1.7h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "19530MB free",
+          "detail": "19512MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 85 min ago, after a boot 52.9h ago",
+          "detail": "wrote 100 min ago, after a boot 53.1h ago",
           "ok": true
         }
       ],
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "081f1f7b1c94",
-  "generated_utc": "2026-08-31T06:15:01.492654+00:00",
+  "generated_utc": "2026-08-31T06:31:14.803039+00:00",
   "last_row_utc": "2026-08-31T04:48:22.329095+00:00",
   "ledger_rows": 377,
-  "total_faults": 11
+  "total_faults": 10
 }
