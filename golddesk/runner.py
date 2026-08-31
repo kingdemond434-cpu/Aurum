@@ -159,7 +159,8 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                 htf: Optional[StructureState] = None,
                 timeline: Sequence[str] = (), symbol: str = "XAUUSD",
                 timeframe: str = "D1", macro=None,
-                crossmarket: Optional[str] = None) -> MarketBrief:
+                crossmarket: Optional[str] = None,
+                live_tape: Sequence[str] = ()) -> MarketBrief:
     """Assemble the analyst brief from deterministic state. Levels get stable ids."""
     vis = visible_swings(sw, i)
     levels: list[Level] = []
@@ -201,7 +202,8 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
         trigger_price=None if st.trigger_price is None else round(st.trigger_price, 2),
         trigger_utc=bars[i].ts, bar_close=round(bars[i].close, 2),
         timeline=tuple(timeline), macro=macro, blocks=blocks,
-        raw_path=tuple(_raw_path_lines(bars, i, st.atr)))
+        raw_path=tuple(_raw_path_lines(bars, i, st.atr)),
+        live_tape=tuple(live_tape))
 
 
 # --------------------------------------------------------------------------

@@ -311,6 +311,37 @@ class LiveFeed:
         _assert_plausible_spread(out, timeframe, self.cfg)
         return out
 
+    def live_bars(self, timeframe: str, count: int = 120) -> list[Bar]:
+        """Closed history plus the current forming candle, explicitly for vision.
+
+        Trading structure continues to use :meth:`bars` and therefore never
+        leaks a forming candle into deterministic confirmation. The analyst's
+        chart packet, however, must show where the market is *now*. Keeping a
+        separate method makes that distinction executable instead of relying on
+        a caller to remember whether the last bar is complete.
+        """
+        self._require_live()
+        if timeframe not in TF:
+            raise FeedError(f"unknown timeframe {timeframe}")
+        raw = self.client.copy_rates_from_pos(self.resolved_symbol, TF[timeframe],
+                                              0, count)
+        if raw is None or len(raw) < 2:
+            raise FeedError(f"no live bars for {timeframe}")
+        out: list[Bar] = []
+        for r in raw:
+            ts_raw = r["time"] if not hasattr(r, "time") else r.time
+            server = (datetime.utcfromtimestamp(float(ts_raw))
+                      if not isinstance(ts_raw, datetime) else ts_raw)
+            spread_pts = float(r["spread"]) if _has(r, "spread") else 0.0
+            out.append(Bar(
+                ts=self.clock.to_utc(server), open=float(r["open"]),
+                high=float(r["high"]), low=float(r["low"]), close=float(r["close"]),
+                volume=float(r["tick_volume"]) if _has(r, "tick_volume") else 0.0,
+                spread=spread_pts * (10 ** -self.cfg.digits)))
+        out.sort(key=lambda b: b.ts)
+        _assert_no_duplicates(out, timeframe)
+        return out
+
     def multi(self, timeframes: Sequence[str], count: int = 500) -> dict[str, list[Bar]]:
         """Multi-timeframe pull in one pass, so all frames share a moment."""
         return {tf: self.bars(tf, count) for tf in timeframes}

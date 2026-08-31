@@ -43,6 +43,11 @@ def strict_output_schema(schema: dict) -> dict:
 
     def visit(node):
         if isinstance(node, dict):
+            # Pydantic represents a defaulted enum/model as `$ref` plus a
+            # sibling `default`. OpenAI's strict validator rejects any such
+            # sibling before inference. Every property is required below, so
+            # transport defaults are both illegal and unnecessary.
+            node.pop("default", None)
             props = node.get("properties")
             if isinstance(props, dict):
                 node["additionalProperties"] = False

@@ -140,6 +140,7 @@ class MarketBrief:
     #: bar, range relative to ATR and net return give the shape a chart carries
     #: without the picture. Computed by build_brief in runner.py.
     raw_path: Sequence[str] = field(default_factory=tuple)
+    live_tape: Sequence[str] = field(default_factory=tuple)
     day_state: Optional["DayState"] = None
 
     @property
@@ -169,6 +170,9 @@ class MarketBrief:
         if self.raw_path:
             lines += ["", "RAW NUMERICAL PATH (last bars — shape without the picture)"]
             lines += [f"  {t}" for t in self.raw_path]
+        if self.live_tape:
+            lines += ["", "LIVE TAPE (forming candles; incomplete, never deterministic confirmation)"]
+            lines += [f"  {t}" for t in self.live_tape]
         if self.timeline:
             lines += ["", "HOW THIS DEVELOPED (most recent last)"]
             lines += [f"  {t}" for t in self.timeline]

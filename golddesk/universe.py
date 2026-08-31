@@ -264,15 +264,15 @@ def compile_universe(brief: MarketBrief, universe: AnalystUniverse,
             out.append(Candidate(k, read, None, None, None, "n/a",
                                  "GATED", "analyst returned NO_TRADE in a candidate slot"))
             continue
-        res = compile_signal(brief, read, thresholds, cost_model, cohorts,
-                             shadow=shadow)
+        res = compile_signal(brief, read, thresholds, cost_model, cohorts)
         if isinstance(res, Refusal):
             out.append(Candidate(k, read, None, res, None, "n/a",
                                  "GATED", res.reason))
             continue
         v = ev_gate(res.rr_tp2, res.cost_r, read.mechanism_name, cohorts,
                     fallback_min_rr=thresholds.fallback_min_rr,
-                    min_ev_r=thresholds.min_ev_r, shadow=shadow)
+                    min_ev_r=thresholds.min_ev_r,
+                    novelty_level=read.novelty)
         ev = None if (v.ev_r is None or math.isnan(v.ev_r)) else v.ev_r
         out.append(Candidate(k, read, res, None, ev, v.basis))
     return out

@@ -399,6 +399,7 @@ class LiveDesk:
         self._current_tf: Optional[str] = None
         self._current_htf_factor: Optional[int] = None
         self._current_htf_name: Optional[str] = None
+        self._live_frames: dict[str, Sequence[Bar]] = {}
         self.measure_position_constraint = measure_position_constraint
         # MACRO. A zero-arg callable returning a MacroContext -- normally
         # macro_context.from_drivers(build_drivers(...)). None means no feed and
@@ -718,10 +719,12 @@ class LiveDesk:
                quote: tuple[float, float, float], timeline: Sequence[str],
                intrabar: Optional[Sequence[tuple[datetime, float]]] = None,
                tf: Optional[str] = None, htf_factor: Optional[int] = None,
-               htf_name: Optional[str] = None) -> None:
+               htf_name: Optional[str] = None,
+               live_frames: Optional[dict[str, Sequence[Bar]]] = None) -> None:
         self._current_tf = tf or self.entry_tf
         self._current_htf_factor = htf_factor or self.htf_factor
         self._current_htf_name = htf_name or HTF
+        self._live_frames = dict(live_frames or {})
         st = classify(bars, i, sw, atrs)
         if st is None:
             return
@@ -783,10 +786,22 @@ class LiveDesk:
         self._refresh_macro(ts)
         self._refresh_crossmarket(ts)
 
+        live_tape = []
+        for name in ("M1", "M5", "M15", "H1", "H4"):
+            frame = self._live_frames.get(name) or ()
+            if not frame:
+                continue
+            b = frame[-1]
+            rng = max(b.high - b.low, 1e-9)
+            live_tape.append(
+                f"{name} FORMING @{b.ts.isoformat()} O {b.open:.2f} H {b.high:.2f} "
+                f"L {b.low:.2f} NOW {b.close:.2f} close_pos "
+                f"{(b.close-b.low)/rng:.2f} range {rng:.2f}")
+        live_tape.append(f"LIVE QUOTE bid {bid:.2f} ask {ask:.2f} age {age:.1f}s")
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             macro=self._macro,
                             crossmarket=self._crossmarket,
-                            timeframe=self.tf)
+                            timeframe=self.tf, live_tape=live_tape)
         ledger_rows = self.ledger.read_all()
         try:
             from .memory_pack import build_memory_pack
@@ -1175,6 +1190,20 @@ class LiveDesk:
         from .chart import Bar as CB, render_clean_chart
         from .features import aggregate
         out = []
+        # Prefer the broker's TRUE timeframe candles, including the explicitly
+        # forming last candle. This is the live sensorium; deterministic
+        # structure still uses closed bars only. Every chart is synchronized by
+        # being fetched in the same decision packet immediately before the call.
+        if self._live_frames:
+            for label in ("M1", "M5", "M15", "H1", "H4"):
+                frame = self._live_frames.get(label) or ()
+                win = list(frame)[-120:]
+                if len(win) >= 30:
+                    out.append(render_clean_chart(
+                        [CB(b.open, b.high, b.low, b.close) for b in win],
+                        f"{label}-LIVE-last-candle-forming"))
+            if out:
+                return tuple(out)
         # TRUE higher-timeframe aggregation. The previous version sliced every
         # 16th M15 bar, which produces fifteen-minute candles spaced four hours
         # apart and labels them H4 — misstating the higher timeframe's range,

@@ -155,6 +155,8 @@ class DeskService:
         self._sw: list = []
         self._atrs: list = []
         self._channels: dict[str, dict] = {}
+        self._live_chart_cache: dict[str, list[Bar]] = {}
+        self._live_chart_cached_at = 0.0
         self._rehydrated = False
         self._venue_shut = False
         self._halted = False
@@ -667,11 +669,13 @@ class DeskService:
         htf_state = self._htf_state(tf)
         bid, ask, age = quote if quote is not None else self.feed.quote()
         htf_name, htf_factor = TF_HTF.get(tf, (self.cfg.htf, 16))
+        live_frames = self._live_chart_frames()
         try:
             self.desk.on_bar(bars, i, visible_swings(ch["sw"], i), ch["atrs"],
                              htf_state, (bid, ask, age),
                              (f"{tf} close {closed.ts:%Y-%m-%d %H:%M}",),
-                             tf=tf, htf_factor=htf_factor, htf_name=htf_name)
+                             tf=tf, htf_factor=htf_factor, htf_name=htf_name,
+                             live_frames=live_frames)
         except Exception as e:
             log.exception("on_bar failed at %s %s: %s", tf, closed.ts, e)
         self.state.last_bar_tfs[tf] = closed.ts.isoformat()
@@ -679,6 +683,20 @@ class DeskService:
             self.state.last_bar_ts = closed.ts.isoformat()
         self.state.bars_processed += 1
         self.checkpoint()
+
+    def _live_chart_frames(self) -> dict[str, list[Bar]]:
+        """One synchronized current packet, cached only across the same wake."""
+        now = time.monotonic()
+        if self._live_chart_cache and now - self._live_chart_cached_at < 2.0:
+            return self._live_chart_cache
+        packet: dict[str, list[Bar]] = {}
+        for tf in ("M1", "M5", "M15", "H1", "H4"):
+            try:
+                packet[tf] = self.feed.live_bars(tf, 120)
+            except Exception as e:
+                log.warning("live %s chart unavailable for this packet: %s", tf, e)
+        self._live_chart_cache, self._live_chart_cached_at = packet, now
+        return packet
 
     def _htf_state(self, tf: Optional[str] = None):
         """Higher-timeframe structure from TRUE aggregation, never sampling.

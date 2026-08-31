@@ -187,3 +187,11 @@ def test_codex_universe_and_failover_retain_every_candidate_and_chart():
     path_def = seen["schema"]["$defs"]["PathForecast"]
     assert path_def["additionalProperties"] is False
     assert set(path_def["required"]) == set(path_def["properties"])
+    def walk(node):
+        if isinstance(node, dict):
+            if "$ref" in node:
+                assert "default" not in node
+            for value in node.values(): walk(value)
+        elif isinstance(node, list):
+            for value in node: walk(value)
+    walk(seen["schema"])
