@@ -377,10 +377,9 @@ def main() -> int:
                          "subscription — no metered bill, but it consumes "
                          "subscription quota, a read takes ~78s rather than ~8s "
                          "(pair it with a low wake rate), it needs `claude` run "
-                         "once first to log in, and it CANNOT send charts, so "
-                         "--numeric-only is required — preflight refuses to "
-                         "start without it, rather than ticking with every "
-                         "analyst call silently refused. 'deterministic' is the "
+                         "once first to log in, and it reads numeric context. "
+                         "With the default Codex fallback, synchronized charts "
+                         "are retained for GPT if Claude fails. 'deterministic' is the "
                          "rule-based baseline and costs nothing at all.")
     ap.add_argument("--fallback-provider", default="codex:gpt-5.6-sol",
                     help="local ChatGPT fallback used only after a real primary "

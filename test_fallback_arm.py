@@ -242,12 +242,15 @@ def test_a_real_desk_with_a_dead_analyst_produces_decisions_not_silence():
 
     _, dark = drive(False)
     desk, lit = drive(True)
+    dark_decisions = [r for r in dark if r.get("kind") != "SPECIALIST_VERDICT"]
+    lit_decisions = [r for r in lit if r.get("kind") != "SPECIALIST_VERDICT"]
 
-    assert dark, "sanity: the dead-analyst desk should journal something"
-    assert all(r["kind"] == "BLIND" for r in dark), "sanity: all blind without it"
+    assert dark_decisions, "sanity: the dead-analyst desk should journal something"
+    assert all(r["kind"] == "BLIND" for r in dark_decisions), \
+        "sanity: every decision is blind without it"
 
     assert desk.stats.fallback_reads > 0, "the fallback never ran"
-    assert not any(r["kind"] == "BLIND" for r in lit), \
+    assert not any(r["kind"] == "BLIND" for r in lit_decisions), \
         "still going dark with a working fallback available"
 
 
