@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "7 of 24 wakes in 12h were served by the RULE-BASED FALLBACK and 0 got nothing \u2014 29% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "8 of 25 wakes in 12h were served by the RULE-BASED FALLBACK and 0 got nothing \u2014 32% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 193s of 600s budget (32%) over 24 reads",
+          "detail": "median 193s of 600s budget (32%) over 25 reads",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "23.6% recent vs 8.2% prior",
+          "detail": "23.4% recent vs 8.2% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/159 (18%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/160 (18%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -88,42 +88,42 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-VantageSpread', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "enabled, last result 267014",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-ShadowSync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 0
     },
     "wiring": {
       "axis": "wiring",
@@ -189,17 +189,17 @@
         },
         {
           "check": "ledger integrity",
-          "detail": "312 unique decision(s), no tears",
+          "detail": "313 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "20071MB free",
+          "detail": "20065MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 12 min ago, after a boot 47.1h ago",
+          "detail": "wrote 10 min ago, after a boot 47.4h ago",
           "ok": true
         }
       ],
@@ -228,8 +228,8 @@
       "last": "2026-08-30T23:15:07.464950+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 70,
-      "last": "2026-08-31T00:00:01.068195+00:00"
+      "count": 71,
+      "last": "2026-08-31T00:15:06.456237+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-31T00:30:23.906339+00:00",
-  "last_row_utc": "2026-08-31T00:00:01.068195+00:00",
-  "ledger_rows": 340,
-  "total_faults": 9
+  "generated_utc": "2026-08-31T00:53:26.569450+00:00",
+  "last_row_utc": "2026-08-31T00:15:06.456237+00:00",
+  "ledger_rows": 341,
+  "total_faults": 7
 }
