@@ -25,7 +25,8 @@ if ($GptPrimary) {
     # Temporary operating mode for a known Claude subscription cooldown. Do
     # not probe a provider that has already reported its reset time on every
     # bar; route directly to the healthy subscription instead.
-    $deskArgs += @("--provider", "codex:gpt-5.6-sol")
+    $deskArgs += @("--provider", "codex:gpt-5.6-sol",
+                   "--fallback-provider", "")
 } else {
     $deskArgs += @("--provider", "claudecode:claude-opus-5",
                    "--fallback-provider", "codex:gpt-5.6-sol")
