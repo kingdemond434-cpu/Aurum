@@ -11,8 +11,35 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional, Protocol
+from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
+
+DEFAULT_API_BASE = "https://api.telegram.org"
+
+
+def api_base() -> str:
+    """Telegram's API root, overridable ONLY to a loopback address.
+
+    THE OVERRIDE EXISTS so the delivery channel can be exercised end to end
+    against a stub. The alternative is a second implementation that only runs
+    under test, and a sink whose tested path is not its production path is
+    exactly how this desk would pass its suite and deliver nothing.
+
+    IT IS RESTRICTED TO LOOPBACK because the thing being redirected is a bot
+    token. An unrestricted override turns one environment variable into a
+    credential-exfiltration primitive on any box where the desk's environment
+    is readable, which is every box. localhost cannot leave the machine.
+    """
+    override = (os.environ.get("TELEGRAM_API_BASE") or "").strip()
+    if not override:
+        return DEFAULT_API_BASE
+    if (urlsplit(override).hostname or "") in ("localhost", "127.0.0.1", "::1"):
+        return override.rstrip("/")
+    log.warning("ignoring TELEGRAM_API_BASE=%r: only loopback overrides are "
+                "honoured, because the value it would redirect is a bot token",
+                override)
+    return DEFAULT_API_BASE
 
 
 class Sink(Protocol):
@@ -51,7 +78,7 @@ class TelegramSink:
             return False
         try:
             r = requests.post(
-                f"https://api.telegram.org/bot{self.token}/sendMessage",
+                f"{api_base()}/bot{self.token}/sendMessage",
                 json={"chat_id": self.chat_id, "text": text, "parse_mode": "Markdown"},
                 timeout=self.timeout)
             if r.status_code != 200:

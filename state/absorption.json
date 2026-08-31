@@ -1,0 +1,1437 @@
+{
+ "version": "absorb-2026-08-18-a",
+ "decisions": [
+  {
+   "hash": "c5c5f89d5698f83f",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854717+00:00",
+   "finding": {
+    "statement": "XAGUSD.asia.TREND_DAY FAILS the acceptance battery (t=-0.5881883068000882, deflated=-2.088188306800088, n=274, PF=0.9187774013477805)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845841+00:00",
+    "meta": {
+     "cell": "XAGUSD.asia.TREND_DAY",
+     "gate": false,
+     "t": -0.5881883068000882,
+     "deflated": -2.088188306800088
+    }
+   }
+  },
+  {
+   "hash": "10b0de4337e06365",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854757+00:00",
+   "finding": {
+    "statement": "XAGUSD.asia.NORMAL_DAY FAILS the acceptance battery (t=0.013356209224009622, deflated=-1.4866437907759904, n=725, PF=1.0011422610669765)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845865+00:00",
+    "meta": {
+     "cell": "XAGUSD.asia.NORMAL_DAY",
+     "gate": false,
+     "t": 0.013356209224009622,
+     "deflated": -1.4866437907759904
+    }
+   }
+  },
+  {
+   "hash": "208871ee3b53bdfd",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854788+00:00",
+   "finding": {
+    "statement": "XAGUSD.asia.RANGE_DAY FAILS the acceptance battery (t=0.39106286485958774, deflated=-1.1089371351404123, n=371, PF=1.0482218393737575)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845876+00:00",
+    "meta": {
+     "cell": "XAGUSD.asia.RANGE_DAY",
+     "gate": false,
+     "t": 0.39106286485958774,
+     "deflated": -1.1089371351404123
+    }
+   }
+  },
+  {
+   "hash": "d213c9c93611e49b",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854816+00:00",
+   "finding": {
+    "statement": "XAGUSD.asia.FAILED_BREAK FAILS the acceptance battery (t=1.1610143002589777, deflated=-0.33898569974102233, n=704, PF=1.1070849156193339)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845885+00:00",
+    "meta": {
+     "cell": "XAGUSD.asia.FAILED_BREAK",
+     "gate": false,
+     "t": 1.1610143002589777,
+     "deflated": -0.33898569974102233
+    }
+   }
+  },
+  {
+   "hash": "afd41711abaa3f78",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854841+00:00",
+   "finding": {
+    "statement": "XAGUSD.london_am.TREND_DAY FAILS the acceptance battery (t=0.23064237743562746, deflated=-1.2693576225643726, n=279, PF=1.0324281530101507)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845894+00:00",
+    "meta": {
+     "cell": "XAGUSD.london_am.TREND_DAY",
+     "gate": false,
+     "t": 0.23064237743562746,
+     "deflated": -1.2693576225643726
+    }
+   }
+  },
+  {
+   "hash": "b488a4352fb5c3c1",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854865+00:00",
+   "finding": {
+    "statement": "XAGUSD.london_am.NORMAL_DAY FAILS the acceptance battery (t=-0.8207264408830586, deflated=-2.3207264408830586, n=735, PF=0.9338358771602736)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845903+00:00",
+    "meta": {
+     "cell": "XAGUSD.london_am.NORMAL_DAY",
+     "gate": false,
+     "t": -0.8207264408830586,
+     "deflated": -2.3207264408830586
+    }
+   }
+  },
+  {
+   "hash": "94d42407a9000f90",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854889+00:00",
+   "finding": {
+    "statement": "XAGUSD.london_am.RANGE_DAY FAILS the acceptance battery (t=-0.38218926386306323, deflated=-1.8821892638630633, n=370, PF=0.9554201541783901)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845912+00:00",
+    "meta": {
+     "cell": "XAGUSD.london_am.RANGE_DAY",
+     "gate": false,
+     "t": -0.38218926386306323,
+     "deflated": -1.8821892638630633
+    }
+   }
+  },
+  {
+   "hash": "9c72ade0eb51c36c",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854918+00:00",
+   "finding": {
+    "statement": "XAGUSD.london_am.FAILED_BREAK FAILS the acceptance battery (t=-1.994622291615755, deflated=-3.494622291615755, n=708, PF=0.8458778010746265)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845923+00:00",
+    "meta": {
+     "cell": "XAGUSD.london_am.FAILED_BREAK",
+     "gate": false,
+     "t": -1.994622291615755,
+     "deflated": -3.494622291615755
+    }
+   }
+  },
+  {
+   "hash": "849b6dd57840debe",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854942+00:00",
+   "finding": {
+    "statement": "XAGUSD.ny_open.TREND_DAY FAILS the acceptance battery (t=-1.0221428063596492, deflated=-2.522142806359649, n=272, PF=0.8753952020985359)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845932+00:00",
+    "meta": {
+     "cell": "XAGUSD.ny_open.TREND_DAY",
+     "gate": false,
+     "t": -1.0221428063596492,
+     "deflated": -2.522142806359649
+    }
+   }
+  },
+  {
+   "hash": "2929151edeaf1946",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854965+00:00",
+   "finding": {
+    "statement": "XAGUSD.ny_open.NORMAL_DAY FAILS the acceptance battery (t=-2.001274940865717, deflated=-3.501274940865717, n=712, PF=0.8533873553676923)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845946+00:00",
+    "meta": {
+     "cell": "XAGUSD.ny_open.NORMAL_DAY",
+     "gate": false,
+     "t": -2.001274940865717,
+     "deflated": -3.501274940865717
+    }
+   }
+  },
+  {
+   "hash": "12aa516b545cafa7",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.854986+00:00",
+   "finding": {
+    "statement": "XAGUSD.ny_open.RANGE_DAY FAILS the acceptance battery (t=-3.885965006380018, deflated=-5.385965006380018, n=360, PF=0.6497753587913194)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845955+00:00",
+    "meta": {
+     "cell": "XAGUSD.ny_open.RANGE_DAY",
+     "gate": false,
+     "t": -3.885965006380018,
+     "deflated": -5.385965006380018
+    }
+   }
+  },
+  {
+   "hash": "bc004f9703ccb675",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855009+00:00",
+   "finding": {
+    "statement": "XAGUSD.ny_open.FAILED_BREAK FAILS the acceptance battery (t=-4.681930291025741, deflated=-6.181930291025741, n=700, PF=0.6889155881087374)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845964+00:00",
+    "meta": {
+     "cell": "XAGUSD.ny_open.FAILED_BREAK",
+     "gate": false,
+     "t": -4.681930291025741,
+     "deflated": -6.181930291025741
+    }
+   }
+  },
+  {
+   "hash": "404384da34350210",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855030+00:00",
+   "finding": {
+    "statement": "XAGUSD.afternoon.TREND_DAY FAILS the acceptance battery (t=-0.719685766818818, deflated=-2.219685766818818, n=219, PF=0.879995616690404)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845973+00:00",
+    "meta": {
+     "cell": "XAGUSD.afternoon.TREND_DAY",
+     "gate": false,
+     "t": -0.719685766818818,
+     "deflated": -2.219685766818818
+    }
+   }
+  },
+  {
+   "hash": "24297d9131be1005",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855051+00:00",
+   "finding": {
+    "statement": "XAGUSD.afternoon.NORMAL_DAY FAILS the acceptance battery (t=-1.1971160607969422, deflated=-2.697116060796942, n=571, PF=0.8759569709388335)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845981+00:00",
+    "meta": {
+     "cell": "XAGUSD.afternoon.NORMAL_DAY",
+     "gate": false,
+     "t": -1.1971160607969422,
+     "deflated": -2.697116060796942
+    }
+   }
+  },
+  {
+   "hash": "9163507df1f1b9a3",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855073+00:00",
+   "finding": {
+    "statement": "XAGUSD.afternoon.RANGE_DAY FAILS the acceptance battery (t=-1.640064020911762, deflated=-3.140064020911762, n=249, PF=0.7679332360938728)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845989+00:00",
+    "meta": {
+     "cell": "XAGUSD.afternoon.RANGE_DAY",
+     "gate": false,
+     "t": -1.640064020911762,
+     "deflated": -3.140064020911762
+    }
+   }
+  },
+  {
+   "hash": "317b842cd921d4b3",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855094+00:00",
+   "finding": {
+    "statement": "XAGUSD.afternoon.FAILED_BREAK FAILS the acceptance battery (t=-1.135324100988994, deflated=-2.635324100988994, n=518, PF=0.8798642557452359)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.845997+00:00",
+    "meta": {
+     "cell": "XAGUSD.afternoon.FAILED_BREAK",
+     "gate": false,
+     "t": -1.135324100988994,
+     "deflated": -2.635324100988994
+    }
+   }
+  },
+  {
+   "hash": "4917aa8dbea535de",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855117+00:00",
+   "finding": {
+    "statement": "XAUUSD.asia.TREND_DAY FAILS the acceptance battery (t=2.7930596091530004, deflated=1.2930596091530004, n=255, PF=1.5294864201870335)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846007+00:00",
+    "meta": {
+     "cell": "XAUUSD.asia.TREND_DAY",
+     "gate": false,
+     "t": 2.7930596091530004,
+     "deflated": 1.2930596091530004
+    }
+   }
+  },
+  {
+   "hash": "6ac0fa36e9fe4021",
+   "status": "QUEUED",
+   "reason": "grade E3, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855138+00:00",
+   "finding": {
+    "statement": "XAUUSD.asia.NORMAL_DAY CLEARS the acceptance battery (t=6.076082113516556, deflated=4.576082113516556, n=759, PF=1.6760400260914363)",
+    "source": "quant/hunt12.json",
+    "grade": "E3",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846023+00:00",
+    "meta": {
+     "cell": "XAUUSD.asia.NORMAL_DAY",
+     "gate": true,
+     "t": 6.076082113516556,
+     "deflated": 4.576082113516556
+    }
+   }
+  },
+  {
+   "hash": "52fea6e0533f4a72",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855160+00:00",
+   "finding": {
+    "statement": "XAUUSD.asia.RANGE_DAY FAILS the acceptance battery (t=3.4130120910735413, deflated=1.9130120910735413, n=380, PF=1.4964188781657364)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846031+00:00",
+    "meta": {
+     "cell": "XAUUSD.asia.RANGE_DAY",
+     "gate": false,
+     "t": 3.4130120910735413,
+     "deflated": 1.9130120910735413
+    }
+   }
+  },
+  {
+   "hash": "7e92ebfd8a9ef3df",
+   "status": "QUEUED",
+   "reason": "grade E3, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855181+00:00",
+   "finding": {
+    "statement": "XAUUSD.asia.FAILED_BREAK CLEARS the acceptance battery (t=3.65446058967958, deflated=2.15446058967958, n=698, PF=1.3836550045368674)",
+    "source": "quant/hunt12.json",
+    "grade": "E3",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846039+00:00",
+    "meta": {
+     "cell": "XAUUSD.asia.FAILED_BREAK",
+     "gate": true,
+     "t": 3.65446058967958,
+     "deflated": 2.15446058967958
+    }
+   }
+  },
+  {
+   "hash": "240fb6fabcdee48f",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855202+00:00",
+   "finding": {
+    "statement": "XAUUSD.london_am.TREND_DAY FAILS the acceptance battery (t=2.5423737659024312, deflated=1.0423737659024312, n=256, PF=1.4469535552973212)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846047+00:00",
+    "meta": {
+     "cell": "XAUUSD.london_am.TREND_DAY",
+     "gate": false,
+     "t": 2.5423737659024312,
+     "deflated": 1.0423737659024312
+    }
+   }
+  },
+  {
+   "hash": "35c66cad1de8f7e1",
+   "status": "QUEUED",
+   "reason": "grade E3, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855223+00:00",
+   "finding": {
+    "statement": "XAUUSD.london_am.NORMAL_DAY CLEARS the acceptance battery (t=4.09310990581976, deflated=2.5931099058197598, n=749, PF=1.4124477484337103)",
+    "source": "quant/hunt12.json",
+    "grade": "E3",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846054+00:00",
+    "meta": {
+     "cell": "XAUUSD.london_am.NORMAL_DAY",
+     "gate": true,
+     "t": 4.09310990581976,
+     "deflated": 2.5931099058197598
+    }
+   }
+  },
+  {
+   "hash": "bc378d9529bebf54",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855294+00:00",
+   "finding": {
+    "statement": "XAUUSD.london_am.RANGE_DAY FAILS the acceptance battery (t=3.221755968359558, deflated=1.7217559683595578, n=371, PF=1.4661482746916419)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846062+00:00",
+    "meta": {
+     "cell": "XAUUSD.london_am.RANGE_DAY",
+     "gate": false,
+     "t": 3.221755968359558,
+     "deflated": 1.7217559683595578
+    }
+   }
+  },
+  {
+   "hash": "2c41b8971b02b2cc",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855320+00:00",
+   "finding": {
+    "statement": "XAUUSD.london_am.FAILED_BREAK FAILS the acceptance battery (t=1.8588274886869576, deflated=0.3588274886869576, n=690, PF=1.1784283927000716)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846070+00:00",
+    "meta": {
+     "cell": "XAUUSD.london_am.FAILED_BREAK",
+     "gate": false,
+     "t": 1.8588274886869576,
+     "deflated": 0.3588274886869576
+    }
+   }
+  },
+  {
+   "hash": "5118f27c8e35760a",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855343+00:00",
+   "finding": {
+    "statement": "XAUUSD.ny_open.TREND_DAY FAILS the acceptance battery (t=0.37145109475298516, deflated=-1.1285489052470148, n=254, PF=1.0527889998296371)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846077+00:00",
+    "meta": {
+     "cell": "XAUUSD.ny_open.TREND_DAY",
+     "gate": false,
+     "t": 0.37145109475298516,
+     "deflated": -1.1285489052470148
+    }
+   }
+  },
+  {
+   "hash": "ffa464bafb694fba",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855365+00:00",
+   "finding": {
+    "statement": "XAUUSD.ny_open.NORMAL_DAY FAILS the acceptance battery (t=1.7087954974511412, deflated=0.20879549745114123, n=736, PF=1.1480875510159618)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846088+00:00",
+    "meta": {
+     "cell": "XAUUSD.ny_open.NORMAL_DAY",
+     "gate": false,
+     "t": 1.7087954974511412,
+     "deflated": 0.20879549745114123
+    }
+   }
+  },
+  {
+   "hash": "da15c5c0c93ba4a3",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855386+00:00",
+   "finding": {
+    "statement": "XAUUSD.ny_open.RANGE_DAY FAILS the acceptance battery (t=0.41001979478852923, deflated=-1.0899802052114707, n=360, PF=1.0479848501587001)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846095+00:00",
+    "meta": {
+     "cell": "XAUUSD.ny_open.RANGE_DAY",
+     "gate": false,
+     "t": 0.41001979478852923,
+     "deflated": -1.0899802052114707
+    }
+   }
+  },
+  {
+   "hash": "b62fbe7cd1b5eb66",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855408+00:00",
+   "finding": {
+    "statement": "XAUUSD.ny_open.FAILED_BREAK FAILS the acceptance battery (t=-0.8328192829729979, deflated=-2.3328192829729977, n=672, PF=0.9322855539670728)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846103+00:00",
+    "meta": {
+     "cell": "XAUUSD.ny_open.FAILED_BREAK",
+     "gate": false,
+     "t": -0.8328192829729979,
+     "deflated": -2.3328192829729977
+    }
+   }
+  },
+  {
+   "hash": "5fa0ffc586b6b09e",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855430+00:00",
+   "finding": {
+    "statement": "XAUUSD.afternoon.TREND_DAY FAILS the acceptance battery (t=0.9055030131339652, deflated=-0.5944969868660348, n=194, PF=1.1797472914988247)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846111+00:00",
+    "meta": {
+     "cell": "XAUUSD.afternoon.TREND_DAY",
+     "gate": false,
+     "t": 0.9055030131339652,
+     "deflated": -0.5944969868660348
+    }
+   }
+  },
+  {
+   "hash": "eba396a0a39da04a",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855452+00:00",
+   "finding": {
+    "statement": "XAUUSD.afternoon.NORMAL_DAY FAILS the acceptance battery (t=2.8141006956708936, deflated=1.3141006956708936, n=576, PF=1.3548053663687378)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846118+00:00",
+    "meta": {
+     "cell": "XAUUSD.afternoon.NORMAL_DAY",
+     "gate": false,
+     "t": 2.8141006956708936,
+     "deflated": 1.3141006956708936
+    }
+   }
+  },
+  {
+   "hash": "e7ef85e62834d49b",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855474+00:00",
+   "finding": {
+    "statement": "XAUUSD.afternoon.RANGE_DAY FAILS the acceptance battery (t=2.476880829638691, deflated=0.976880829638691, n=277, PF=1.4854288969582623)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846129+00:00",
+    "meta": {
+     "cell": "XAUUSD.afternoon.RANGE_DAY",
+     "gate": false,
+     "t": 2.476880829638691,
+     "deflated": 0.976880829638691
+    }
+   }
+  },
+  {
+   "hash": "536e14e9cb2a600b",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855495+00:00",
+   "finding": {
+    "statement": "XAUUSD.afternoon.FAILED_BREAK FAILS the acceptance battery (t=2.348651291985597, deflated=0.8486512919855969, n=504, PF=1.3134127442334045)",
+    "source": "quant/hunt12.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.846139+00:00",
+    "meta": {
+     "cell": "XAUUSD.afternoon.FAILED_BREAK",
+     "gate": false,
+     "t": 2.348651291985597,
+     "deflated": 0.8486512919855969
+    }
+   }
+  },
+  {
+   "hash": "55ec740e4ac2a5ea",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855517+00:00",
+   "finding": {
+    "statement": "XAGUSD.asia.TREND_DAY FAILS the acceptance battery (t=-0.7213955979438113, deflated=-3.6496958271035336, n=274, PF=0.899023301159528)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.851991+00:00",
+    "meta": {
+     "cell": "XAGUSD.asia.TREND_DAY",
+     "gate": false,
+     "t": -0.7213955979438113,
+     "deflated": -3.6496958271035336
+    }
+   }
+  },
+  {
+   "hash": "f7ec9e10526cd7d3",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855538+00:00",
+   "finding": {
+    "statement": "XAGUSD.asia.NORMAL_DAY FAILS the acceptance battery (t=-0.9528458721275023, deflated=-3.8811461012872246, n=725, PF=0.9196996444693472)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852011+00:00",
+    "meta": {
+     "cell": "XAGUSD.asia.NORMAL_DAY",
+     "gate": false,
+     "t": -0.9528458721275023,
+     "deflated": -3.8811461012872246
+    }
+   }
+  },
+  {
+   "hash": "854fe0b3954bd372",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855560+00:00",
+   "finding": {
+    "statement": "XAGUSD.asia.RANGE_DAY FAILS the acceptance battery (t=0.08454999696010031, deflated=-2.843750232199622, n=371, PF=1.010521649757819)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852021+00:00",
+    "meta": {
+     "cell": "XAGUSD.asia.RANGE_DAY",
+     "gate": false,
+     "t": 0.08454999696010031,
+     "deflated": -2.843750232199622
+    }
+   }
+  },
+  {
+   "hash": "812b842f3e26e430",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855581+00:00",
+   "finding": {
+    "statement": "XAGUSD.asia.FAILED_BREAK FAILS the acceptance battery (t=0.7061402724191401, deflated=-2.2221599567405823, n=704, PF=1.0651948116790524)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852030+00:00",
+    "meta": {
+     "cell": "XAGUSD.asia.FAILED_BREAK",
+     "gate": false,
+     "t": 0.7061402724191401,
+     "deflated": -2.2221599567405823
+    }
+   }
+  },
+  {
+   "hash": "faf6683a9fc01a92",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855607+00:00",
+   "finding": {
+    "statement": "XAGUSD.london_am.TREND_DAY FAILS the acceptance battery (t=0.3897361769274349, deflated=-2.5385640522322874, n=279, PF=1.0564176281370032)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852038+00:00",
+    "meta": {
+     "cell": "XAGUSD.london_am.TREND_DAY",
+     "gate": false,
+     "t": 0.3897361769274349,
+     "deflated": -2.5385640522322874
+    }
+   }
+  },
+  {
+   "hash": "afa2ed8b6bfee31b",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855643+00:00",
+   "finding": {
+    "statement": "XAGUSD.london_am.NORMAL_DAY FAILS the acceptance battery (t=-0.11643272360329719, deflated=-3.04473295276302, n=735, PF=0.9901374300509236)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852047+00:00",
+    "meta": {
+     "cell": "XAGUSD.london_am.NORMAL_DAY",
+     "gate": false,
+     "t": -0.11643272360329719,
+     "deflated": -3.04473295276302
+    }
+   }
+  },
+  {
+   "hash": "cf792871c383a527",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855671+00:00",
+   "finding": {
+    "statement": "XAGUSD.london_am.RANGE_DAY FAILS the acceptance battery (t=-0.1738933778009454, deflated=-3.1021936069606677, n=370, PF=0.9790531078835036)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852055+00:00",
+    "meta": {
+     "cell": "XAGUSD.london_am.RANGE_DAY",
+     "gate": false,
+     "t": -0.1738933778009454,
+     "deflated": -3.1021936069606677
+    }
+   }
+  },
+  {
+   "hash": "97c4aeac171f8d95",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855692+00:00",
+   "finding": {
+    "statement": "XAGUSD.london_am.FAILED_BREAK FAILS the acceptance battery (t=-1.4695650464112022, deflated=-4.397865275570925, n=708, PF=0.8812700194297962)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852063+00:00",
+    "meta": {
+     "cell": "XAGUSD.london_am.FAILED_BREAK",
+     "gate": false,
+     "t": -1.4695650464112022,
+     "deflated": -4.397865275570925
+    }
+   }
+  },
+  {
+   "hash": "47ab2e6c80177025",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855713+00:00",
+   "finding": {
+    "statement": "XAGUSD.ny_open.TREND_DAY FAILS the acceptance battery (t=-0.9315339295773628, deflated=-3.859834158737085, n=272, PF=0.8841724527013968)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852072+00:00",
+    "meta": {
+     "cell": "XAGUSD.ny_open.TREND_DAY",
+     "gate": false,
+     "t": -0.9315339295773628,
+     "deflated": -3.859834158737085
+    }
+   }
+  },
+  {
+   "hash": "ba3042e0c38ee592",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855736+00:00",
+   "finding": {
+    "statement": "XAGUSD.ny_open.NORMAL_DAY FAILS the acceptance battery (t=-1.7901261339695216, deflated=-4.718426363129244, n=712, PF=0.8651599993395785)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852080+00:00",
+    "meta": {
+     "cell": "XAGUSD.ny_open.NORMAL_DAY",
+     "gate": false,
+     "t": -1.7901261339695216,
+     "deflated": -4.718426363129244
+    }
+   }
+  },
+  {
+   "hash": "e14ac83004620ebe",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855759+00:00",
+   "finding": {
+    "statement": "XAGUSD.ny_open.RANGE_DAY FAILS the acceptance battery (t=-3.343957611906333, deflated=-6.272257841066056, n=360, PF=0.6857547638718534)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852096+00:00",
+    "meta": {
+     "cell": "XAGUSD.ny_open.RANGE_DAY",
+     "gate": false,
+     "t": -3.343957611906333,
+     "deflated": -6.272257841066056
+    }
+   }
+  },
+  {
+   "hash": "241a9656001c25a8",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855781+00:00",
+   "finding": {
+    "statement": "XAGUSD.ny_open.FAILED_BREAK FAILS the acceptance battery (t=-4.323025705187054, deflated=-7.251325934346776, n=700, PF=0.7030085331282391)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852105+00:00",
+    "meta": {
+     "cell": "XAGUSD.ny_open.FAILED_BREAK",
+     "gate": false,
+     "t": -4.323025705187054,
+     "deflated": -7.251325934346776
+    }
+   }
+  },
+  {
+   "hash": "6113c19b04840de0",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855802+00:00",
+   "finding": {
+    "statement": "XAGUSD.afternoon.TREND_DAY FAILS the acceptance battery (t=-0.24896386207227458, deflated=-3.177264091231997, n=219, PF=0.9562491798897259)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852113+00:00",
+    "meta": {
+     "cell": "XAGUSD.afternoon.TREND_DAY",
+     "gate": false,
+     "t": -0.24896386207227458,
+     "deflated": -3.177264091231997
+    }
+   }
+  },
+  {
+   "hash": "aa5020508a70c918",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855824+00:00",
+   "finding": {
+    "statement": "XAGUSD.afternoon.NORMAL_DAY FAILS the acceptance battery (t=-0.9879880422041107, deflated=-3.9162882713638334, n=571, PF=0.8959232233603793)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852121+00:00",
+    "meta": {
+     "cell": "XAGUSD.afternoon.NORMAL_DAY",
+     "gate": false,
+     "t": -0.9879880422041107,
+     "deflated": -3.9162882713638334
+    }
+   }
+  },
+  {
+   "hash": "a5f18ea62b6cdda9",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855846+00:00",
+   "finding": {
+    "statement": "XAGUSD.afternoon.RANGE_DAY FAILS the acceptance battery (t=-2.0726738436686083, deflated=-5.000974072828331, n=249, PF=0.7172814709834602)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852129+00:00",
+    "meta": {
+     "cell": "XAGUSD.afternoon.RANGE_DAY",
+     "gate": false,
+     "t": -2.0726738436686083,
+     "deflated": -5.000974072828331
+    }
+   }
+  },
+  {
+   "hash": "0c0b16ae6d9edee9",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAGUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAGUSD H1, quant universe, 8y is evidence about XAGUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855868+00:00",
+   "finding": {
+    "statement": "XAGUSD.afternoon.FAILED_BREAK FAILS the acceptance battery (t=-0.740938307199977, deflated=-3.6692385363596993, n=518, PF=0.9195391795954078)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAGUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852137+00:00",
+    "meta": {
+     "cell": "XAGUSD.afternoon.FAILED_BREAK",
+     "gate": false,
+     "t": -0.740938307199977,
+     "deflated": -3.6692385363596993
+    }
+   }
+  },
+  {
+   "hash": "e29cba91f37d3f15",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855889+00:00",
+   "finding": {
+    "statement": "XAUUSD.asia.TREND_DAY FAILS the acceptance battery (t=3.2968883222743184, deflated=0.36858809311459595, n=255, PF=1.684760315300417)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852145+00:00",
+    "meta": {
+     "cell": "XAUUSD.asia.TREND_DAY",
+     "gate": false,
+     "t": 3.2968883222743184,
+     "deflated": 0.36858809311459595
+    }
+   }
+  },
+  {
+   "hash": "1def67e3d7820ed0",
+   "status": "QUEUED",
+   "reason": "grade E3, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855910+00:00",
+   "finding": {
+    "statement": "XAUUSD.asia.NORMAL_DAY CLEARS the acceptance battery (t=5.793980934097953, deflated=2.8656807049382307, n=760, PF=1.6676908471414804)",
+    "source": "quant/hunt14.json",
+    "grade": "E3",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852157+00:00",
+    "meta": {
+     "cell": "XAUUSD.asia.NORMAL_DAY",
+     "gate": true,
+     "t": 5.793980934097953,
+     "deflated": 2.8656807049382307
+    }
+   }
+  },
+  {
+   "hash": "8227dd5dbb3c17be",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855932+00:00",
+   "finding": {
+    "statement": "XAUUSD.asia.RANGE_DAY FAILS the acceptance battery (t=3.476313701295404, deflated=0.5480134721356817, n=380, PF=1.526439665486755)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852165+00:00",
+    "meta": {
+     "cell": "XAUUSD.asia.RANGE_DAY",
+     "gate": false,
+     "t": 3.476313701295404,
+     "deflated": 0.5480134721356817
+    }
+   }
+  },
+  {
+   "hash": "7e60bc73994c0c9b",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855953+00:00",
+   "finding": {
+    "statement": "XAUUSD.asia.FAILED_BREAK FAILS the acceptance battery (t=3.4395938855910804, deflated=0.5112936564313579, n=698, PF=1.3668694818679155)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852176+00:00",
+    "meta": {
+     "cell": "XAUUSD.asia.FAILED_BREAK",
+     "gate": false,
+     "t": 3.4395938855910804,
+     "deflated": 0.5112936564313579
+    }
+   }
+  },
+  {
+   "hash": "31d0545ca01e541d",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855974+00:00",
+   "finding": {
+    "statement": "XAUUSD.london_am.TREND_DAY FAILS the acceptance battery (t=3.5057542379604434, deflated=0.577454008800721, n=256, PF=1.6747120877900694)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852184+00:00",
+    "meta": {
+     "cell": "XAUUSD.london_am.TREND_DAY",
+     "gate": false,
+     "t": 3.5057542379604434,
+     "deflated": 0.577454008800721
+    }
+   }
+  },
+  {
+   "hash": "4f0d4874f233cdac",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.855996+00:00",
+   "finding": {
+    "statement": "XAUUSD.london_am.NORMAL_DAY FAILS the acceptance battery (t=4.350235437251847, deflated=1.4219352080921244, n=749, PF=1.4588161734423972)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852192+00:00",
+    "meta": {
+     "cell": "XAUUSD.london_am.NORMAL_DAY",
+     "gate": false,
+     "t": 4.350235437251847,
+     "deflated": 1.4219352080921244
+    }
+   }
+  },
+  {
+   "hash": "319884c739d6ae6a",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856017+00:00",
+   "finding": {
+    "statement": "XAUUSD.london_am.RANGE_DAY FAILS the acceptance battery (t=3.8155469956594374, deflated=0.887246766499715, n=371, PF=1.587451006355299)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852199+00:00",
+    "meta": {
+     "cell": "XAUUSD.london_am.RANGE_DAY",
+     "gate": false,
+     "t": 3.8155469956594374,
+     "deflated": 0.887246766499715
+    }
+   }
+  },
+  {
+   "hash": "9f330d4eccaa0eac",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856038+00:00",
+   "finding": {
+    "statement": "XAUUSD.london_am.FAILED_BREAK FAILS the acceptance battery (t=2.7617705997008795, deflated=-0.16652962945884298, n=690, PF=1.281307147172562)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852210+00:00",
+    "meta": {
+     "cell": "XAUUSD.london_am.FAILED_BREAK",
+     "gate": false,
+     "t": 2.7617705997008795,
+     "deflated": -0.16652962945884298
+    }
+   }
+  },
+  {
+   "hash": "70d2ecf129815a4b",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856059+00:00",
+   "finding": {
+    "statement": "XAUUSD.ny_open.TREND_DAY FAILS the acceptance battery (t=0.7686367532065632, deflated=-2.159663475953159, n=254, PF=1.114730090491565)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852218+00:00",
+    "meta": {
+     "cell": "XAUUSD.ny_open.TREND_DAY",
+     "gate": false,
+     "t": 0.7686367532065632,
+     "deflated": -2.159663475953159
+    }
+   }
+  },
+  {
+   "hash": "eaf1dbab73693d94",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856080+00:00",
+   "finding": {
+    "statement": "XAUUSD.ny_open.NORMAL_DAY FAILS the acceptance battery (t=1.7973238750453429, deflated=-1.1309763541143796, n=737, PF=1.1588170417132766)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852225+00:00",
+    "meta": {
+     "cell": "XAUUSD.ny_open.NORMAL_DAY",
+     "gate": false,
+     "t": 1.7973238750453429,
+     "deflated": -1.1309763541143796
+    }
+   }
+  },
+  {
+   "hash": "20c16a16481f51c2",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856101+00:00",
+   "finding": {
+    "statement": "XAUUSD.ny_open.RANGE_DAY FAILS the acceptance battery (t=0.4559067767507634, deflated=-2.472393452408959, n=361, PF=1.0541499251267268)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852268+00:00",
+    "meta": {
+     "cell": "XAUUSD.ny_open.RANGE_DAY",
+     "gate": false,
+     "t": 0.4559067767507634,
+     "deflated": -2.472393452408959
+    }
+   }
+  },
+  {
+   "hash": "5ade91bb2e6d7147",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856122+00:00",
+   "finding": {
+    "statement": "XAUUSD.ny_open.FAILED_BREAK FAILS the acceptance battery (t=-0.5079577546307094, deflated=-3.4362579837904317, n=673, PF=0.9573650071401925)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852279+00:00",
+    "meta": {
+     "cell": "XAUUSD.ny_open.FAILED_BREAK",
+     "gate": false,
+     "t": -0.5079577546307094,
+     "deflated": -3.4362579837904317
+    }
+   }
+  },
+  {
+   "hash": "8e9729b9e3984eea",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856144+00:00",
+   "finding": {
+    "statement": "XAUUSD.afternoon.TREND_DAY FAILS the acceptance battery (t=1.09496971061079, deflated=-1.8333305185489324, n=194, PF=1.226650560524372)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852288+00:00",
+    "meta": {
+     "cell": "XAUUSD.afternoon.TREND_DAY",
+     "gate": false,
+     "t": 1.09496971061079,
+     "deflated": -1.8333305185489324
+    }
+   }
+  },
+  {
+   "hash": "e7c2a6e019fc6984",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856165+00:00",
+   "finding": {
+    "statement": "XAUUSD.afternoon.NORMAL_DAY FAILS the acceptance battery (t=3.0936841911655866, deflated=0.16538396200586414, n=576, PF=1.4019985087887932)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852296+00:00",
+    "meta": {
+     "cell": "XAUUSD.afternoon.NORMAL_DAY",
+     "gate": false,
+     "t": 3.0936841911655866,
+     "deflated": 0.16538396200586414
+    }
+   }
+  },
+  {
+   "hash": "3d339f8d21ee46e6",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856186+00:00",
+   "finding": {
+    "statement": "XAUUSD.afternoon.RANGE_DAY FAILS the acceptance battery (t=2.547117362277487, deflated=-0.38118286688223524, n=277, PF=1.5058353129468713)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852304+00:00",
+    "meta": {
+     "cell": "XAUUSD.afternoon.RANGE_DAY",
+     "gate": false,
+     "t": 2.547117362277487,
+     "deflated": -0.38118286688223524
+    }
+   }
+  },
+  {
+   "hash": "a373a35a03cae1d5",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on XAUUSD H1, quant universe, 8y, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from XAUUSD H1, quant universe, 8y is evidence about XAUUSD H1, quant universe, 8y.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856207+00:00",
+   "finding": {
+    "statement": "XAUUSD.afternoon.FAILED_BREAK FAILS the acceptance battery (t=2.0411889643836885, deflated=-0.887111264776034, n=504, PF=1.2698092424131069)",
+    "source": "quant/hunt14.json",
+    "grade": "E2",
+    "measured_on": "XAUUSD H1, quant universe, 8y",
+    "transfer_test": "Aurum's own XAUUSD ledger reproduces a positive expectancy for this session/state cohort over at least 60 resolved signals, sealed before the outcomes are read",
+    "observed_utc": "2026-08-20T16:12:33.852312+00:00",
+    "meta": {
+     "cell": "XAUUSD.afternoon.FAILED_BREAK",
+     "gate": false,
+     "t": 2.0411889643836885,
+     "deflated": -0.887111264776034
+    }
+   }
+  },
+  {
+   "hash": "f3b9729984513c6f",
+   "status": "QUEUED",
+   "reason": "grade E3, measured on quant book, matched drawdown, half-edge, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from quant book, matched drawdown, half-edge is evidence about quant book, matched drawdown, half-edge.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856262+00:00",
+   "finding": {
+    "statement": "daily_stop: 6 arms measured; first = {\"limit\": null, \"mean_r\": 0.5613, \"halts\": 0, \"right\": 0, \"wrong\": 0, \"dd\": 0.483, \"q\": 0.011218, \"cagr\": 1.0026, \"max_cagr\": 3.0251}",
+    "source": "quant/daily_stop.json",
+    "grade": "E3",
+    "measured_on": "quant book, matched drawdown, half-edge",
+    "transfer_test": "the same lever, applied to Aurum's own resolved signals, moves its realised drawdown or expectancy in the same direction. (a daily loss limit is a risk rule, not a market claim; its effect is on the equity path and transfers to any book)",
+    "observed_utc": "2026-08-20T16:12:33.852733+00:00",
+    "meta": {
+     "n_arms": 6
+    }
+   }
+  },
+  {
+   "hash": "f46e85f3bd4040e4",
+   "status": "QUEUED",
+   "reason": "grade E3, measured on quant book, matched drawdown, half-edge, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from quant book, matched drawdown, half-edge is evidence about quant book, matched drawdown, half-edge.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856296+00:00",
+   "finding": {
+    "statement": "growth_now: 3 arms measured; first = \"flat\"",
+    "source": "quant/growth_now.json",
+    "grade": "E3",
+    "measured_on": "quant book, matched drawdown, half-edge",
+    "transfer_test": "the same lever, applied to Aurum's own resolved signals, moves its realised drawdown or expectancy in the same direction. (exit mechanics measured at matched drawdown across a book)",
+    "observed_utc": "2026-08-20T16:12:33.852803+00:00",
+    "meta": {
+     "n_arms": 3
+    }
+   }
+  },
+  {
+   "hash": "5a7c22ffa6e7c258",
+   "status": "QUEUED",
+   "reason": "grade E3, measured on quant book, matched drawdown, half-edge, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from quant book, matched drawdown, half-edge is evidence about quant book, matched drawdown, half-edge.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856322+00:00",
+   "finding": {
+    "statement": "push_ceiling: 9 arms measured; first = {\"name\": \"1. core 5, equal weight (today)\", \"cagr\": 0.63216, \"q\": 0.00748, \"sleeves\": 5}",
+    "source": "quant/push_ceiling.json",
+    "grade": "E3",
+    "measured_on": "quant book, matched drawdown, half-edge",
+    "transfer_test": "the same lever, applied to Aurum's own resolved signals, moves its realised drawdown or expectancy in the same direction. (portfolio construction and sizing; instrument-neutral)",
+    "observed_utc": "2026-08-20T16:12:33.852868+00:00",
+    "meta": {
+     "n_arms": 9
+    }
+   }
+  },
+  {
+   "hash": "47fd3179b0e017af",
+   "status": "QUEUED",
+   "reason": "grade E3, measured on quant book, matched drawdown, half-edge, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from quant book, matched drawdown, half-edge is evidence about quant book, matched drawdown, half-edge.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856346+00:00",
+   "finding": {
+    "statement": "cut_drawdown: 11 arms measured; first = {\"label\": \"0. baseline (tighten exit)\", \"cagr\": 1.0026, \"max_dd\": 0.483, \"q\": 0.011218, \"best_cagr\": 3.0251, \"days\": 2235}",
+    "source": "quant/cut_drawdown.json",
+    "grade": "E3",
+    "measured_on": "quant book, matched drawdown, half-edge",
+    "transfer_test": "the same lever, applied to Aurum's own resolved signals, moves its realised drawdown or expectancy in the same direction. (drawdown levers measured at fixed CAGR)",
+    "observed_utc": "2026-08-20T16:12:33.852946+00:00",
+    "meta": {
+     "n_arms": 11
+    }
+   }
+  },
+  {
+   "hash": "21838e67cf9321d9",
+   "status": "QUEUED",
+   "reason": "grade E2, measured on quant book, with a stated test. Enters as a hypothesis at ZERO authority \u2014 an E5 external finding is still only a hypothesis here, and a result from quant book is evidence about quant book.",
+   "hypothesis_id": null,
+   "decided_utc": "2026-08-20T16:12:33.856371+00:00",
+   "finding": {
+    "statement": "rank_ic: {\"horizon\": 24, \"n_instruments\": 22, \"baseline\": {\"n\": 39, \"ic\": 0.04157261566165781, \"t_ic\": 0.7727304871902395, \"wr\": -0.05037040964437245, \"t_wr\": -0.12912604196800206}, \"model\": {\"n\": 8, \"ic\": 0.1",
+    "source": "quant/rank_ic.json",
+    "grade": "E2",
+    "measured_on": "quant book",
+    "transfer_test": "cross-sectional ranking machinery and its measured IC",
+    "observed_utc": "2026-08-20T16:12:33.853020+00:00",
+    "meta": {}
+   }
+  }
+ ]
+}

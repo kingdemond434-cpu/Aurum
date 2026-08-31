@@ -60,7 +60,12 @@ from typing import Callable, Optional
 
 log = logging.getLogger(__name__)
 
-API = "https://api.telegram.org"
+#: Resolved per call rather than bound at import, so a test harness that sets
+#: the loopback override does not have to care whether this module was imported
+#: before or after it. See notify.api_base for why the override is loopback-only.
+def _api_base() -> str:
+    from golddesk.notify import api_base
+    return api_base()
 
 #: Long-poll seconds. Telegram holds the connection open this long waiting for
 #: an update, so this is idle time, not request rate: 25s means roughly 3.5
@@ -100,7 +105,8 @@ def _api(token: str, method: str, timeout: float, **params) -> Optional[dict]:
         log.warning("requests not installed — bot cannot run")
         return None
     try:
-        r = requests.get(f"{API}/bot{token}/{method}", params=params, timeout=timeout)
+        r = requests.get(f"{_api_base()}/bot{token}/{method}",
+                         params=params, timeout=timeout)
         if r.status_code != 200:
             log.warning("telegram %s -> %s: %s", method, r.status_code, r.text[:200])
             return None

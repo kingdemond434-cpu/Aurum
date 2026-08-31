@@ -100,42 +100,79 @@ def _telegram_check(want: bool, secrets: Path, deliver: bool = True) -> Check:
     return Check("telegram", ok, f"{why} (credentials from {where})", fatal=True)
 
 
+def check_analyst_backend(provider_spec: str) -> Check:
+    """The credential the CHOSEN provider actually needs.
+
+    Checking ANTHROPIC_API_KEY unconditionally was right while there was one
+    backend and is wrong now: under `claudecode:` the key is not merely
+    unnecessary, it is actively removed from the child environment, so a
+    preflight demanding it would fail a correctly-configured desk — and, worse,
+    a preflight that PASSED on a stray key would tell an operator running on
+    their subscription that everything was fine while the CLI quietly billed
+    them per token. Each backend is asked for the thing it uses.
+    """
+    name = provider_spec.partition(":")[0]
+    if name == "deterministic":
+        return Check("analyst backend", True,
+                     "deterministic rules — no model, no credential, no cost")
+    if name == "claudecode":
+        import shutil
+        exe = shutil.which("claude")
+        if not exe:
+            return Check("analyst backend", False,
+                         "provider 'claudecode' needs the Claude Code CLI on "
+                         "PATH and it is not installed here")
+        billed = bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+        note = ("but ANTHROPIC_API_KEY is set, so reads may be BILLED per "
+                "token rather than drawn from your subscription — unset it, or "
+                "pass billed=False to strip it from the CLI's environment"
+                if billed else
+                "subscription mode — no metered bill. Verify the CLI is logged "
+                "in: `claude -p hello`")
+        return Check("analyst backend", True, f"claudecode at {exe}; {note}")
+    if name == "codex":
+        import shutil
+        exe = shutil.which("codex")
+        if not exe:
+            return Check("GPT fallback", False,
+                         "provider 'codex' needs the Codex CLI on PATH and it "
+                         "is not installed here")
+        billed = bool((os.environ.get("OPENAI_API_KEY") or "").strip())
+        note = ("but OPENAI_API_KEY is set, so requests may be BILLED per "
+                "token; unset it to use the ChatGPT login"
+                if billed else
+                "ChatGPT login — no metered bill. Verify: `codex login`")
+        return Check("GPT fallback", True, f"codex at {exe}; {note}")
+    if name in ("failover", "auto"):
+        # Builders only; the real per-provider checks run on each element.
+        return Check("analyst backend", True, f"{name} route — elements checked individually")
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    return Check("ANTHROPIC_API_KEY", bool(key),
+                 f"set ({len(key)} chars) — reads are BILLED per token"
+                 if key else
+                 "NOT SET — export ANTHROPIC_API_KEY=sk-ant-... "
+                 "The desk cannot analyse anything without it. Or run "
+                 "--provider claudecode:claude-opus-5 to use a subscription")
+
+
 def preflight(symbol: str, want_telegram: bool, secrets: Path,
               feed: str = "mt5", min_stop: float = 0.0,
-              declared_spread: float = 0.0) -> list[Check]:
+              declared_spread: float = 0.0,
+              provider_spec: str = "anthropic:claude-opus-5", expect_broker: str = "",
+              fallback_provider_spec: str = "") -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
 
     # --- model -----------------------------------------------------------
-    # TWO ROUTES TO THE MODEL, AND EITHER IS SUFFICIENT. This check used to
-    # demand ANTHROPIC_API_KEY and was FATAL, so a box configured to run on
-    # the Claude Code subscription (provider spec 'headless') could not boot
-    # at all however well the rest of it was wired. A preflight that fails a
-    # correctly-configured desk is worse than no check: it sends the operator
-    # hunting for a key they deliberately did not set.
-    #
-    # PRECEDENCE IS REPORTED, because getting it wrong costs real money. If
-    # both are present the 'anthropic' provider bills the API KEY; a key left
-    # in the environment while the operator believes they are on the
-    # subscription is silent metered spend.
-    import shutil
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    cli = shutil.which("claude")
-    if key and cli:
-        detail = (f"BOTH present: API key ({len(key)} chars) and Claude Code CLI at "
-                  f"{cli}. The 'anthropic' provider bills the KEY; only the "
-                  f"'headless' provider uses the subscription. If you meant the "
-                  f"subscription, set the provider spec to headless.")
-    elif key:
-        detail = f"API key set ({len(key)} chars) — metered billing"
-    elif cli:
-        detail = (f"Claude Code CLI at {cli} — subscription billing via the "
-                  f"'headless' provider. Charts are REFUSED on that path until "
-                  f"test_headless_claude.sh probe #2 passes; run --numeric-only.")
-    else:
-        detail = ("NEITHER an ANTHROPIC_API_KEY nor a `claude` CLI on PATH. The desk "
-                  "cannot analyse anything: export a key, or install Claude Code and "
-                  "log in for subscription billing.")
-    checks.append(Check("model access", bool(key or cli), detail))
+    # THE CHOSEN PROVIDER'S OWN CREDENTIAL, not ANTHROPIC_API_KEY wholesale.
+    # Under 'claudecode:' the key is not merely unnecessary, it is actively
+    # stripped from the CLI's environment, so a check demanding it would fail a
+    # correctly-configured subscription desk -- and one passing on a stray key
+    # would bless a desk that is silently billing per token.
+    checks.append(check_analyst_backend(provider_spec))
+    if fallback_provider_spec:
+        fallback = check_analyst_backend(fallback_provider_spec)
+        fallback.name, fallback.fatal = "GPT fallback", False
+        checks.append(fallback)
 
     # --- feed ------------------------------------------------------------
     if feed == "yahoo":
@@ -214,6 +251,33 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
                                 f"{getattr(acct,'company','?')} / {getattr(acct,'server','?')} "
                                 f"(read-only use; nothing is ever sent)"
                                 if acct else "no account info", fatal=False))
+            # WHICH TERMINAL DID WE ACTUALLY GET? `mt5.initialize()` is called with path=None,
+            # so it attaches to whatever terminal is ALREADY RUNNING. With two brokers installed
+            # on one box — Vantage for this desk, Fusion for the quant desk — that is a coin
+            # flip decided by which window happened to be open.
+            #
+            # The check above prints the broker and PASSES either way, so a desk reading the
+            # wrong feed looks identical to one reading the right feed. Every price, spread and
+            # signal would be the other broker's while carrying this desk's name: the same
+            # silent-substitution shape the promotion protocol records as its defect #3.
+            #
+            # --expect-broker turns that from observable into enforced. Absent, this stays a
+            # non-fatal note rather than a new refusal nobody asked for.
+            if acct is not None and expect_broker:
+                got = f"{getattr(acct, 'company', '')} {getattr(acct, 'server', '')}".lower()
+                checks.append(Check(
+                    "expected broker", expect_broker.lower() in got,
+                    f"connected to {getattr(acct, 'company', '?')} / "
+                    f"{getattr(acct, 'server', '?')}, expected {expect_broker!r}. "
+                    "mt5.initialize(path=None) attaches to whatever terminal is open — with two "
+                    "brokers installed, close the wrong one or pass its path"))
+            elif acct is not None:
+                checks.append(Check(
+                    "expected broker", True,
+                    "NOT PINNED — mt5.initialize(path=None) attached to whatever terminal was "
+                    f"open, which happened to be {getattr(acct, 'company', '?')}. Pass "
+                    "--expect-broker to make that a requirement rather than a coincidence",
+                    fatal=False))
     except ImportError:
         checks.append(Check("MT5 terminal", False,
                             "MetaTrader5 not installed — pip install MetaTrader5 "
@@ -231,6 +295,11 @@ def main() -> int:
     ap.add_argument("--live", action="store_true", help="run; untagged advisory signals")
     ap.add_argument("--secrets", default="secrets")
     ap.add_argument("--no-telegram", action="store_true")
+    ap.add_argument("--expect-broker", default="",
+                    help="Refuse to start unless the connected MT5 account's company or server "
+                         "contains this string (e.g. Vantage). mt5.initialize() attaches to "
+                         "whatever terminal is open, so with two brokers installed this is the "
+                         "difference between reading the right feed and reading a coin flip.")
     ap.add_argument("--numeric-only", action="store_true",
                     help="skip charts (cheaper; changes which arm you are running)")
     ap.add_argument("--max-hours", type=float, default=None)
@@ -272,17 +341,30 @@ def main() -> int:
                          "the FEED's spread — a cost you will not pay, and "
                          "usually a smaller one, so marginal trades look better "
                          "than they are")
+    ap.add_argument("--provider", default="auto",
+                    help="analyst backend. 'auto' (default): claudecode when "
+                         "only the Claude Code CLI is available, anthropic when "
+                         "an API key is set. 'claudecode:<model>' runs the "
+                         "same model through the Claude Code CLI — a Pro/Max "
+                         "subscription pays, no metered bill, but reads take "
+                         "~78s and consume subscription quota, so pair it with "
+                         "a low wake rate. 'anthropic:<model>' bills per token "
+                         "and can send charts. 'deterministic' is the "
+                         "rule-based baseline and costs nothing at all.")
+    ap.add_argument("--fallback-provider", default="",
+                    help="analyst failover, tried ONLY after a real primary "
+                         "failure (a valid refusal never fails over). e.g. "
+                         "'codex:gpt-5.6-sol' for a local ChatGPT login. "
+                         "Leave empty to disable failover.")
+    ap.add_argument("--effort", default=None,
+                    choices=("low", "medium", "high", "xhigh", "max"),
+                    help="analyst reasoning effort on the PRIMARY provider. "
+                         "Higher effort costs more tokens/quota and latency per "
+                         "read — it is a different ARM, not a free upgrade.")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
                          "ARM — not a free improvement")
-    ap.add_argument("--provider", default="auto",
-                    help="which route to the model. 'auto' (default) picks "
-                         "headless when only the Claude Code CLI is available and "
-                         "anthropic when an API key is set; 'headless:<model>' "
-                         "forces subscription billing; 'anthropic:<model>' forces "
-                         "metered. THIS DECIDES WHO PAYS, so auto prints what it "
-                         "chose and why rather than resolving silently")
     ap.add_argument("--no-macro", action="store_true",
                     help="do not feed macro context to the analyst. Briefs then "
                          "render MACRO CONTEXT: UNMEASURED — the read still "
@@ -298,7 +380,10 @@ def main() -> int:
     print("=" * 78)
     checks = preflight(args.symbol, not args.no_telegram, Path(args.secrets),
                        feed=args.feed, min_stop=args.min_stop,
-                       declared_spread=args.declared_spread or 0.0)
+                       declared_spread=args.declared_spread or 0.0,
+                       provider_spec=args.provider,
+                       expect_broker=args.expect_broker,
+                       fallback_provider_spec=args.fallback_provider)
     for c in checks:
         print(c.render())
     fatal = [c for c in checks if c.fatal and not c.ok]
@@ -361,7 +446,7 @@ def main() -> int:
             why = ("ANTHROPIC_API_KEY is set, so METERED billing. Unset it and "
                    "keep the CLI logged in to run on the subscription instead.")
         elif has_cli:
-            provider_spec = "headless:claude-opus-5"
+            provider_spec = "claudecode:claude-opus-5"
             why = ("no API key, Claude Code CLI present, so SUBSCRIPTION billing. "
                    "Charts are refused on this route — run --numeric-only.")
         else:
@@ -373,8 +458,8 @@ def main() -> int:
               f"                     {why}")
     else:
         print(f"  MODEL ROUTE      : {provider_spec} (explicit)")
-    if provider_spec.startswith("headless") and not args.numeric_only:
-        print("\nFATAL: the headless (subscription) provider refuses charts, and "
+    if provider_spec.startswith(("headless", "claudecode")) and not args.numeric_only:
+        print("\nFATAL: the subscription CLI provider refuses charts, and "
               "--numeric-only was not\ngiven. Every read would fail. Add "
               "--numeric-only, or use --provider anthropic:<model>.")
         return 1
@@ -385,6 +470,9 @@ def main() -> int:
                         secrets_dir=args.secrets, feed_backend=args.feed,
                         management=args.management,
                         provider_spec=provider_spec,
+                        provider_effort=args.effort,
+                        fallback_provider_specs=(args.fallback_provider,)
+                        if args.fallback_provider else (),
                         enable_macro=not args.no_macro,
                         declared_spread=args.declared_spread,
                         shadow_management=args.shadow_management,

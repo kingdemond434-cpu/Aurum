@@ -1,0 +1,101 @@
+{
+  "version": "policystate-2026-08-14-a",
+  "bindings": {
+    "management_chooser": {
+      "slot": "management_chooser",
+      "policy": "contextual-v1",
+      "since": "2026-08-15",
+      "expires": "2026-08-16",
+      "warrant": "ACCEPTANCE WIRING ONLY \u2014 no evidence, not a promotion",
+      "evidence": {
+        "acceptance": true
+      },
+      "default": false
+    }
+  },
+  "history": [
+    {
+      "ts": "2026-08-15T16:13:31.200189+00:00",
+      "op": "bind",
+      "slot": "management_chooser",
+      "before": null,
+      "after": {
+        "slot": "management_chooser",
+        "policy": "contextual-v1",
+        "since": "2026-08-15",
+        "expires": "2026-08-16",
+        "warrant": "ACCEPTANCE WIRING ONLY \u2014 no evidence, not a promotion",
+        "evidence": {
+          "acceptance": true
+        },
+        "default": false
+      }
+    },
+    {
+      "ts": "2026-08-15T16:13:33.112527+00:00",
+      "op": "bind",
+      "slot": "management_chooser",
+      "before": {
+        "slot": "management_chooser",
+        "policy": "contextual-v1",
+        "since": "2026-08-15",
+        "expires": "2026-08-16",
+        "warrant": "ACCEPTANCE WIRING ONLY \u2014 no evidence, not a promotion",
+        "evidence": {
+          "acceptance": true
+        },
+        "default": false
+      },
+      "after": {
+        "slot": "management_chooser",
+        "policy": "passive",
+        "since": "2026-08-15",
+        "expires": "2026-11-13",
+        "warrant": "paired +0.2500R/state over n=60 identical states, CI [+0.2500,+0.2500] p=0.0001 ESS 60 \u2014 survives FDR",
+        "evidence": {
+          "mean": 0.24999999999999997,
+          "lo": 0.24999999999999997,
+          "hi": 0.24999999999999997,
+          "p": 9.999000099990002e-05,
+          "ess": 60.0,
+          "n": 60,
+          "beat": "heuristic-v1"
+        },
+        "default": false
+      }
+    },
+    {
+      "ts": "2026-08-15T16:13:33.113819+00:00",
+      "op": "revert",
+      "slot": "management_chooser",
+      "undid": {
+        "slot": "management_chooser",
+        "policy": "passive",
+        "since": "2026-08-15",
+        "expires": "2026-11-13",
+        "warrant": "paired +0.2500R/state over n=60 identical states, CI [+0.2500,+0.2500] p=0.0001 ESS 60 \u2014 survives FDR",
+        "evidence": {
+          "mean": 0.24999999999999997,
+          "lo": 0.24999999999999997,
+          "hi": 0.24999999999999997,
+          "p": 9.999000099990002e-05,
+          "ess": 60.0,
+          "n": 60,
+          "beat": "heuristic-v1"
+        },
+        "default": false
+      },
+      "restored": {
+        "slot": "management_chooser",
+        "policy": "contextual-v1",
+        "since": "2026-08-15",
+        "expires": "2026-08-16",
+        "warrant": "ACCEPTANCE WIRING ONLY \u2014 no evidence, not a promotion",
+        "evidence": {
+          "acceptance": true
+        },
+        "default": false
+      }
+    }
+  ]
+}

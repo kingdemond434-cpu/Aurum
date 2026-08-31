@@ -1,0 +1,30 @@
+feed.ParquetBarSource|2169 D1 bars 2018-03-18..2026-08-11 (REAL broker data)
+features.swings/atr|581 swings, ATR[-1]=90.72
+LiveDesk.__init__|vision=NUMERIC_PLUS_CHARTS arms=['contextual-v1', 'heuristic-v1', 'passive'] mgmt=heuristic-v1
+policy bound for trace|management_chooser -> contextual-v1 (warrant explicitly marks it as non-evidential)
+watcher->analyst->compiler|reads=6 states=6 at bar 265
+AnthropicAnalyst.read (REAL code)|request built: system+cache_control=True, schema=True, images=2
+MULTIMODAL VERIFIED|vision=NUMERIC_PLUS_CHARTS and 2 image block(s) actually in the request payload
+risk_check->ENTRY|LONG entry=1290.04 stop=1277.64 tp2=1346.69 rr=4.54
+Telegram ENTRY|1 notification(s), shadow-tagged=True
+TradeObserver instantiated|entry=1290.04 stop=1277.64 target=1346.69 risk=12.40
+on_tick -> observer|34 ticks consumed, MFE=+3.00R path_points=34
+economic wake fired|4 wake(s), triggers=['WAKE->PARTIAL', 'WAKE->HOLD']
+management reconsideration|4 step(s), stop_moves=0 partials=1
+wake -> mgmt (causal link)|4/4 management steps originated from an observer wake, not a bar close
+paired shadow arms|4 step(s) recorded alternatives on the identical option set: e.g. {'passive': 'M1', 'heuristic-v1': 'M3'}
+ContextualChooser executed|4 step(s) decided by the model-in-the-loop arm; provider.choose_option constrained to 2 legal ids, no price field exists in its schema
+legality guaranteed|every chosen id came from the enumerated set: True
+intrabar-resolved EXIT|exits=1 tick_resolved=1 m1=0 assumed=0
+Telegram EXIT|1 exit notification(s)
+prior trade recorded|dir=LONG exit=STOP realised=-0.03R mfe=+3.00R
+ReentryPolicy consulted|reentry-2026-08-14-a -> allowed=False: prior thesis no longer intact
+ledger|7 rows, 1 closed trade(s) with full management trace
+ledger records resolution|resolution=TICK_OBSERVED forgone_r=+3.03 observations=34
+learning loop sees outcomes|resolved_outcomes=1 cohorts=1 (was structurally 0 before this revision)
+hypothesis sealed (zero authority)|1 sealed; enforcing now = 0
+adaptation cycle|changes=1 refused=0 hyp_moves=0
+POLICY ACTUALLY BOUND|management_chooser: heuristic-v1 -> passive (was an audit-only no-op before this revision)
+DURABLE ACROSS RESTART|fresh PolicyState from disk reports 'passive'
+REVERSIBLE|1 change(s) undone; active now 'contextual-v1'
+DECAY AWARE|warrant carries expiry; expiring within 365d = 1

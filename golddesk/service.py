@@ -643,6 +643,8 @@ class DeskService:
 
 def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   provider_spec: str = "anthropic:claude-opus-5",
+                  provider_effort: Optional[str] = None,
+                  fallback_provider_specs: Sequence[str] = (),
                   vision: Vision = Vision.NUMERIC_PLUS_CHARTS,
                   cfg: Optional[ServiceConfig] = None,
                   secrets_dir: str = "secrets",
@@ -662,8 +664,14 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     cost and stop-legality come from: those are facts about the venue you
     execute on, and `broker_limits` carries them explicitly precisely so a
     non-MT5 feed cannot quietly supply its own.
+
+    The model brain is a PROVIDER CHAIN, not a single provider. `provider_spec`
+    is the primary route; `fallback_provider_specs` are tried in order only
+    after a real primary failure, and `provider_effort` is applied to the
+    primary (a deterministic/replay fallback has nothing to apply it to, so it
+    is deliberately not forwarded to them).
     """
-    from .providers import build_provider
+    from .providers import build_provider_chain
     cfg = cfg or ServiceConfig(symbol=symbol)
     if feed_backend == "oanda":
         from .feed_oanda import OandaClient
@@ -767,7 +775,10 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
         log.info("macro feed DISABLED -- briefs render MACRO CONTEXT: UNMEASURED, "
                  "which the analyst is instructed to treat as absent, not neutral")
 
-    desk = LiveDesk(build_provider(provider_spec), Ledger(cfg.ledger_path),
+    provider_kw = {"effort": provider_effort} if provider_effort is not None else {}
+    provider = build_provider_chain(provider_spec, tuple(fallback_provider_specs),
+                                    **provider_kw)
+    desk = LiveDesk(provider, Ledger(cfg.ledger_path),
                     sink, shadow=shadow, vision=vision, broker=broker,
                     cost_model=cost_model,
                     shadow_management=shadow_management,

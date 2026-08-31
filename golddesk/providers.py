@@ -17,11 +17,16 @@ import abc
 import base64
 import json
 import logging
+import os
+import tempfile
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from .analyst import (ANALYST_SCHEMA, ANALYST_SYSTEM, AnalystRead, MarketBrief)
+# (the CLI-client module is deliberately NOT imported here -- see the PROVIDERS note below;
+# importing it re-creates the name collision that broke the claudecode route)
 from .chart import Chart
 
 log = logging.getLogger(__name__)
@@ -324,123 +329,414 @@ class DeterministicProvider(AnalystProvider):
                             (time.monotonic() - t0) * 1000, {"in": 0, "out": 0})
 
 
-class HeadlessClaudeAnalyst(AnalystProvider):
-    """Claude through the Claude Code CLI, billed to the subscription plan.
+class ClaudeCodeAnalyst(AnalystProvider):
+    """The same model, reached through the Claude Code CLI instead of the API.
 
-    WHY THIS IS A PROVIDER AND NOT A FLAG ON THE ONE ABOVE
+    WHY THIS EXISTS. The metered API bills per token, and at this desk's
+    configured cadence -- a 30-minute heartbeat with min_gap=0 on M15 bars --
+    that is 46 to 92 reads a day, which prices out at roughly $290-580 a month
+    against an account of EUR 1,500. budget.py's own docstring predicted this
+    exactly: at a small account an analyst call can cost more than the trade
+    makes. The CLI authenticates against a Pro/Max subscription, so the same
+    read consumes subscription quota rather than dollars.
 
-    The live desk reaches the model through exactly one path:
-    run_desk.py -> build_service() -> LiveDesk(build_provider(spec)) -> here.
-    `analyst.call_analyst()` is a DIFFERENT path, used by the runner and the
-    backtests. Adding a headless option there changes nothing about what the
-    live desk does, which is the mistake this class corrects: a subscription
-    route the signal desk never takes is not a subscription route.
+    WHAT IT COSTS INSTEAD, MEASURED NOT ASSUMED. Claude Code injects its own
+    scaffolding: a trivial prompt with --system-prompt replacing the default
+    and --allowed-tools disabled still reported 26,488 cache-creation tokens.
+    That is free of DOLLARS under a subscription but it is not free of QUOTA,
+    and it is the reason this provider does not make the heartbeat affordable
+    so much as make it unnecessary -- three session-anchored reads a day is
+    ~80k tokens of overhead, ninety-two is 2.4M.
 
-    WHAT IS ASSUMED, AND MUST BE CONFIRMED BY test_headless_claude.sh
-
-    That `claude -p --output-format json --json-schema` returns the
-    AnalystRead shape under a `structured_output` key. If the envelope
-    differs, read() raises naming the keys it actually saw rather than
-    guessing -- a provider that quietly coerced a different shape into
-    AnalystRead is the worst outcome available here, because it would look
-    like a working desk.
-
-    CHARTS ARE REFUSED, not silently dropped. Image support through headless
-    mode is unverified, and a chart read that degrades to reading a filename
-    produces a confident structural claim about a picture the model never
-    saw. Run with --numeric-only against this provider until probe #2 in
-    test_headless_claude.sh passes.
+    WHAT IT CANNOT DO. The CLI has no structured-output mode, so the schema is
+    requested in the prompt and enforced here by validation; a read that does
+    not parse is an error, never a shrug. It also has no image input on stdin,
+    so `charts` RAISES rather than being quietly dropped -- a chart arm that
+    silently ran without charts would make competition.py's paired comparison
+    and budget.py's "does the chart arm pay for itself" question return
+    confident fiction.
     """
 
-    name = "headless"
+    name = "claudecode"
+
+    #: Requested in-band because the CLI cannot enforce a JSON schema. The
+    #: model is then held to it by model_validate_json, which is the only part
+    #: that actually guarantees anything.
+    _SCHEMA_INSTRUCTION = (
+        "Return ONLY a single JSON object conforming to this JSON Schema. No "
+        "prose, no explanation, no markdown code fences.\n\nSCHEMA:\n{schema}\n")
 
     def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
-                 timeout_s: float = 90.0):
+                 timeout_s: float = 240.0, cwd: Optional[str] = None,
+                 billed: Optional[bool] = None, runner: Any = None,
+                 effort: Optional[str] = None):
         self.model, self.binary, self.timeout_s = model, binary, timeout_s
+        self.cwd, self._billed, self._runner = cwd, billed, runner
+        self.effort = effort
+
+    def billed(self) -> bool:
+        """Whether these tokens are being charged in dollars.
+
+        HEURISTIC, AND LABELLED AS ONE. Claude Code bills against a metered API
+        key when one is present and against the subscription otherwise, and it
+        does not report which it used. So this reads the environment and the
+        operator can override it. It matters because budget.py prices tokens at
+        API list: reporting real dollars for a subscription read would overstate
+        cost, and reporting zero for an API-key read would hide it. Guessing
+        silently in either direction corrupts every net-value number downstream.
+        """
+        if self._billed is not None:
+            return self._billed
+        return bool((os.environ.get("ANTHROPIC_API_KEY") or "").strip())
+
+    @staticmethod
+    def _unfence(text: str) -> str:
+        """Strip a markdown code fence if the model wrapped its JSON in one.
+
+        Not defensive programming -- observed. Asked for bare JSON with an
+        explicit "no markdown code fences", the CLI still returned
+        ```json\\n{...}\\n```. The instruction reduces it; it does not remove it.
+        """
+        s = text.strip()
+        if not s.startswith("```"):
+            return s
+        s = s.split("\n", 1)[1] if "\n" in s else ""
+        return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
+
+    def _argv(self) -> list[str]:
+        argv = [self.binary, "-p",
+                "--output-format", "json",
+                "--model", self.model,
+                "--system-prompt", ANALYST_SYSTEM,
+                "--allowed-tools", "",
+                "--max-turns", "1"]
+        if self.effort:
+            argv += ["-c", f'model_reasoning_effort="{self.effort}"']
+        return argv
+
+    def _env(self) -> dict:
+        """The child's environment.
+
+        When the operator has declared this UNBILLED, the API key is actively
+        REMOVED rather than merely unused. A key sitting in the environment is
+        how a desk configured for a subscription quietly runs up a metered bill,
+        and the failure is invisible until the invoice.
+        """
+        env = dict(os.environ)
+        if not self.billed():
+            env.pop("ANTHROPIC_API_KEY", None)
+            env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        return env
+
+    def _invoke(self, prompt: str) -> dict:
+        if self._runner is not None:                  # injected for tests
+            return self._runner(self._argv(), prompt)
+        import subprocess
+        try:
+            p = subprocess.run(self._argv(), input=prompt, env=self._env(),
+                               cwd=self.cwd, capture_output=True, text=True,
+                               timeout=self.timeout_s)
+        except FileNotFoundError as e:
+            raise AnalystError(
+                f"{self.binary!r} not found. Install Claude Code on this box and "
+                f"log in once interactively, or use provider 'anthropic:' and "
+                f"pay per token.") from e
+        except subprocess.TimeoutExpired as e:
+            raise AnalystError(f"claude timed out after {self.timeout_s}s") from e
+        if p.returncode != 0:
+            raise AnalystError(f"claude exited {p.returncode}: "
+                               f"{(p.stderr or p.stdout)[:300]}")
+        try:
+            return json.loads(p.stdout)
+        except json.JSONDecodeError as e:
+            raise AnalystError(f"claude did not return JSON: "
+                               f"{p.stdout[:300]!r}") from e
 
     def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
-        import json
-        import shutil
-        import subprocess
-
         if charts:
             raise AnalystError(
-                "headless provider refuses charts: image support in `claude -p` is "
-                "unverified (test_headless_claude.sh probe #2). Run with "
-                "--numeric-only, or use the anthropic provider for chart reads.")
-        if shutil.which(self.binary) is None:
-            raise AnalystError(
-                f"{self.binary!r} not on PATH -- Claude Code is not installed for the "
-                f"account running the desk. Install it and log in, or set the provider "
-                f"spec back to 'anthropic:<model>'.")
-
-        # `--json-schema` takes the schema INLINE as a JSON string, not a path
-        # to a file containing one. Passing a path fails with "--json-schema is
-        # not valid JSON", which reads like a malformed schema rather than a
-        # wrong argument type -- confirmed against `claude --help`, whose own
-        # example is a literal JSON object.
-        schema_arg = json.dumps(ANALYST_SCHEMA)
+                f"{self.name!r} cannot send charts: the CLI takes no image input. "
+                f"Run the chart arm on provider 'anthropic:' or pass no charts — "
+                f"silently dropping them would make every chart-vs-text "
+                f"comparison meaningless.")
+        prompt = (self._SCHEMA_INSTRUCTION.format(
+            schema=json.dumps(ANALYST_SCHEMA)) + "\n" + brief.render())
 
         t0 = time.monotonic()
-        try:
-            proc = subprocess.run(
-                [self.binary, "-p", brief.render(),
-                 "--output-format", "json",
-                 "--json-schema", schema_arg,
-                 "--model", self.model,
-                 "--append-system-prompt", ANALYST_SYSTEM],
-                capture_output=True, text=True, timeout=self.timeout_s)
-        except subprocess.TimeoutExpired as e:
-            raise AnalystError(
-                f"headless call timed out after {self.timeout_s}s") from e
-
-        if True:
-
-            blob = f"{proc.stdout}\n{proc.stderr}".lower()
-        if proc.returncode != 0:
-            # A usage ceiling is a DIFFERENT condition from a broken call:
-            # expected, recoverable, and it says the desk is alive but rate
-            # limited. Named so an operator reading the log can tell "out of
-            # quota" from "the CLI is broken" without guessing.
-            if any(w in blob for w in ("limit", "quota", "usage")):
-                raise AnalystError(
-                    f"SUBSCRIPTION USAGE CEILING (exit={proc.returncode}): "
-                    f"{proc.stderr.strip()[:300]}")
-            raise AnalystError(
-                f"headless call failed (exit={proc.returncode}): "
-                f"{proc.stderr.strip()[:300]}")
-
-        try:
-            payload = json.loads(proc.stdout)
-        except json.JSONDecodeError as e:
-            raise AnalystError(f"headless output was not JSON: {e}") from e
-
-        structured = payload.get("structured_output")
-        if structured is None:
-            raise AnalystError(
-                f"no 'structured_output' in the CLI response; keys were "
-                f"{sorted(payload.keys())}. The envelope shape may have changed "
-                f"-- re-run test_headless_claude.sh probe #1 before trusting it.")
-
+        env = self._invoke(prompt)
         dt = (time.monotonic() - t0) * 1000
-        usage = payload.get("usage") or {}
-        return ProviderRead(AnalystRead.model_validate(structured), self.name,
-                            self.model, dt,
-                            {"in": usage.get("input_tokens", 0),
-                             "out": usage.get("output_tokens", 0),
-                             "billing": "subscription"})
+
+        if env.get("is_error") or env.get("subtype") not in (None, "success"):
+            raise AnalystError(f"claude reported failure: "
+                               f"{env.get('subtype')} {str(env.get('result'))[:200]}")
+        if env.get("permission_denials"):
+            raise AnalystError(f"claude was denied a permission it wanted: "
+                               f"{env['permission_denials']}")
+        text = self._unfence(str(env.get("result") or ""))
+        if not text:
+            raise AnalystError("claude returned an empty result")
+        try:
+            read = AnalystRead.model_validate_json(text)
+        except Exception as e:                                   # noqa: BLE001
+            raise AnalystError(f"claude returned text that is not a valid "
+                               f"AnalystRead: {e}; got {text[:300]!r}") from e
+
+        u = env.get("usage") or {}
+        fresh = int(u.get("input_tokens") or 0)
+        created = int(u.get("cache_creation_input_tokens") or 0)
+        cached = int(u.get("cache_read_input_tokens") or 0)
+        billed = self.billed()
+        return ProviderRead(read, self.name, self.model, dt, {
+            # budget.Pricing expects `in` to include cache reads and derives
+            # fresh by subtraction. Cache CREATION is folded into fresh: it is
+            # actually dearer than fresh input, so this understates rather than
+            # flatters, which is the right direction for a cost estimate.
+            "in": fresh + created + cached,
+            "cache_read": cached,
+            "out": int(u.get("output_tokens") or 0),
+            # The CLI always reports API-equivalent dollars. Under a
+            # subscription nobody is charged them, so they are labelled rather
+            # than passed off as spend.
+            "billed": billed,
+            "cost_usd_api_equivalent": env.get("total_cost_usd"),
+            "cost_usd": env.get("total_cost_usd") if billed else 0.0,
+        })
 
 
-PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
-             "deterministic": DeterministicProvider,
-             "headless": HeadlessClaudeAnalyst}
+# TWO IMPLEMENTATIONS OF THE SUBSCRIPTION ROUTE LANDED UNDER THE SAME CLASS NAME, AND THE
+# BROKEN ONE WON.
+#
+# A second `PROVIDERS` dict used to sit below this one -- so this dict was built and immediately
+# discarded -- mapping "claudecode" to a factory that did:
+#
+#     kw.setdefault("client", ClaudeCodeAnalyst())      # then: AnthropicAnalyst(**kw)
+#
+# The intent was sound: inject the CLI transport into the existing analyst so the compiler,
+# schema and journalling stay shared and only the destination of the model call changes. But
+# `claude_code_analyst.ClaudeCodeAnalyst` -- a CLIENT, with `.messages.create` -- was imported at
+# the top of this module and then SHADOWED by the provider class of the same name defined above.
+# The factory therefore injected the provider as though it were a client, and
+# `AnthropicAnalyst.read()` calls `client.messages.create(...)`: an AttributeError on the first
+# read. `--provider claudecode:...` did not merely fail, it failed at the moment of use, on the
+# one path chosen specifically to avoid a metered bill.
+#
+# THE TESTED IMPLEMENTATION WINS. The provider class above carries ~20 tests covering fence
+# stripping, schema enforcement, the CLI error envelope, the `billed()` heuristic and the refusal
+# to accept charts. The injected-client route had no tests, and neither did its client module.
+# Between two designs for one capability, the one whose behaviour is pinned is the one that can
+# be changed safely later.
+#
+# The shadowing import was removed along with the factory. If the injected-client design is ever
+# revived, the client needs a DIFFERENT NAME -- the collision is what hid this for a whole merge.
+# NOTE: PROVIDERS is defined AFTER the classes below; both ClaudeCodeAnalyst and CodexCliAnalyst
+# must exist before this dict is evaluated, or module import raises NameError.
+
+
+class CodexCliAnalyst(AnalystProvider):
+    """Local ChatGPT subscription failover through an ephemeral Codex run.
+
+    This is the GPT half of the desk's brains: primary is Claude (anthropic or
+    claudecode), and this provider is the billed-safe second opinion used only
+    after the primary has genuinely failed (see FailoverAnalyst — a valid
+    refusal never triggers failover). It shells out to the Codex CLI
+    (`codex exec --ephemeral --sandbox read-only`), which authenticates against
+    the same ChatGPT login the operator already has, so there is no API key and
+    no per-token bill.
+
+    THE SCHEMA IS ENFORCED HERE, NOT BY THE CLI. `--output-schema` constrains
+    the reply shape, but the returned text is still validated through
+    AnalystRead.model_validate_json — the CLI's constraint is a request, not a
+    guarantee, and an unparseable reply is an error, never a shrug.
+    """
+
+    name = "codex"
+
+    def __init__(self, model: str = "gpt-5.6-sol", binary: str = "codex",
+                 timeout_s: float = 600.0, runner: Any = None,
+                 billed: Optional[bool] = None, effort: str = "high"):
+        self.model, self.binary, self.timeout_s = model, binary, timeout_s
+        self._runner, self._billed, self.effort = runner, billed, effort
+
+    def billed(self) -> bool:
+        if self._billed is not None:
+            return self._billed
+        return bool((os.environ.get("OPENAI_API_KEY") or "").strip())
+
+    def _env(self) -> dict:
+        env = dict(os.environ)
+        if not self.billed():
+            env.pop("OPENAI_API_KEY", None)
+        return env
+
+    def _argv(self, workspace: str, schema_path: str, output_path: str,
+              image_paths: Sequence[str] = ()) -> list[str]:
+        argv = [self.binary, "exec", "--ephemeral", "--sandbox", "read-only",
+                "--skip-git-repo-check", "--cd", workspace,
+                "--output-schema", schema_path,
+                "--output-last-message", output_path,
+                "--model", self.model,
+                "-c", f'model_reasoning_effort="{self.effort}"']
+        for path in image_paths:
+            argv += ["--image", path]
+        argv.append("-")
+        return argv
+
+    def _invoke(self, argv: list[str], prompt: str, output_path: Path) -> str:
+        if self._runner is not None:
+            result = self._runner(argv, prompt)
+            if isinstance(result, str):
+                return result
+            if isinstance(result, dict):
+                return str(result.get("result") or result.get("output") or "")
+            return str(result or "")
+        import shutil
+        import subprocess
+        resolved = shutil.which(argv[0])
+        if resolved:
+            argv = [resolved, *argv[1:]]
+        try:
+            p = subprocess.run(argv, input=prompt, env=self._env(),
+                               capture_output=True, text=True,
+                               timeout=self.timeout_s)
+        except FileNotFoundError as e:
+            raise AnalystError(
+                f"{self.binary!r} not found. Install/login to the Codex CLI or "
+                "remove 'codex' from the analyst fallback chain.") from e
+        except subprocess.TimeoutExpired as e:
+            raise AnalystError(f"codex timed out after {self.timeout_s}s") from e
+        if p.returncode != 0:
+            raise AnalystError(f"codex exited {p.returncode}: "
+                               f"{(p.stderr or p.stdout)[:300]}")
+        if not output_path.exists():
+            raise AnalystError("codex completed without writing its final message")
+        return output_path.read_text(encoding="utf-8")
+
+    def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        prompt = (ANALYST_SYSTEM + "\n\nReturn only JSON conforming to this "
+                  "schema; do not inspect files or run commands:\n" +
+                  json.dumps(ANALYST_SCHEMA, sort_keys=True) + "\n\n" +
+                  brief.render())
+        t0 = time.monotonic()
+        with tempfile.TemporaryDirectory(prefix="aurum-codex-analyst-") as td:
+            root = Path(td)
+            schema_path = root / "analyst-schema.json"
+            output_path = root / "answer.json"
+            schema_path.write_text(json.dumps(ANALYST_SCHEMA), encoding="utf-8")
+            images = []
+            for i, chart in enumerate(charts):
+                path = root / f"chart-{i}-{chart.timeframe}.png"
+                path.write_bytes(chart.png)
+                images.append(str(path))
+            text = self._invoke(
+                self._argv(str(root), str(schema_path), str(output_path), images),
+                prompt, output_path)
+        dt = (time.monotonic() - t0) * 1000
+        try:
+            read = AnalystRead.model_validate_json(text.strip())
+        except Exception as e:                            # noqa: BLE001
+            raise AnalystError(f"codex returned text that is not a valid "
+                               f"AnalystRead: {e}; got {text[:300]!r}") from e
+        return ProviderRead(read, self.name, self.model, dt,
+                            {"billed": self.billed(), "cost_usd": None,
+                             "source": "codex exec --ephemeral",
+                             "reasoning_effort": self.effort})
+
+
+class FailoverAnalyst(AnalystProvider):
+    """Try providers in order; a valid refusal never triggers failover.
+
+    Claude Code (claudecode) has no image argument. In a chart-enabled chain it
+    receives the full numeric brief while later image-capable providers retain
+    the charts, so Claude stays primary and a fallback (e.g. GPT via codex)
+    receives live charts if Claude fails. The attempt chain and per-route errors
+    are stamped on every read, so the frozen evaluation can see which arm
+    actually answered and why the others did not.
+    """
+
+    name = "failover"
+
+    def __init__(self, providers: Sequence[AnalystProvider]):
+        self.providers = list(providers)
+        if not self.providers:
+            raise ValueError("failover chain is empty")
+        self.model = " -> ".join(
+            f"{p.name}:{getattr(p, 'model', '')}" for p in self.providers)
+
+    def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        errors = []
+        for i, provider in enumerate(self.providers):
+            try:
+                provider_charts = () if provider.name == "claudecode" else charts
+                result = provider.read(brief, provider_charts)
+                usage = dict(result.usage)
+                usage.update({
+                    "failover_index": i,
+                    "failover_attempts": [p.name for p in self.providers[:i + 1]],
+                    "failover_errors": errors,
+                    "charts_available": len(charts),
+                    "charts_sent": len(provider_charts),
+                })
+                return ProviderRead(result.read, result.provider, result.model,
+                                    result.latency_ms, usage)
+            except Exception as e:                       # noqa: BLE001
+                errors.append(f"{provider.name}: {type(e).__name__}: {e}")
+                log.warning("analyst provider %s failed; trying fallback: %s",
+                            provider.name, e)
+        raise AnalystError("all analyst providers failed: " + " | ".join(errors))
+
+    def choose_option(self, system: str, prompt: str,
+                      option_ids: Sequence[str]) -> str:
+        errors = []
+        for provider in self.providers:
+            if type(provider).choose_option is AnalystProvider.choose_option:
+                continue
+            try:
+                return provider.choose_option(system, prompt, option_ids)
+            except Exception as e:                       # noqa: BLE001
+                errors.append(f"{provider.name}: {e}")
+        raise AnalystError("no management-capable provider succeeded: " +
+                           " | ".join(errors))
 
 
 def build_provider(spec: str, **kw) -> AnalystProvider:
-    """spec = 'anthropic:claude-opus-5' or 'replay'. Vendor choice is config."""
+    """spec = 'anthropic:claude-opus-5', 'claudecode:claude-opus-5', 'codex:gpt-5.6-sol', or 'replay'.
+
+    'claudecode' routes the SAME AnthropicAnalyst through a Claude Code CLI
+    client instead of the metered API -- your subscription pays, nothing else
+    about the desk changes. Vendor choice is config either way.
+    """
     name, _, model = spec.partition(":")
     if name not in PROVIDERS:
         raise ValueError(f"unknown provider {name!r}; have {sorted(PROVIDERS)}")
     if model:
         kw["model"] = model
-    return PROVIDERS[name](**kw)
+    try:
+        return PROVIDERS[name](**kw)
+    except TypeError as e:
+        # Most likely --effort against 'deterministic' or 'replay', neither of
+        # which reasons about anything and so has nothing to apply effort to.
+        raise ValueError(
+            f"provider {name!r} does not accept one of these arguments: "
+            f"{sorted(kw)}. Original error: {e}") from e
+
+
+PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
+             "deterministic": DeterministicProvider,
+             "claudecode": ClaudeCodeAnalyst,
+             "codex": CodexCliAnalyst}
+
+
+def build_provider_chain(primary_spec: str, fallback_specs: Sequence[str] = (),
+                         fallback_kw: Optional[dict] = None,
+                         **kw) -> AnalystProvider:
+    """A primary provider wrapped in a FailoverAnalyst over ordered fallbacks.
+
+    fallback_specs are constructed with fallback_kw (not the primary's **kw),
+    because an effort or timeout that suits a primary does not necessarily fit
+    a fallback. An empty fallback list returns the primary unchanged, so the
+    chain is transparent when failover is not configured.
+    """
+    providers = [build_provider(primary_spec, **kw)]
+    providers.extend(build_provider(spec, **(fallback_kw or {}))
+                     for spec in fallback_specs if spec)
+    return providers[0] if len(providers) == 1 else FailoverAnalyst(providers)

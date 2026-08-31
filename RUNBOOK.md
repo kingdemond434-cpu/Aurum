@@ -82,19 +82,20 @@ Mt5Client Protocol; nothing else in the desk changes.
 
 Where signals arrive.
 
+Where signals arrive. Two things you must do yourself, then one command.
+
 1. Telegram → message **@BotFather** → `/newbot` → follow prompts → copy the token
-2. **Send your new bot any message** (it cannot message you first)
-3. Get your chat id:
+2. **Send your new bot any message** — press Start, or type `hello`. A bot
+   cannot open a conversation with you, so until you do this there is no chat
+   for it to send to, and no way to discover the id.
 
-```bash
-curl -s "https://api.telegram.org/botYOUR_BOT_TOKEN/getUpdates" | head -c 600
-```
+That is the whole of your part. The chat id is not something you need to look
+up: step 5 runs `deploy/telegram_setup.py`, which finds it, writes both files,
+and then **sends a real message to prove the channel works**. If nothing
+arrives in Telegram, it failed and printed why — it does not report success on
+a write.
 
-Find `"chat":{"id":123456789`. That number is your chat id (negative for groups).
-
-**Done when:** you have a bot token and a chat id.
-
-**Empty `getUpdates`?** You skipped step 2 — send the bot a message first.
+**Done when:** you have a bot token, and you have messaged the bot.
 
 ---
 
@@ -149,18 +150,84 @@ visible in `systemctl show`, in crash logs, and to anything that can read
 `/proc`):
 
 ```bash
-printf '%s' 'YOUR_BOT_TOKEN' | sudo -u aurum tee /opt/aurum/secrets/telegram_token >/dev/null
-printf '%s' 'YOUR_CHAT_ID'   | sudo -u aurum tee /opt/aurum/secrets/telegram_chat_id >/dev/null
-sudo chmod 600 /opt/aurum/secrets/*
+echo 'YOUR_BOT_TOKEN' | sudo -u aurum /opt/aurum/.venv/bin/python \
+  /opt/aurum/deploy/telegram_setup.py --stdin --secrets /opt/aurum/secrets
 ```
 
-`printf` not `echo` — `echo` appends a newline into the token.
+That verifies the token with `getMe`, discovers your chat id from the message
+you sent in step 2, writes both files `0600`, and then sends a message through
+`notify.build_sink` — the same sink the desk itself uses. **Exit 0 means a
+message arrived.** Anything else is a named failure with the remedy attached.
 
-### Your Anthropic API key
+Piped, not `--token`, so the token stays out of your shell history and out of
+`ps`. Trailing whitespace is stripped, so `echo` is safe here.
 
-<https://console.anthropic.com/> → API Keys. Set a **monthly spend limit** while
-you are there. Rough cost at default settings: **$3–8/day** with charts,
-**$1–3/day** numeric-only.
+Things it deliberately refuses rather than guesses:
+
+| It says | What is actually true |
+|---|---|
+| no messages for this bot | you skipped step 2, **or** `aurum-bot` is already running and eating the updates — `sudo systemctl stop aurum-bot` first |
+| N chats have messaged this bot | more than one person messaged it; re-run with `--chat-id <id>` rather than have signals go to a stranger |
+| this bot has a webhook registered | something else owns this bot's updates; if it is not yours the token is shared and should be revoked |
+| 401 Unauthorized | token revoked or mistyped — `/token` in @BotFather |
+
+To point the desk at a different chat later, run the same command again with
+`--chat-id`; it warns you which chat it is replacing.
+
+### Paying for the analyst read — pick a backend first
+
+`--provider` chooses this, and it is the single largest running cost in the
+whole desk. The earlier "$3–8/day" estimate in this runbook was **too low**; the
+numbers below are measured, not assumed.
+
+**One read, measured** (Claude Code 2.1.235, a real `MarketBrief`): 5,737 fresh
+input + 22,914 cache-read + **6,798 output** tokens. Priced at `budget.py`'s
+opus-class table that is **$0.63 per read** — output alone is 81% of it.
+
+The desk's live path (`live.py:224`) runs a 30-minute heartbeat with
+**`min_gap=0`, i.e. no throttle at all**, on M15 bars. Gold trades ~23h/day, so:
+
+| Cadence | reads/mo | `anthropic:` | `claudecode:` |
+|---|---|---|---|
+| heartbeat only, 46/day | 1,012 | **$638** | **$0** |
+| realistic, 60/day | 1,320 | **$832** | **$0** |
+| every M15, 92/day | 2,024 | **$1,276** | **$0** |
+| session-anchored, 3/day | 66 | **$42** | **$0** |
+
+On a €1,500 account at 1% risk, a €15 risk unit, the middle row costs about
+**2.5R of thinking per signal.** You would have to average +2.5R per trade
+before the desk earned its first cent. That is not a margin, and `budget.py`
+called it in its own docstring before any of this was measured.
+
+**`--provider claudecode:claude-opus-5`** runs the same model through the Claude
+Code CLI, which authenticates against a Pro/Max subscription. No metered bill.
+
+```bash
+# once, interactively, as the service account:
+sudo -u aurum claude          # log in, then quit
+sudo -u aurum /opt/aurum/.venv/bin/python /opt/aurum/run_desk.py \
+    --preflight --provider claudecode:claude-opus-5
+```
+
+What you are trading away for that, honestly:
+
+- **Latency.** A measured read took **77.6s**, against ~8s for the API. Fine on
+  a 30-minute heartbeat; too slow to react inside an M15 bar.
+- **Quota, not dollars.** Claude Code injects ~26.5k tokens of its own
+  scaffolding per cold call even with `--system-prompt` replacing the default
+  and tools disabled. Free of money, not free of subscription limits — 3
+  reads/day is ~80k tokens, 92 reads/day is 2.4M. **Lower the wake rate.**
+- **No charts.** The CLI takes no image input, so `claudecode:` *raises* if you
+  pass charts rather than quietly running text-only. Run the chart arm on
+  `anthropic:` or not at all.
+
+> **Watch for this:** if `ANTHROPIC_API_KEY` is set, Claude Code may bill it per
+> token instead of using your subscription. Preflight warns you. The provider
+> strips the key from the CLI's environment when it is in subscription mode, so
+> a stray key is harmless rather than expensive.
+
+If you do use `anthropic:`: <https://console.anthropic.com/> → API Keys, and set
+a **monthly spend limit** while you are there.
 
 > A key was pasted into a chat earlier in this project. **Treat it as burned —
 > revoke it and issue a new one.** Anything pasted into a chat window should be

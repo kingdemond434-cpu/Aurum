@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -208,6 +209,27 @@ def step_absorb(ctx: dict) -> str:
     """
     from golddesk.absorb import Absorber, Finding
     inbox = BASE / "inbox" / "quant_findings.jsonl"
+
+    # PULL FIRST, IF AND ONLY IF QUANT IS ACTUALLY HERE. Set AURUM_QUANT_ROOT to
+    # the quant repository root and the two desks stay in step with no manual
+    # step at all. Every failure below is swallowed on purpose: the whole point
+    # of keeping the pull separate from the queue-and-seal is that a missing,
+    # moved or half-written quant checkout must degrade to "no new findings"
+    # rather than take down Aurum's nightly cycle. Absorption is a nice-to-have
+    # on any given night; the cycle is not.
+    qroot = os.environ.get("AURUM_QUANT_ROOT", "").strip()
+    if qroot:
+        try:
+            from golddesk.absorb_auto import to_inbox
+            res = to_inbox(Path(qroot), inbox)
+            log(f"  pulled {res['written']} gold-relevant finding(s) from "
+                f"{qroot}, dropped {res['dropped_not_relevant']} as not gold")
+        except Exception as e:                               # noqa: BLE001
+            log(f"  quant pull skipped ({type(e).__name__}: {e}); "
+                f"processing whatever is already in the inbox")
+    else:
+        log("  AURUM_QUANT_ROOT not set — inbox-only mode, nothing pulled")
+
     ab = Absorber.load(STATE_DIR / "absorption.json")
     ctx["absorber"] = ab
     n_new = 0

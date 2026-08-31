@@ -1,0 +1,30 @@
+{
+  "version": "hyp-2026-08-14-a",
+  "items": {
+    "setup=SWING_REVERSAL": {
+      "hid": "setup=SWING_REVERSAL",
+      "statement": "cohort setup=SWING_REVERSAL realises -0.0339R/trade (discovery n=1)",
+      "selector": {
+        "setup": "SWING_REVERSAL"
+      },
+      "predicted_sign": -1,
+      "discovered_on": "2026-08-15",
+      "seal_ts": "2026-08-15T16:13:32.925018+00:00",
+      "discovery_n": 1,
+      "discovery_mean_r": -0.0339,
+      "stage": "SEALED",
+      "std_min_n": 25,
+      "std_min_ess": 20.0,
+      "std_min_quarters": 3,
+      "std_fdr_q": 0.1,
+      "post_n": 0,
+      "post_mean_r": 0.0,
+      "post_ess": 0.0,
+      "post_quarters_agreeing": 0,
+      "post_p": 1.0,
+      "enforcing_since": null,
+      "expires": null,
+      "note": ""
+    }
+  }
+}
