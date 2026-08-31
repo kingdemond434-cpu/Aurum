@@ -83,7 +83,8 @@ param(
     # twelve, so enumerating the set raises capture per unit of quota rather than raising call
     # frequency. --wake-every-bar does raise frequency, and its cost is recorded in 43dd2b8.
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
-                             "--numeric-only", "--expect-broker", "Fusion",
+                             "--fallback-provider", "codex:gpt-5.6-sol",
+                             "--expect-broker", "Fusion",
                              "--wake-every-bar", "--universe", "--effort", "high"),
     [switch] $Remove
 )
@@ -142,7 +143,7 @@ if (-not (Test-Path (Join-Path $DeskRoot "run_desk.py"))) {
 }
 
 # THIS USED TO BE ($DeskArgs | ForEach-Object { "'$_'" }) -join "," -- e.g.
-# '--shadow','--provider','claudecode:claude-opus-5','--numeric-only','--expect-broker','Fusion'
+# '--shadow','--provider','claudecode:claude-opus-5','--fallback-provider','codex:gpt-5.6-sol',...
 # -- and it silently produced a desk that could not start under the scheduled task while working
 # perfectly when run by hand, for four consecutive fast failures before the cause was visible.
 #

@@ -38,8 +38,9 @@
 
 .PARAMETER DeskArgs
     Arguments passed to run_desk.py. The default matches the verified-working VPS launch:
-    shadow mode, the subscription analyst, numeric-only (mandatory with claudecode -- the CLI
-    takes no image input), and the broker assertion.
+    shadow mode, Claude subscription first, ChatGPT subscription failover, and the broker
+    assertion. The provider chain withholds images from ClaudeCode while preserving the live
+    chart pack for Codex, so the desk itself must not be launched with --numeric-only.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File deploy\windows\Start-AurumDesk.ps1
@@ -48,7 +49,8 @@
 param(
     [string]   $DeskRoot,
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
-                             "--numeric-only", "--expect-broker", "Fusion",
+                             "--fallback-provider", "codex:gpt-5.6-sol",
+                             "--expect-broker", "Fusion",
                              "--wake-every-bar", "--universe", "--effort", "high"),
     # Set by Install-AurumStartup.ps1's scheduled task action. See that script's comment on why
     # -DeskArgs cannot travel through a raw command line as an array: it collided with the array
@@ -67,6 +69,17 @@ if ($DeskArgsJoined) {
 }
 
 $ErrorActionPreference = "Stop"
+
+# Scheduled tasks inherit a stale, reduced PATH surprisingly often. Resolve the two
+# subscription CLIs from their installed machine locations explicitly so a reboot or an RDP
+# logoff cannot silently turn analyst availability into a PATH lottery. No API keys are used:
+# both clients retain their own interactive subscription login state.
+$analystCliDirs = @("C:\Tools\Codex", "C:\Users\Administrator\.local\bin")
+foreach ($cliDir in $analystCliDirs) {
+    if ((Test-Path $cliDir) -and (($env:PATH -split ';') -notcontains $cliDir)) {
+        $env:PATH = "$cliDir;$env:PATH"
+    }
+}
 
 # ConvertTo-Json (used below for the heartbeat file) needs PowerShell 3.0+. Failing here, once,
 # with a plain sentence beats failing on the first heartbeat write with a parser-level error that
