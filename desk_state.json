@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "67/74 wakes (91%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "67/76 wakes (88%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "UNMEASURED \u2014 7 stamped read(s), under 10",
+          "detail": "UNMEASURED \u2014 9 stamped read(s), under 10",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "27.7% recent vs 12.5% prior",
+          "detail": "26.9% recent vs 12.5% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/180 (16%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/182 (15%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "25 sleeve(s) accruing, published 0.2h ago",
+          "detail": "36 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -164,13 +164,13 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.4h old",
+          "detail": "newest row 0.2h old",
           "ok": true
         },
         {
           "check": "macro",
-          "detail": "all 20 recent briefs carried MACRO UNMEASURED \u2014 the analyst is reading gold with no DXY, no real yield and no risk proxy",
-          "ok": false
+          "detail": "1/20 briefs carried macro",
+          "ok": true
         },
         {
           "check": "spread profile",
@@ -179,12 +179,12 @@
         },
         {
           "check": "notifications",
-          "detail": "2 delivered, 0 failed",
+          "detail": "1 delivered, 0 failed",
           "ok": true
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.0h ago",
+          "detail": "written 0.1h ago",
           "ok": true
         },
         {
@@ -194,16 +194,16 @@
         },
         {
           "check": "disk",
-          "detail": "18631MB free",
+          "detail": "18620MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 70.1h ago",
+          "detail": "wrote 3 min ago, after a boot 70.4h ago",
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     }
   },
   "decisions": {
@@ -219,8 +219,8 @@
       "last": "2026-08-31T12:30:00.841950+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 89,
-      "last": "2026-08-31T12:45:03.301588+00:00"
+      "count": 91,
+      "last": "2026-08-31T23:35:02.912944+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -235,9 +235,9 @@
       "last": "2026-08-31T12:45:03.301588+00:00"
     }
   },
-  "deployed_commit": "4dfdd0174745",
-  "generated_utc": "2026-08-31T23:30:38.781755+00:00",
-  "last_row_utc": "2026-08-31T23:00:01.768424+00:00",
-  "ledger_rows": 1032,
-  "total_faults": 11
+  "deployed_commit": "ce281c13418d",
+  "generated_utc": "2026-08-31T23:45:01.600727+00:00",
+  "last_row_utc": "2026-08-31T23:35:02.912944+00:00",
+  "ledger_rows": 1050,
+  "total_faults": 10
 }
