@@ -365,6 +365,11 @@ def main() -> int:
                          "schema-validated, ephemeral, read-only local Codex "
                          "CLI call authenticated by ChatGPT. Use an empty value to "
                          "disable failover.")
+    ap.add_argument("--timeframes", default="M15",
+                    help="comma list of evaluation arms, each evaluated on its "
+                         "OWN bar close as a separate causal arm, e.g. "
+                         "M5,M15,H1,H4. More arms = more signal opportunities; "
+                         "portfolio heat still governs total risk")
     ap.add_argument("--universe", action="store_true",
                     help="ask the analyst for every available proposition rather "
                          "than one. Changes what is asked, so it is a different "
@@ -463,6 +468,8 @@ def main() -> int:
                         shadow_management=args.shadow_management,
                         shadow_contextual=args.shadow_contextual,
                         universe_mode=args.universe,
+                        timeframes=tuple(t.strip().upper() for t in
+                                         args.timeframes.split(",") if t.strip()),
                         broker_limits=(BrokerLimits(min_stop_distance=args.min_stop)
                                        if args.min_stop else None),
                         provider_effort=args.effort,

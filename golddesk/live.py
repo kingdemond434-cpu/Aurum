@@ -243,13 +243,17 @@ class LiveDesk:
                  regime_history=None,
                  specialist_council: Optional[Council] = None,
                  entry_urgency: float = 0.5,
-                 forward_bars: int = 480):
+                 forward_bars: int = 480,
+                 entry_tf: str = ENTRY_TF):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
         self.shadow = shadow
         self.thresholds, self.cost_model = thresholds, cost_model
         self.limits, self.policy = limits, policy
         self.watcher = Watcher(heartbeat=heartbeat, min_gap=min_gap)
+        # One watcher PER ARM: an M5 state must not be diffed against an H1
+        # state, or every arm change wakes every other arm.
+        self.watchers: dict[str, Watcher] = {ENTRY_TF: self.watcher}
         self.vision, self.cohorts = vision, cohorts
         self.book = book
         self.obs_heartbeat = observer_heartbeat
@@ -338,6 +342,21 @@ class LiveDesk:
         self._last_state: Optional[StructureState] = None
         self._last_bars: Optional[Sequence[Bar]] = None
         self._last_idx: int = 0
+        # The desk's home timeframe (labels, snapshot, path refs). With the
+        # multi-timeframe loop each evaluation carries its OWN timeframe, which
+        # is what makes M5/M15/H1/H4 separate causal arms rather than one arm
+        # evaluated at four rhythms. `self.tf` is the arm currently deciding;
+        # it defaults to the home timeframe so every single-TF caller — and
+        # every existing test — behaves exactly as before.
+        self.entry_tf = entry_tf
+        self._current_tf: Optional[str] = None
+        self._current_htf_factor: Optional[int] = None
+        self._current_htf_name: Optional[str] = None
+
+    @property
+    def tf(self) -> str:
+        """The timeframe of the evaluation in progress (or the last one)."""
+        return self._current_tf or self.entry_tf
 
     # -- open positions ---------------------------------------------------
     @property
@@ -523,7 +542,16 @@ class LiveDesk:
     def on_bar(self, bars: Sequence[Bar], i: int, sw, atrs,
                htf_state: Optional[StructureState],
                quote: tuple[float, float, float], timeline: Sequence[str],
-               intrabar: Optional[Sequence[tuple[datetime, float]]] = None) -> None:
+               intrabar: Optional[Sequence[tuple[datetime, float]]] = None,
+               tf: Optional[str] = None,
+               htf_factor: Optional[int] = None,
+               htf_name: Optional[str] = None) -> None:
+        # WHICH ARM IS DECIDING. Stamped on everything this evaluation
+        # produces — brief, levels, snapshot, ledger row — so an M5 signal and
+        # an H4 signal are never aggregated as if they were the same strategy.
+        self._current_tf = tf or self.entry_tf
+        self._current_htf_factor = htf_factor or self.htf_factor
+        self._current_htf_name = htf_name or HTF
         st = classify(bars, i, sw, atrs)
         if st is None:
             return
@@ -551,7 +579,7 @@ class LiveDesk:
                 bid, ask, age = quote
                 try:
                     b2 = build_brief(bars, i, st, sw, bid, ask, age, htf_state,
-                                     timeline, timeframe=ENTRY_TF)
+                                     timeline, timeframe=self.tf)
                     self._record(bars, i, b2, DecisionKind.REFUSAL_COMPILER, "POLICY",
                                  {"declined": "UNEVALUATED",
                                   "constraint": "one_position"},
@@ -562,7 +590,10 @@ class LiveDesk:
                     log.debug("could not journal position-constraint cost: %s", e)
             return
 
-        w = self.watcher.observe(st, session_of(ts), ts)
+        w = (self.watchers.setdefault(
+                self.tf, Watcher(heartbeat=self.watcher.heartbeat,
+                                 min_gap=self.watcher.min_gap))
+             .observe(st, session_of(ts), ts))
         if not w.wake:
             return
         self.stats.wakes += 1
@@ -579,7 +610,7 @@ class LiveDesk:
         self.last_bid, self.last_ask = bid, ask
         self.last_spread = max(0.0, ask - bid)
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
-                            timeframe=ENTRY_TF)
+                            timeframe=self.tf)
         # Prior analogues are selected from trades that had already closed at
         # this exact as-of time. The pack reaches the same brief as the charts;
         # an unresolved case is excluded rather than allowed to leak its future.
@@ -837,9 +868,21 @@ class LiveDesk:
         # 16th M15 bar, which produces fifteen-minute candles spaced four hours
         # apart and labels them H4 — misstating the higher timeframe's range,
         # and therefore its swings, sweeps and displacement, on every chart.
-        for label, factor, n in ((f"{HTF}-context", self.htf_factor, 90),
-                                 ("H1-context", self.htf_factor // 4, 90),
-                                 (f"{ENTRY_TF}-entry", 1, 120)):
+        # The factors come from the ARM currently deciding (self.tf), so an M5
+        # evaluation aggregates M5 bars to H1 context while an H4 one
+        # aggregates to D1 — each arm's picture matches its own brief.
+        fac = self._current_htf_factor or self.htf_factor
+        hname = self._current_htf_name or HTF
+        mid = max(1, fac // 4)
+        tf_min = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60,
+                  "H4": 240, "D1": 1440}.get(self.tf, 15)
+        mid_min = tf_min * mid
+        mid_name = {15: "M15", 30: "M30", 60: "H1", 120: "H2", 240: "H4",
+                    360: "H6", 480: "H8", 720: "H12", 1440: "D1"}.get(
+            mid_min, f"{mid_min}min")
+        for label, factor, n in ((f"{hname}-context", fac, 90),
+                                 (f"{mid_name}-context", mid, 90),
+                                 (f"{self.tf}-entry", 1, 120)):
             if factor < 1:
                 continue
             # Only closed source bars, and enough of them to fill the window.
@@ -941,7 +984,7 @@ class LiveDesk:
                             target=sig.tp2, risk_price=sig.risk, opened=bars[i].ts)
         self.open_trades.append(OpenTrade(pos, sig, i, obs,
                               entry_context=dict(brief.context.__dict__)
-                              | {"session": brief.session},
+                              | {"session": brief.session, "tf": self.tf},
                               mechanism_name=mech,
                               risk_r=risk_r, sizing_basis=alloc.basis))
         self.risk.open_risks.append(risk_r)
@@ -1002,6 +1045,27 @@ class LiveDesk:
             f"conf {sig.confidence}/5 · cost {sig.cost_r:.3f}R · "
             f"breakeven {sig.breakeven_win_rate:.0%}\n\n{sig.read}\n\n"
             f"*Why:* {sig.why}\n*Against:* {sig.why_not}\n*Invalid if:* {sig.invalidation}")
+        # THE PICTURE A HUMAN ACTS ON. The text carries the numbers; the chart
+        # shows where they sit. This is the Telegram product, drawn from the
+        # compiled geometry — it is deliberately NOT added to the analyst's
+        # read, which stays clean per Q3. Delivery is best-effort and counted;
+        # a photo failure can never cost the text message that already went out.
+        try:
+            from .chart import Bar as CB, render_signal_chart
+            from .notify import send_photo
+            win = [CB(b.open, b.high, b.low, b.close)
+                   for b in bars[max(0, i - 119):i + 1]]
+            if len(win) >= 30:
+                ch = render_signal_chart(
+                    win, self.tf, entry=sig.entry, stop=sig.stop,
+                    tp1=sig.tp1, tp2=sig.tp2, direction=sig.direction)
+                cap = (f"*{sig.direction} {brief.symbol} {self.tf}* · "
+                       f"entry {sig.entry:.2f} · SL {sig.stop:.2f} · "
+                       f"TP2 {sig.tp2:.2f} ({sig.rr_tp2:.2f}R net)"
+                       + ("  [SHADOW]" if self.shadow else ""))
+                send_photo(self.sink, cap, ch.png, f"signal-{self.tf}.png")
+        except Exception as e:                        # noqa: BLE001
+            log.warning("signal chart skipped at %s: %s", bars[i].ts, e)
 
     # -- management --------------------------------------------------------
     def _manage(self, bars, i, st: StructureState,
@@ -1083,11 +1147,11 @@ class LiveDesk:
             invalidation_touched=False)
         anchors = []
         if st.swing_low:
-            anchors.append(Anchor("A_SL", "SWING_LOW", st.swing_low.price, ENTRY_TF, True))
+            anchors.append(Anchor("A_SL", "SWING_LOW", st.swing_low.price, self.tf, True))
         if st.swing_high:
-            anchors.append(Anchor("A_SH", "SWING_HIGH", st.swing_high.price, ENTRY_TF, True))
+            anchors.append(Anchor("A_SH", "SWING_HIGH", st.swing_high.price, self.tf, True))
         if st.trigger_price is not None:
-            anchors.append(Anchor("A_TRG", "RECLAIM", st.trigger_price, ENTRY_TF, True))
+            anchors.append(Anchor("A_TRG", "RECLAIM", st.trigger_price, self.tf, True))
 
         spread = self.last_spread if self.last_spread is not None else 0.48
         bid = self.last_bid if self.last_bid is not None else price - spread / 2
@@ -1283,8 +1347,8 @@ class LiveDesk:
         """
         from golddesk.snapshot import SnapshotBuilder
         as_of = bars[i].ts
-        b = SnapshotBuilder(brief.symbol, ENTRY_TF, as_of)
-        b.add_bars("entry", bars[:i + 1], ENTRY_TF, count=40)
+        b = SnapshotBuilder(brief.symbol, self.tf, as_of)
+        b.add_bars("entry", bars[:i + 1], self.tf, count=40)
         for key, val in (("bid", brief.bid), ("ask", brief.ask),
                          ("spread", brief.spread), ("atr", brief.atr)):
             if val is not None:
@@ -1353,6 +1417,7 @@ class LiveDesk:
         decision.update(decision_stamp(
             getattr(self, "_pending_specialist_report", None)))
         decision["outcome_direction"] = direction
+        decision["tf"] = self.tf
         gid = gate_id(kind, reason, decision)
         if gid:
             decision["gate_id"] = gid
@@ -1362,5 +1427,5 @@ class LiveDesk:
             context=dict(brief.context.__dict__) | {"session": brief.session}
             | snap_keys,
             brief_render=brief.render(), decided_by=by, decision=decision,
-            reason=reason, path_ref=PathRef.of(brief.symbol, ENTRY_TF, lb),
+            reason=reason, path_ref=PathRef.of(brief.symbol, self.tf, lb),
             outcome=resolve_forward(lb, bars[i].ts, bars[i].close, direction, risk_price)))

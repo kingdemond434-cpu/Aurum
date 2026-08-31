@@ -122,3 +122,84 @@ def render_clean_chart(
     fig.savefig(buf, format="png", facecolor=BG, bbox_inches="tight", pad_inches=0.15)
     plt.close(fig)
     return Chart(timeframe=timeframe, png=buf.getvalue(), width=width, height=height)
+
+
+SIGNAL_UP = "#1a7f37"      # green — long geometry
+SIGNAL_DOWN = "#b42318"    # red — short geometry
+SIGNAL_NEUTRAL = "#666666"
+
+
+def render_signal_chart(
+    bars: Sequence[Bar],
+    timeframe: str,
+    *,
+    entry: float,
+    stop: float,
+    tp1: float,
+    tp2: float,
+    direction: str,
+    width: int = DEFAULT_W,
+    height: int = DEFAULT_H,
+    dpi: int = 100,
+) -> Chart:
+    """The TELEGRAM chart, not the analyst chart.
+
+    This renderer is deliberately kept OUT of the vision arm. Q3 found that
+    annotations lead a model's read, so what the analyst sees stays clean
+    (render_clean_chart). This one is drawn FOR THE HUMAN who has to place the
+    order by hand: the compiled geometry — entry, stop, both targets — drawn
+    where it belongs on the price axis. The lines restate numbers the compiler
+    already decided; they can add no information and are therefore safe to
+    show a human and unsafe to show the model whose read the compiler judges.
+    """
+    if not bars:
+        raise ValueError("no bars to render")
+    long = direction.upper() == "LONG"
+    colour = SIGNAL_UP if long else SIGNAL_DOWN
+
+    fig_w, fig_h = width / dpi, height / dpi
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+    fig.patch.set_facecolor(BG)
+    ax.set_facecolor(BG)
+
+    wicks, bodies, colors = [], [], []
+    for i, b in enumerate(bars):
+        rising = b.close >= b.open
+        colors.append(UP if rising else DOWN)
+        wicks.append([(i, b.low), (i, b.high)])
+        lo, hi = (b.open, b.close) if rising else (b.close, b.open)
+        bodies.append((i, lo, hi))
+    ax.add_collection(LineCollection(wicks, colors=EDGE, linewidths=0.8, zorder=2))
+    for (i, lo, hi), c in zip(bodies, colors):
+        ax.add_patch(
+            plt.Rectangle((i - 0.32, lo), 0.64, max(hi - lo, 1e-9),
+                          facecolor=c, edgecolor=EDGE, linewidth=0.7, zorder=3))
+
+    lows = [min(b.low, stop, tp2) for b in bars]
+    highs = [max(b.high, tp2) for b in bars]
+    pad = (max(highs) - min(lows)) * 0.05 or 1.0
+    ax.set_xlim(-1, len(bars) + 9)   # right margin so the labels never clip
+    ax.set_ylim(min(lows) - pad, max(highs) + pad)
+
+    n = len(bars)
+    for price, label, ls, col in (
+            (entry, f"ENTRY {entry:.2f}", "-", colour),
+            (stop, f"SL {stop:.2f}", "--", SIGNAL_DOWN),
+            (tp1, f"TP1 {tp1:.2f}", "--", SIGNAL_NEUTRAL),
+            (tp2, f"TP2 {tp2:.2f}", "--", SIGNAL_UP)):
+        ax.axhline(price, xmin=0, xmax=1, color=col, linestyle=ls,
+                   linewidth=1.2, zorder=4)
+        ax.text(n + 0.4, price, label, va="center", fontsize=9,
+                color=col, fontweight="bold", zorder=5)
+
+    ax.grid(True, color=GRID, linewidth=0.6, zorder=1)
+    ax.set_axisbelow(True)
+    ax.tick_params(labelsize=8, colors="#555555")
+    ax.set_xticks([])
+    for spine in ax.spines.values():
+        spine.set_color(GRID)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", facecolor=BG, bbox_inches="tight", pad_inches=0.15)
+    plt.close(fig)
+    return Chart(timeframe=timeframe, png=buf.getvalue(), width=width, height=height)

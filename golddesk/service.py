@@ -58,12 +58,31 @@ from .runner import build_brief
 
 log = logging.getLogger(__name__)
 
-SERVICE_VERSION = "service-2026-08-14-a"
+SERVICE_VERSION = "service-2026-08-31-a"
 
 # Entry-timeframe lengths, for clock-gating the bar request. Only used to decide
 # WHETHER to ask; the answer still has to pass the last_bar_ts guard.
 TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240,
               "D1": 1440}
+
+# Per-arm higher-timeframe pairing: entry tf -> (context tf, aggregation factor
+# from entry bars to that context). Each evaluation arm gets structure from a
+# TRUE higher timeframe of its own — an M5 read sees H1 context, an H4 read
+# sees D1 — instead of every arm pretending the M15 desk's H4 is "the" context.
+TF_HTF = {"M1": ("H1", 60), "M5": ("H1", 12), "M15": ("H4", 16),
+          "M30": ("H4", 8), "H1": ("D1", 24), "H4": ("D1", 6), "D1": ("D1", 1)}
+
+
+def channel_history_bars(tf: str, history_bars: int) -> int:
+    """How many entry bars a channel needs for its charts, not just its state.
+
+    The H-context chart wants ~90 aggregated candles, which costs factor*92
+    source bars. The old fixed 600 left the M5 arm unable to draw H1 context at
+    all (12*92 = 1104 > 600), which under the multimodal VERIFIED rule means a
+    refusal, not a downgrade — an arm that silently never fires.
+    """
+    htf_factor = TF_HTF.get(tf, ("H4", 16))[1]
+    return max(history_bars, htf_factor * 92 + 50)
 
 
 @dataclass
@@ -72,6 +91,13 @@ class ServiceConfig:
     entry_tf: str = ENTRY_TF
     htf: str = HTF
     history_bars: int = 600
+    # MULTI-TIMEFRAME ARMS. Every tf listed here is evaluated exactly once per
+    # ITS OWN bar close, as a separate causal arm with its own watcher, HTF
+    # context, charts and ledger stamp. Frequency comes from more evaluation
+    # points, never from re-deciding a bar already decided. The first entry is
+    # the home timeframe (state.last_bar_ts stays keyed to it for checkpoint
+    # compatibility); portfolio heat, not the count of arms, governs exposure.
+    timeframes: tuple = ("M15",)
     # Maximum-frequency management means observing an open position every
     # second by default. Entries remain closed-bar decisions: polling faster
     # cannot create new causal information and must not duplicate a signal.
@@ -127,6 +153,9 @@ class ServiceState:
     """Everything needed to resume mid-trade after a restart."""
     version: str = SERVICE_VERSION
     last_bar_ts: Optional[str] = None
+    # Per-arm last processed bar, keyed by timeframe. `last_bar_ts` above stays
+    # the home timeframe's value for checkpoint compatibility with older states.
+    last_bar_tfs: dict = field(default_factory=dict)
     open_trade: Optional[dict] = None
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     restarts: int = 0
@@ -145,15 +174,16 @@ class DeskService:
         self._stop = False
         self._last_tick_advance = time.monotonic()
         self._last_heartbeat = 0.0
-        self._bars: list[Bar] = []
-        self._sw: list = []
-        self._atrs: list = []
+        # One evaluation channel PER TIMEFRAME. Each carries its own bar cache,
+        # swings, ATRs and higher-timeframe context, so an M5 close and an H4
+        # close are separate causal evaluations rather than one blended state.
+        self._channels: dict[str, dict] = {}
         self._rehydrated = False
         self._venue_shut = False
         self._halted = False
         self._notify_errors = 0
-        self._htf_cache = None
-        self._htf_cached_at = 0.0
+        # Daily track-record report: posted once per UTC day on rollover.
+        self._last_daily: Optional[str] = None
         from .tickguard import TickArchive, TickGuard
         self.guard = TickGuard() if self.cfg.guard_ticks else None
         self.archive = (TickArchive(self.cfg.tick_archive_dir, self.cfg.symbol)
@@ -485,28 +515,35 @@ class DeskService:
                 if out:
                     self.checkpoint()
 
-            # ---- BAR PATH: exactly once, on close ------------------------
-            # Gated on the CLOCK before it is gated on the data. A new M15 bar
-            # can only close at :00/:15/:30/:45, so asking the venue for several
-            # hundred candles at 14:03:07 cannot possibly return one the desk
-            # has not seen. The old loop asked anyway, once a second — the single
-            # largest and least useful request the service made.
-            if self._bar_boundary_passed():
-                self._maybe_close_bar(quote=(bid, ask, age))
+            # ---- BAR PATH: exactly once, on close, PER ARM ---------------
+            # Each configured timeframe is gated on its own boundary and its
+            # own last-processed timestamp. An M5 close and an H4 close in the
+            # same iteration are two separate evaluations of two separate
+            # causal bars; neither suppresses the other.
+            for tf in self._tf_list():
+                if self._bar_boundary_passed(tf):
+                    self._maybe_close_bar(tf, quote=(bid, ask, age))
 
             if time.monotonic() - self._last_heartbeat > self.cfg.heartbeat_every_s:
                 self._last_heartbeat = time.monotonic()
                 log.info("alive: %d ticks, %d bars, open=%s, spread %.2f",
                          self.state.ticks_seen, self.state.bars_processed,
                          bool(self.desk.open), self.desk.last_spread or 0.0)
+            # ---- PROOF LOOP: once per UTC day, post what was delivered ----
+            today = datetime.now(timezone.utc).date().isoformat()
+            if self._last_daily is None:
+                self._last_daily = today      # a restart mid-day must not repost
+            elif today != self._last_daily:
+                self._last_daily = today
+                self._post_daily_track()
             # Fast while managing, slow while flat. The one thing that must not
             # be slowed is observation of an open position, and that is exactly
             # what this keeps at full rate.
             time.sleep(self.cfg.poll_seconds if self.desk.open_trades
                        else self.cfg.idle_poll_seconds)
 
-    def _bar_boundary_passed(self) -> bool:
-        """Could a new entry-timeframe bar plausibly have closed since the last?
+    def _bar_boundary_passed(self, tf: Optional[str] = None) -> bool:
+        """Could a new bar of THIS timeframe plausibly have closed since the last?
 
         Pure clock arithmetic, no network. Returns True in a short window after
         each boundary so the venue has time to publish the closed candle, and
@@ -518,14 +555,17 @@ class DeskService:
         is processed exactly once. This only removes requests that could not
         possibly have returned new information.
         """
-        mins = TF_MINUTES.get(self.cfg.entry_tf)
+        tf = tf or self.cfg.entry_tf
+        mins = TF_MINUTES.get(tf)
         if not mins:
             return True                       # unknown timeframe: never gate
-        if not self.state.last_bar_ts:
+        last_raw = (self.state.last_bar_tfs.get(tf) if tf != self.cfg.entry_tf
+                    else (self.state.last_bar_tfs.get(tf) or self.state.last_bar_ts))
+        if not last_raw:
             return True
         now = datetime.now(timezone.utc)
         try:
-            last = datetime.fromisoformat(self.state.last_bar_ts)
+            last = datetime.fromisoformat(last_raw)
         except ValueError:
             return True
         if last.tzinfo is None:
@@ -535,21 +575,35 @@ class DeskService:
         return now >= due - timedelta(seconds=self.cfg.bar_poll_lead_s)
 
     def _warm(self) -> None:
-        self._bars = list(self.feed.bars(self.cfg.entry_tf, self.cfg.history_bars))
-        self._sw = swings(self._bars)
-        self._atrs = atr(self._bars)
-        log.info("warmed with %d %s bars, last close %s", len(self._bars),
-                 self.cfg.entry_tf, self._bars[-1].ts if self._bars else "-")
+        for tf in self._tf_list():
+            n = channel_history_bars(tf, self.cfg.history_bars)
+            bars = list(self.feed.bars(tf, n))
+            self._channels[tf] = {
+                "bars": bars, "sw": swings(bars), "atrs": atr(bars),
+                "htf_cache": None, "htf_cached_at": 0.0}
+            log.info("warmed %s: %d bars, last close %s", tf, len(bars),
+                     bars[-1].ts if bars else "-")
 
-    def _maybe_close_bar(self, quote: Optional[tuple] = None) -> None:
-        """Process a bar exactly once, on its close, never while forming.
+    def _tf_list(self) -> tuple:
+        """The evaluation timeframes, home timeframe first, de-duplicated."""
+        tfs = list(self.cfg.timeframes) or [self.cfg.entry_tf]
+        if self.cfg.entry_tf not in tfs:
+            tfs.insert(0, self.cfg.entry_tf)
+        return tuple(dict.fromkeys(t for t in tfs if t in TF_MINUTES))
+
+    def _maybe_close_bar(self, tf: Optional[str] = None,
+                         quote: Optional[tuple] = None) -> None:
+        """Process ONE timeframe's bar exactly once, on its close, never forming.
 
         `quote` is the one the loop already fetched this iteration. Passing it
         avoids a third round trip for a tick that is at most one poll old — on
         an M15 desk that difference cannot change a decision, and the request
         cost is paid on every close.
         """
-        bars = self.feed.bars(self.cfg.entry_tf, self.cfg.history_bars)
+        tf = tf or self.cfg.entry_tf
+        ch = self._channels.get(tf)
+        n = channel_history_bars(tf, self.cfg.history_bars)
+        bars = list(self.feed.bars(tf, n))
         if len(bars) < 2:
             return
         # LiveFeed.bars() drops the forming bar itself and documents that it
@@ -558,39 +612,53 @@ class DeskService:
         # leaving the desk a full entry-timeframe candle behind the market while
         # every timestamp still looked correct.
         closed = bars[-1]
-        if self.state.last_bar_ts == closed.ts.isoformat():
+        last = self.state.last_bar_tfs.get(tf)
+        if last is None and tf == self.cfg.entry_tf:
+            last = self.state.last_bar_ts     # pre-multi-tf checkpoint
+        if last == closed.ts.isoformat():
             return
-        self._bars = list(bars)
-        self._sw = swings(self._bars)
-        self._atrs = atr(self._bars)
-        i = len(self._bars) - 1
-        htf_state = self._htf_state()
+        if ch is None:
+            ch = self._channels[tf] = {"bars": bars, "htf_cache": None,
+                                       "htf_cached_at": 0.0}
+        ch["bars"] = bars
+        ch["sw"] = swings(bars)
+        ch["atrs"] = atr(bars)
+        i = len(bars) - 1
+        htf_state = self._htf_state(tf)
         bid, ask, age = quote if quote is not None else self.feed.quote()
+        htf_name, htf_factor = TF_HTF.get(tf, (self.cfg.htf, 16))
         try:
-            self.desk.on_bar(self._bars, i, visible_swings(self._sw, i), self._atrs,
+            self.desk.on_bar(bars, i, visible_swings(ch["sw"], i), ch["atrs"],
                              htf_state, (bid, ask, age),
-                             (f"{self.cfg.entry_tf} close {closed.ts:%Y-%m-%d %H:%M}",))
+                             (f"{tf} close {closed.ts:%Y-%m-%d %H:%M}",),
+                             tf=tf, htf_factor=htf_factor, htf_name=htf_name)
         except Exception as e:
-            log.exception("on_bar failed at %s: %s", closed.ts, e)
-        self.state.last_bar_ts = closed.ts.isoformat()
+            log.exception("on_bar failed at %s %s: %s", tf, closed.ts, e)
+        self.state.last_bar_tfs[tf] = closed.ts.isoformat()
+        if tf == self.cfg.entry_tf:
+            self.state.last_bar_ts = closed.ts.isoformat()
         self.state.bars_processed += 1
         self.checkpoint()
 
-    def _htf_state(self):
-        """Higher-timeframe structure from TRUE aggregation, never sampling.
+    def _htf_state(self, tf: Optional[str] = None):
+        """Higher-timeframe structure for THIS arm, from TRUE aggregation.
 
-        CACHED. At M15 entry and H4 context, the H4 structure is identical
-        across sixteen consecutive M15 closes, so re-requesting 200 H4 candles
-        each time bought nothing and cost a large request. The cache expires on
-        time rather than on count so an unusual timeframe pairing cannot make it
-        stale by accident.
+        CACHED per arm. At M15 entry and H4 context, the H4 structure is
+        identical across sixteen consecutive M15 closes, so re-requesting 200
+        H4 candles each time bought nothing and cost a large request. The cache
+        expires on time rather than on count so an unusual timeframe pairing
+        cannot make it stale by accident.
         """
+        tf = tf or self.cfg.entry_tf
+        ch = self._channels.get(tf)
+        if ch is None:
+            return None
         now = time.monotonic()
-        if (self._htf_cache is not None
-                and now - self._htf_cached_at < self.cfg.htf_cache_seconds):
-            return self._htf_cache
+        if (ch.get("htf_cache") is not None
+                and now - ch["htf_cached_at"] < self.cfg.htf_cache_seconds):
+            return ch["htf_cache"]
         try:
-            htf_bars = self.feed.bars(self.cfg.htf, 200)
+            htf_bars = list(self.feed.bars(TF_HTF.get(tf, (self.cfg.htf,))[0], 200))
             if len(htf_bars) < 30:
                 return None
             # Same contract, same fix. Dropping one more here made the higher
@@ -600,13 +668,29 @@ class DeskService:
             hsw, hatrs = swings(closed), atr(closed)
             st = classify(closed, len(closed) - 1,
                           visible_swings(hsw, len(closed) - 1), hatrs)
-            self._htf_cache, self._htf_cached_at = st, now
+            ch["htf_cache"], ch["htf_cached_at"] = st, now
             return st
         except Exception as e:
-            log.debug("htf state unavailable: %s", e)
+            log.debug("htf state unavailable for %s: %s", tf, e)
             # Do NOT cache a failure as "no HTF context" — a transient error
             # would then suppress higher-timeframe state for the whole window.
             return None
+
+    def _post_daily_track(self) -> None:
+        """Once a day, tell the operator what the channel actually delivered.
+
+        Drawn from the ledger by a deterministic renderer, so the posted number
+        and the journalled number cannot drift. The 24h window sits beside the
+        all-time figure — a desk can have a good day forever and still be
+        bleeding, and the daily line is what catches that.
+        """
+        try:
+            from .daily_track import collect, render
+            rows = Ledger(self.cfg.ledger_path).read_all()
+            self._notify(render(collect(rows, window_h=24.0), title="LAST 24H")
+                         + "\n\n" + render(collect(rows), title="ALL TIME"))
+        except Exception as e:                    # reporting must never halt trading
+            log.warning("daily track report failed: %s", e)
 
     def _notify(self, text: str) -> None:
         """Never propagates — but no longer discards.
@@ -654,6 +738,7 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                   shadow_management: bool = True,
                   shadow_contextual: bool = False,
                   universe_mode: bool = False,
+                  timeframes: Sequence[str] = ("M15",),
                   calendar=None,
                   spread_profile_path: str = "config/spread_profile.json",
                   declared_spread: Optional[float] = None,
@@ -671,6 +756,12 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     from .providers import build_provider_chain
     from .specialists import build_desk_council
     cfg = cfg or ServiceConfig(symbol=symbol)
+    if timeframes:
+        cfg.timeframes = tuple(timeframes)
+        if cfg.entry_tf not in cfg.timeframes:
+            cfg.entry_tf = cfg.timeframes[0]
+    log.info("evaluation arms: %s (home %s)", ",".join(cfg.timeframes),
+             cfg.entry_tf)
     if feed_backend == "oanda":
         from .feed_oanda import OandaClient
         client = OandaClient(instrument=os.environ.get("OANDA_INSTRUMENT", "XAU_USD"))

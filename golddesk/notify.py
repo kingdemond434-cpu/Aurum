@@ -46,6 +46,27 @@ class Sink(Protocol):
     def send(self, text: str) -> bool: ...
 
 
+def send_photo(sink: Sink, caption: str, png: bytes,
+               filename: str = "signal.png") -> bool:
+    """Best-effort photo delivery through any sink that supports it.
+
+    A separate FUNCTION rather than a protocol method because most sinks —
+    null, file, health-tracking before this revision — have no photo path, and
+    a protocol change would have forced every implementation to grow a stub.
+    Callers duck-type: `getattr(sink, "send_photo", None)`. Failure returns
+    False and never raises, for the same reason send() never raises: the
+    message channel must not be able to halt the trading loop.
+    """
+    fn = getattr(sink, "send_photo", None)
+    if fn is None:
+        return False
+    try:
+        return bool(fn(caption, png, filename))
+    except Exception as e:                          # noqa: BLE001
+        log.warning("photo send failed, continuing: %s", e)
+        return False
+
+
 class NullSink:
     """Shadow mode default. Records nothing anywhere it could be mistaken for live."""
     def send(self, text: str) -> bool:
@@ -63,6 +84,18 @@ class FileSink:
         with self.path.open("a") as fh:
             fh.write(json.dumps({"text": text}) + "\n")
         return True
+
+    def send_photo(self, caption: str, png: bytes,
+                   filename: str = "signal.png") -> bool:
+        """Shadow photo: kept beside the shadow log so the arm that WOULD have
+        delivered a chart is inspectable, never silently text-only."""
+        n = 0
+        stem = self.path.with_name(f"{self.path.stem}-photo-{n:04d}")
+        while stem.with_suffix(".png").exists():
+            n += 1
+            stem = self.path.with_name(f"{self.path.stem}-photo-{n:04d}")
+        stem.with_suffix(".png").write_bytes(png)
+        return self.send(json.dumps({"text": caption, "photo": stem.with_suffix(".png").name}))
 
 
 class TelegramSink:
@@ -87,6 +120,34 @@ class TelegramSink:
             return True
         except Exception as e:                      # never propagate to the loop
             log.warning("telegram send failed: %s", e)
+            return False
+
+    def send_photo(self, caption: str, png: bytes,
+                   filename: str = "signal.png") -> bool:
+        """sendPhoto with the chart attached, caption carrying the signal text.
+
+        Telegram caps a caption at 1024 characters, so the caller is expected
+        to send the FULL signal as its own message and pass a SHORT headline
+        here. Caption uses Markdown like send().
+        """
+        try:
+            import requests  # deferred on purpose
+        except ImportError:
+            log.warning("requests not installed — telegram photo skipped")
+            return False
+        try:
+            r = requests.post(
+                f"{api_base()}/bot{self.token}/sendPhoto",
+                data={"chat_id": self.chat_id, "caption": caption[:1024],
+                      "parse_mode": "Markdown"},
+                files={"photo": (filename, png, "image/png")},
+                timeout=max(self.timeout, 15.0))   # image upload is slower than text
+            if r.status_code != 200:
+                log.warning("telegram photo %s: %s", r.status_code, r.text[:200])
+                return False
+            return True
+        except Exception as e:                      # never propagate to the loop
+            log.warning("telegram photo failed: %s", e)
             return False
 
 
@@ -161,6 +222,35 @@ class HealthTrackingSink:
                       "%d delivered ever)", n, self.sent)
         elif n < self.ALARM_AFTER:
             log.warning("notification send failed (%d in a row)", n)
+        return False
+
+    def send_photo(self, caption: str, png: bytes,
+                   filename: str = "signal.png") -> bool:
+        """Same health accounting as send(), proxied to the inner sink.
+
+        A photo that silently failed to deliver would be a signal the operator
+        believes they received, so a photo failure counts exactly like a text
+        failure against consecutive_failures.
+        """
+        from datetime import datetime, timezone
+        fn = getattr(self.inner, "send_photo", None)
+        if fn is None:
+            return False
+        ok = False
+        try:
+            ok = bool(fn(caption, png, filename))
+        except Exception as e:                       # noqa: BLE001
+            log.warning("sink raised on photo: %s", e)
+        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        if ok:
+            self.sent += 1
+            self.consecutive_failures = 0
+            self.last_ok_at = stamp
+            return True
+        self.failed += 1
+        self.consecutive_failures += 1
+        self.last_error_at = stamp
+        log.warning("photo send failed (%d in a row)", self.consecutive_failures)
         return False
 
     def stats(self) -> dict:
