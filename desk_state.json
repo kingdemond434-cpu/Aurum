@@ -56,11 +56,11 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "published 3.2h ago against a 15-minute sync. The numbers in it describe 2026-08-31T18:49:30+00:00, NOT now \u2014 and they stay plausible while stale, which is why nothing else notices.",
-          "ok": false
+          "detail": "32 sleeve(s) accruing, published 0.2h ago",
+          "ok": true
         }
       ],
-      "faults": 2
+      "faults": 1
     },
     "read_quality": {
       "axis": "read_quality",
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267014",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -103,32 +103,32 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / ^Cattached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-VantageSpread', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "last run exited 1 \u2014 the whole learning loop is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: 2026-08-29T20:41:08+00:00   quant pull failed (128): hint: Diverging branches can't be fast-forwarded, you need to either: / Traceback (most recent call last): / return io.open(self, mode, buffering, encoding, errors, newline) / PermissionError: [Errno 13] Permission denied: 'C:\\\\Aurum\\\\state\\\\cycle.log'",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-ShadowSync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-QQuantGatesCertify', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 0
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 3.3h old",
+          "detail": "newest row 3.5h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 3.1h ago",
+          "detail": "written 3.3h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18767MB free",
+          "detail": "18734MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 188 min ago, after a boot 68.7h ago",
+          "detail": "wrote 200 min ago, after a boot 68.9h ago",
           "ok": true
         }
       ],
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "4dfdd0174745",
-  "generated_utc": "2026-08-31T22:05:24.595652+00:00",
+  "generated_utc": "2026-08-31T22:23:58.549434+00:00",
   "last_row_utc": null,
   "ledger_rows": 906,
-  "total_faults": 12
+  "total_faults": 7
 }
