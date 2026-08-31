@@ -24,6 +24,22 @@ There is no majority vote and no specialist consensus score. Specialists share
 inputs and their errors are correlated, so agreement is reported as a fact while
 disagreement remains visible.
 
+## Constitutional boundary: AI discovers, quant constrains
+
+The AI analyst is the primary source of every market thesis. It may synthesize
+charts, exact measurements, macro state, flows, specialist evidence, and causal
+memory into a mechanism the desk has never named before. `SWING_REVERSAL`,
+`TREND_CONTINUATION`, and `NOVEL` are descriptive storage tags assigned after
+the thesis is formed; they are not a finite strategy menu.
+
+Deterministic machinery owns timestamps, prices, execution geometry, costs,
+calibration, counterfactuals, risk, data quality, and validation. It may reject
+an invalid or unprofitable AI proposal, but it never invents a replacement
+directional thesis. Specialists are sensors, not voters or mini-strategies.
+Historical mechanisms are memory, not mandatory templates; genuinely novel
+mechanisms enter shadow immediately and are judged by forward outcomes rather
+than conformity to a taxonomy.
+
 ## Run
 
 Install the requirements, configure the selected feed and Telegram credentials,
