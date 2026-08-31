@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "9 of 26 wakes in 12h were served by the RULE-BASED FALLBACK and 0 got nothing \u2014 35% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "23 of 36 wakes in 12h were served by the RULE-BASED FALLBACK and 0 got nothing \u2014 64% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 182s of 600s budget (30%) over 26 reads",
+          "detail": "median 0s of 600s budget (0%) over 36 reads",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "23.1% recent vs 8.2% prior",
+          "detail": "20.5% recent vs 8.2% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/161 (17%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/175 (16%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -46,17 +46,17 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 28h ago",
+          "detail": "updated 0h ago",
           "ok": true
         },
         {
           "check": "survivors",
-          "detail": "601 finding(s) arrived and none reports a cell clearing the ten-gate battery. Either nothing has passed yet \u2014 the honest state of a desk with no forward evidence, and no fault here \u2014 or the gates never ran. Answered on the quant side: check reports/QQUANT_GATES.json.",
+          "detail": "69 finding(s) arrived and none reports a cell clearing the ten-gate battery. Either nothing has passed yet \u2014 the honest state of a desk with no forward evidence, and no fault here \u2014 or the gates never ran. Answered on the quant side: check reports/QQUANT_GATES.json.",
           "ok": false
         },
         {
           "check": "shadow evidence",
-          "detail": "16 sleeve(s) accruing, published 0.2h ago",
+          "detail": "28 sleeve(s) accruing, published 0.8h ago",
           "ok": true
         }
       ],
@@ -77,7 +77,7 @@
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.23R while refusals reached +0.44R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.23R while refusals reached +0.46R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -108,8 +108,8 @@
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
-          "ok": false
+          "detail": "enabled, last result 267014",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Cycle",
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 2
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.5h old",
+          "detail": "newest row 0.8h old",
           "ok": true
         },
         {
@@ -184,22 +184,22 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.1h ago",
+          "detail": "written 0.3h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "314 unique decision(s), no tears",
+          "detail": "328 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "20021MB free",
+          "detail": "19547MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 7 min ago, after a boot 47.7h ago",
+          "detail": "wrote 16 min ago, after a boot 51.2h ago",
           "ok": true
         }
       ],
@@ -228,8 +228,8 @@
       "last": "2026-08-30T23:15:07.464950+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 72,
-      "last": "2026-08-31T00:30:00.856063+00:00"
+      "count": 86,
+      "last": "2026-08-31T03:45:00.800978+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -244,9 +244,9 @@
       "last": "2026-08-30T23:15:07.464950+00:00"
     }
   },
-  "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-31T01:02:36.366046+00:00",
-  "last_row_utc": "2026-08-31T00:30:00.856063+00:00",
-  "ledger_rows": 342,
-  "total_faults": 11
+  "deployed_commit": "7a5f10235adb",
+  "generated_utc": "2026-08-31T04:33:46.974570+00:00",
+  "last_row_utc": "2026-08-31T03:45:00.800978+00:00",
+  "ledger_rows": 356,
+  "total_faults": 9
 }
