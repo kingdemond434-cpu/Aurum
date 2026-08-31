@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 4h ago",
+          "detail": "updated 5h ago",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "19 sleeve(s) accruing, published 0.4h ago",
+          "detail": "33 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,8 +88,8 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "last run exited 1 \u2014 the desk itself is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 3.9h old",
+          "detail": "newest row 4.2h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 3.9h ago",
+          "detail": "written 4.2h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "19391MB free",
+          "detail": "19380MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 235 min ago, after a boot 55.4h ago",
+          "detail": "wrote 250 min ago, after a boot 55.7h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "081f1f7b1c94",
-  "generated_utc": "2026-08-31T08:45:11.459481+00:00",
+  "generated_utc": "2026-08-31T09:01:58.141337+00:00",
   "last_row_utc": "2026-08-31T04:48:22.329095+00:00",
   "ledger_rows": 377,
   "total_faults": 11
