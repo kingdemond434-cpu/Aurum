@@ -37,8 +37,23 @@ class Analogue:
     setup: str
     mechanism: str
     realised_r: float
+    mfe_r: Optional[float]
+    mae_r: Optional[float]
+    close_reason: str
     similarity: float
     matched: tuple[str, ...]
+
+    @property
+    def diagnosis(self) -> str:
+        """Separate a bad read from a good read managed badly."""
+        if self.realised_r <= 0 and self.mfe_r is not None:
+            if self.mfe_r >= 1.0:
+                return "MANAGEMENT GIVEBACK — direction paid before the close"
+            if self.mfe_r < 0.5:
+                return "THESIS/TIMING FAILURE — never produced +0.5R"
+        if self.realised_r > 0:
+            return "PAID"
+        return "OUTCOME INCONCLUSIVE"
 
 
 @dataclass(frozen=True)
@@ -59,10 +74,18 @@ class MemoryPack:
              "Similarity is context matching, not a vote or forecast."),
         ]
         for a in self.analogues:
+            excursion = ("MFE/MAE unmeasured" if a.mfe_r is None else
+                         f"MFE {a.mfe_r:+.2f}R / MAE "
+                         f"{a.mae_r:+.2f}R" if a.mae_r is not None else
+                         f"MFE {a.mfe_r:+.2f}R / MAE unmeasured")
             lines.append(
                 f"  {a.entry_t0[:16]}  {a.direction:<5} {a.setup:<18} "
                 f"{a.realised_r:+.2f}R  similarity {a.similarity:.2f}  "
-                f"mechanism={a.mechanism}")
+                f"mechanism={a.mechanism}\n"
+                f"    {a.diagnosis}; {excursion}; close={a.close_reason}")
+        lines.append(
+            "Do not learn 'trade less' from a loss: distinguish wrong direction/"
+            "timing from a profitable path that management gave back.")
         lines.append("The deterministic compiler and risk gates remain final.")
         return "\n".join(lines)
 
@@ -94,7 +117,10 @@ def build_memory_pack(rows: Sequence[dict], brief, limit: int = 5) -> MemoryPack
             str(row.get("direction") or "NONE"),
             str(row.get("setup") or "UNKNOWN"),
             str(row.get("mechanism_name") or "unnamed"),
-            float(realised), similarity, matched)))
+            float(realised),
+            float(row["mfe_r"]) if isinstance(row.get("mfe_r"), (int, float)) else None,
+            float(row["mae_r"]) if isinstance(row.get("mae_r"), (int, float)) else None,
+            str(row.get("reason") or "UNMEASURED"), similarity, matched)))
     candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
     return MemoryPack(brief.as_of_utc, len(candidates),
                       tuple(x[2] for x in candidates[:max(0, limit)]))

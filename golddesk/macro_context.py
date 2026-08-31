@@ -63,9 +63,9 @@ from typing import Any, Optional
 #: Friday and reports as such. The limit exists to distinguish "no fetcher" from
 #: "the market was shut", and 48h could not tell those apart.
 #:
-#: NOTE THIS IS A CEILING ON THE OLDEST DRIVER, not an average. A block whose
-#: DXY is an hour old and whose real yield is four days old is stamped with the
-#: four days, because the weakest link is what the read is actually worth.
+#: Freshness is enforced per driver. A dead weekly/rates source must not erase
+#: a fresh dollar or equity observation; the stale line is rendered UNMEASURED
+#: and the usable subset keeps its honest oldest timestamp.
 DEFAULT_MAX_AGE_H = 96.0
 
 
@@ -167,16 +167,15 @@ def from_drivers(points: dict, *, max_age_hours: float = DEFAULT_MAX_AGE_H,
     TIP/IEF price ratio. Each line is labelled, so the model can discount it.
 
     PER-DRIVER AGE. Drivers come from different feeds and go stale
-    independently. The context's age is the age of the OLDEST OBSERVED driver,
-    not the newest -- the weakest link sets the freshness, because a block
-    stamped "1h old" that silently contains a five-day-old real yield is the
-    stale-read failure wearing a fresh timestamp.
+    independently. A stale driver becomes UNMEASURED on its own line rather
+    than blanking unrelated fresh evidence. The context's age is the age of
+    the oldest still-usable driver.
     """
     now = now or datetime.now(tz=timezone.utc)
     states: dict[str, Any] = {}
     labels: dict[str, str] = {}
     oldest: Optional[datetime] = None
-    n_obs = 0
+    n_fresh = 0
 
     for key, p in (points or {}).items():
         observed = bool(getattr(p, "observed", False))
@@ -184,21 +183,31 @@ def from_drivers(points: dict, *, max_age_hours: float = DEFAULT_MAX_AGE_H,
             states[key] = None
             labels[key] = f"ABSENT — {getattr(p, 'why', '') or 'not observed'}"
             continue
-        n_obs += 1
+        as_of = getattr(p, "as_of", None)
+        if isinstance(as_of, datetime) and as_of.tzinfo is None:
+            as_of = as_of.replace(tzinfo=timezone.utc)
+        if not isinstance(as_of, datetime):
+            states[key] = None
+            labels[key] = "UNMEASURED — observed value has no timestamp"
+            continue
+        driver_age_h = (now - as_of).total_seconds() / 3600.0
+        if driver_age_h > max_age_hours:
+            states[key] = None
+            labels[key] = (f"STALE — {driver_age_h:.1f}h old, limit "
+                           f"{max_age_hours:.0f}h  {getattr(p, 'source', '?')}")
+            continue
+
+        n_fresh += 1
         chg = getattr(p, "change_pct", None)
         states[key] = float(chg) if isinstance(chg, (int, float)) else None
         exact = bool(getattr(p, "exact", True))
         src = getattr(p, "source", "?")
         labels[key] = ("EXACT" if exact else "PROXY — not the series itself") + f"  {src}"
-        as_of = getattr(p, "as_of", None)
-        if isinstance(as_of, datetime):
-            if as_of.tzinfo is None:
-                as_of = as_of.replace(tzinfo=timezone.utc)
-            oldest = as_of if oldest is None else min(oldest, as_of)
+        oldest = as_of if oldest is None else min(oldest, as_of)
 
-    if n_obs == 0:
+    if n_fresh == 0:
         return MacroContext(
-            detail="no driver was observed — the free feeds returned nothing",
+            detail="no fresh timestamped driver was observed",
             states=states, labels=labels, max_age_hours=max_age_hours)
     if oldest is None:
         return MacroContext(
@@ -207,9 +216,7 @@ def from_drivers(points: dict, *, max_age_hours: float = DEFAULT_MAX_AGE_H,
             states=states, labels=labels, max_age_hours=max_age_hours)
 
     age_h = (now - oldest).total_seconds() / 3600.0
-    detail = (f"oldest driver {age_h:.1f}h old (limit {max_age_hours:.0f}h) — the "
-              f"driver fetch may have stopped" if age_h > max_age_hours
-              else f"oldest driver {age_h:.1f}h old, {n_obs} observed")
+    detail = f"oldest usable driver {age_h:.1f}h old, {n_fresh} fresh"
     return MacroContext(updated=oldest, age_hours=age_h, detail=detail,
                         states=states, labels=labels, max_age_hours=max_age_hours)
 

@@ -12,7 +12,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from golddesk.macro_context import DEFAULT_MAX_AGE_H, MacroContext, load
+from golddesk.drivers_free import DriverPoint
+from golddesk.macro_context import DEFAULT_MAX_AGE_H, MacroContext, from_drivers, load
 
 NOW = datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)
 
@@ -148,3 +149,35 @@ def test_brief_with_macro_renders_it_after_structure():
     out = b.render()
     assert out.index("MEASURED CONTEXT") < out.index("MACRO CONTEXT")
     assert "+0.805" in out
+
+
+def test_one_stale_driver_does_not_blank_fresh_cross_market_evidence():
+    points = {
+        "dxy": DriverPoint("dxy", 0.42, 100.0, NOW - timedelta(minutes=3),
+                           "MT5 EURUSD inverse", exact=False),
+        "spx": DriverPoint("spx", -0.31, 6500.0, NOW - timedelta(minutes=2),
+                           "MT5 US500", exact=False),
+        "real_yield_10y": DriverPoint(
+            "real_yield_10y", 0.18, 1.8,
+            NOW - timedelta(hours=DEFAULT_MAX_AGE_H + 12), "FRED DFII10"),
+    }
+
+    macro = from_drivers(points, now=NOW)
+
+    assert macro.usable
+    assert macro.get("dxy") == pytest.approx(0.42)
+    assert macro.get("spx") == pytest.approx(-0.31)
+    assert macro.get("real_yield_10y") is None
+    rendered = macro.render()
+    assert "real_yield_10y" in rendered and "STALE" in rendered
+    assert "MACRO CONTEXT: UNMEASURED" not in rendered
+
+
+def test_all_stale_drivers_still_fail_closed():
+    points = {
+        "dxy": DriverPoint("dxy", 0.42, 100.0,
+                           NOW - timedelta(hours=DEFAULT_MAX_AGE_H + 1), "Yahoo")
+    }
+    macro = from_drivers(points, now=NOW)
+    assert not macro.usable
+    assert "UNMEASURED" in macro.render()

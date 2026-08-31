@@ -166,7 +166,7 @@ class MarketBrief:
             lines += ["", "GOLD TREND (measured evidence; zero directional authority)",
                       self.trend.render()]
         lines += ["", (self.macro.render() if self.macro is not None
-                       else "MACRO CONTEXT: UNMEASURED — treat as absent, not neutral.")]
+                       else "MACRO CONTEXT: UNMEASURED — Treat as ABSENT, not as neutral.")]
         if self.raw_path:
             lines += ["", "RAW NUMERICAL PATH (last bars — shape without the picture)"]
             lines += [f"  {t}" for t in self.raw_path]

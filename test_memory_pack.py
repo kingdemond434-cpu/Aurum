@@ -21,7 +21,7 @@ def _closed(hours_ago=24, realised=1.2, trend="UP", closed_after=False):
         "kind": "TRADE_CLOSED", "entry_t0": entered.isoformat(),
         "ts": closed.isoformat(), "direction": "LONG",
         "setup": "TREND_CONTINUATION", "mechanism_name": "pullback-resume",
-        "realised_r": realised,
+        "realised_r": realised, "mfe_r": 1.4, "mae_r": -0.3, "reason": "STOP",
         "context": {"trend_direction": trend, "trend_health": "MODERATE",
                     "trend_maturity": "MID", "volatility_state": "NORMAL",
                     "htf_alignment": "ALIGNED", "session": "LONDON"}}
@@ -35,6 +35,17 @@ def test_pack_ranks_similar_prior_closed_decisions_and_summarises_outcomes():
     assert "mean +0.25R" in text
     assert "wins 1/2" in text
     assert "compiler" in text.lower()
+
+
+def test_pack_tells_entry_failure_from_management_giveback():
+    failed = _closed(realised=-1.0)
+    failed.update(mfe_r=0.12, mae_r=-1.0)
+    giveback = _closed(hours_ago=48, realised=-0.1)
+    giveback.update(mfe_r=2.2, mae_r=-0.2)
+    text = build_memory_pack([failed, giveback], _brief()).render()
+    assert "THESIS/TIMING FAILURE" in text
+    assert "MANAGEMENT GIVEBACK" in text
+    assert "Do not learn 'trade less'" in text
 
 
 def test_open_or_future_resolved_cases_cannot_leak_into_the_pack():
