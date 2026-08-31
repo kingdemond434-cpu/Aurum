@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "35/42 wakes (83%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "36/43 wakes (84%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "33 sleeve(s) accruing, published 1.8h ago",
+          "detail": "33 sleeve(s) accruing, published 2.1h ago",
           "ok": true
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -108,8 +108,8 @@
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "enabled, last result 267014",
-          "ok": true
+          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-Cycle",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     },
     "wiring": {
       "axis": "wiring",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "157 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "158 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.8h old",
+          "detail": "newest row 1.0h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.1h ago",
+          "detail": "written 0.0h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "19016MB free",
+          "detail": "19000MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 6 min ago, after a boot 63.9h ago",
+          "detail": "wrote 2 min ago, after a boot 64.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 157,
-      "error": "codex timed out after 600.0s",
-      "last": "2026-08-31T16:30:04.258375+00:00",
+      "count": 158,
+      "error": "codex exited 1: EVIDENCE ONLY \u2014 no vote on direction, never overrides structure.\n\nPRIOR CLOSED DECISIONS MOST LIKE THIS STATE\nCausal only: 5 shown from 21 eligible; mean -0.17R, wins 2/5. Similarity is context matching, not a vote or forecast.\n  2026-08-30T22:15  SHORT NOVEL              +0.25R  similarity 0.83  mechanism=broken-shelf-retest-supply\n  2026-08-30T22:15  LONG  NOVEL              -0.2",
+      "last": "2026-08-31T16:00:04.258375+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "1104fecf062a",
-  "generated_utc": "2026-08-31T17:15:19.280424+00:00",
-  "last_row_utc": "2026-08-31T16:30:04.258375+00:00",
-  "ledger_rows": 727,
-  "total_faults": 10
+  "generated_utc": "2026-08-31T17:31:14.963461+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 744,
+  "total_faults": 11
 }
