@@ -86,7 +86,7 @@ param(
                              "--fallback-provider", "codex:gpt-5.6-sol",
                              "--expect-broker", "Fusion",
                              "--wake-every-bar", "--universe", "--effort", "high",
-                             "--timeframes", "M5,M15,H1,H4"),
+                             "--timeframes", "M5"),
     [switch] $Remove
 )
 

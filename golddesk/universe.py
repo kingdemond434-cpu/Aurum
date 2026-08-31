@@ -309,6 +309,11 @@ def redundancy(a: Candidate, b: Candidate, min_overlap: float = 0.6
     a long from it are a legitimate sequence, and refusing that pair would be an
     invented restriction, not a risk control.
     """
+    if (a.direction != b.direction and a.compiled is not None and b.compiled is not None
+            and a.compiled.entry_intent == "MARKET"
+            and b.compiled.entry_intent == "MARKET"):
+        return (f"opposite live MARKET thesis versus candidate [{a.index}] — "
+                "net exposure cancels while two spreads remain")
     za, zb = a.zone(), b.zone()
     if not za or not zb:
         return None

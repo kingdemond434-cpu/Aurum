@@ -900,7 +900,11 @@ class LiveDesk:
                 drift_atr = abs(live_mid - old_mid) / max(brief.atr, 1e-9)
                 brief = replace(brief, bid=round(live_bid, 2), ask=round(live_ask, 2),
                                 spread=round(live_ask - live_bid, 2),
-                                tick_age_s=live_age)
+                                tick_age_s=live_age,
+                                live_tape=tuple(brief.live_tape) + (
+                                    f"POST-READ QUOTE bid {live_bid:.2f} ask {live_ask:.2f} "
+                                    f"age {live_age:.1f}s after {pr.latency_ms/1000:.1f}s inference",
+                                ))
                 usage = dict(pr.usage)
                 usage.update({"decision_drift_atr": round(drift_atr, 4),
                               "quote_refreshed_after_read": True})

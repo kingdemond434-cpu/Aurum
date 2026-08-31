@@ -43,6 +43,7 @@ import logging
 import os
 import signal
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -157,6 +158,17 @@ class DeskService:
         self._channels: dict[str, dict] = {}
         self._live_chart_cache: dict[str, list[Bar]] = {}
         self._live_chart_cached_at = 0.0
+        # GPT/Claude subscription reads routinely take 60-120s. They must not
+        # freeze the MT5 tick observer during that time: doing so erased the
+        # exact path that decides whether a signal was good and left stops
+        # effectively unwatched. One worker preserves analyst ordering; a
+        # single latest pending packet prevents a slow model building a stale
+        # queue. The observer loop itself never waits for inference.
+        self._analysis_pool = ThreadPoolExecutor(max_workers=1,
+                                                 thread_name_prefix="aurum-analyst")
+        self._analysis_future: Optional[Future] = None
+        self._analysis_pending: Optional[tuple] = None
+        self._analysis_started_at = 0.0
         self._rehydrated = False
         self._venue_shut = False
         self._halted = False
@@ -550,6 +562,9 @@ class DeskService:
                 last_price = price
             self.state.ticks_seen += 1
 
+            # Harvest a completed analyst read without ever waiting for it.
+            self._poll_analysis()
+
             # ---- venue halt: measured, not from a calendar ---------------
             silent = time.monotonic() - self._last_tick_advance
             if silent > self.cfg.halt_after_silence_s:
@@ -670,19 +685,61 @@ class DeskService:
         bid, ask, age = quote if quote is not None else self.feed.quote()
         htf_name, htf_factor = TF_HTF.get(tf, (self.cfg.htf, 16))
         live_frames = self._live_chart_frames()
-        try:
-            self.desk.on_bar(bars, i, visible_swings(ch["sw"], i), ch["atrs"],
-                             htf_state, (bid, ask, age),
-                             (f"{tf} close {closed.ts:%Y-%m-%d %H:%M}",),
-                             tf=tf, htf_factor=htf_factor, htf_name=htf_name,
-                             live_frames=live_frames)
-        except Exception as e:
-            log.exception("on_bar failed at %s %s: %s", tf, closed.ts, e)
+        args = (bars, i, visible_swings(ch["sw"], i), ch["atrs"], htf_state,
+                (bid, ask, age), (f"{tf} close {closed.ts:%Y-%m-%d %H:%M}",))
+        kwargs = {"tf": tf, "htf_factor": htf_factor, "htf_name": htf_name,
+                  "live_frames": live_frames}
+        self._submit_analysis(args, kwargs, tf, closed.ts)
         self.state.last_bar_tfs[tf] = closed.ts.isoformat()
         if tf == self.cfg.entry_tf:
             self.state.last_bar_ts = closed.ts.isoformat()
         self.state.bars_processed += 1
         self.checkpoint()
+
+    def _run_analysis(self, args: tuple, kwargs: dict, tf: str,
+                      ts: datetime) -> None:
+        try:
+            self.desk.on_bar(*args, **kwargs)
+        except Exception as e:                         # noqa: BLE001
+            log.exception("on_bar failed at %s %s: %s", tf, ts, e)
+
+    def _submit_analysis(self, args: tuple, kwargs: dict, tf: str,
+                         ts: datetime) -> None:
+        self._poll_analysis()
+        item = (args, kwargs, tf, ts)
+        if self._analysis_future is None:
+            self._analysis_started_at = time.monotonic()
+            self._analysis_future = self._analysis_pool.submit(
+                self._run_analysis, args, kwargs, tf, ts)
+            return
+        # Keep only the freshest world. Analysing every intermediate close
+        # after a slow response is not frequency; it is trading the past.
+        old = self._analysis_pending
+        self._analysis_pending = item
+        if old is None:
+            log.info("analyst busy; retained latest %s packet at %s", tf, ts)
+        else:
+            log.info("analyst busy; replaced pending %s packet with fresher %s %s",
+                     old[2], tf, ts)
+
+    def _poll_analysis(self) -> None:
+        future = self._analysis_future
+        if future is None or not future.done():
+            return
+        try:
+            future.result()
+        except Exception as e:                         # defensive; worker logs too
+            log.exception("analyst worker failed: %s", e)
+        elapsed = time.monotonic() - self._analysis_started_at
+        log.info("analyst worker completed in %.1fs; tick observer remained live", elapsed)
+        self._analysis_future = None
+        self.checkpoint()
+        if self._analysis_pending is not None:
+            args, kwargs, tf, ts = self._analysis_pending
+            self._analysis_pending = None
+            self._analysis_started_at = time.monotonic()
+            self._analysis_future = self._analysis_pool.submit(
+                self._run_analysis, args, kwargs, tf, ts)
 
     def _live_chart_frames(self) -> dict[str, list[Bar]]:
         """One synchronized current packet, cached only across the same wake."""

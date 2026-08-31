@@ -33,7 +33,7 @@ if ($GptPrimary) {
 }
 $deskArgs += @("--expect-broker", "Fusion", "--wake-every-bar",
                "--universe", "--effort", "high",
-               "--timeframes", "M5,M15,H1,H4")
+               "--timeframes", "M5")
 $joined = $deskArgs -join "|"
 $arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden " +
              "-File `"$supervisor`" -DeskRoot `"$DeskRoot`" -DeskArgsJoined `"$joined`""
@@ -65,5 +65,5 @@ Write-Host ("  analyst   : " + $(if ($GptPrimary) {
     "Claude subscription -> ChatGPT subscription (gpt-5.6-sol, high)"
 }))
 Write-Host "  charts    : enabled for GPT failover"
-Write-Host "  arms      : M5, M15, H1, H4 closed-bar causal reads"
+Write-Host "  cadence   : every M5 close; each packet sees live M1/M5/M15/H1/H4 charts"
 Write-Host "  mode      : shadow (no order placement)"
