@@ -52,6 +52,8 @@ def build_lessons(rows: Sequence[dict], *,
     cal_hi: list[float] = []
     cal_mid: list[float] = []
     novelty_buckets: dict[str, list[float]] = {}
+    direction_buckets: dict[str, list[float]] = {}
+    session_buckets: dict[str, list[float]] = {}
     blind: list[tuple[str, str, str, float]] = []
 
     for row in rows:
@@ -62,6 +64,10 @@ def build_lessons(rows: Sequence[dict], *,
         read = _read(row)
         if kind == "SIGNAL":
             mech_rows.setdefault(_mech(row), []).append(rr)
+            direction = str((row.get("decision") or {}).get("direction") or "UNKNOWN")
+            session = str((row.get("context") or {}).get("session") or "UNKNOWN")
+            direction_buckets.setdefault(direction, []).append(rr)
+            session_buckets.setdefault(session, []).append(rr)
             conf = read.get("confidence", 0)
             if conf >= 4:
                 cal_hi.append(rr)
@@ -80,6 +86,22 @@ def build_lessons(rows: Sequence[dict], *,
         lines.append("MY OWN RESOLVED EVIDENCE (first-touch, target 2R / stop -1R):")
         lines.append("  mechanisms: " + " · ".join(
             f"{m} {statistics.fmean(v):+.2f}R/{len(v)}" for m, v in mech_ag[:cap]))
+    resolved_signals = sum(len(v) for v in mech_rows.values())
+    if resolved_signals >= min_bucket:
+        lines.append("MY OWN RESOLVED EVIDENCE (advisory; diagnose, do not ban):")
+        lines.append("  direction: " + " · ".join(
+            f"{k} {statistics.fmean(v):+.2f}R/{len(v)}"
+            for k, v in sorted(direction_buckets.items()) if len(v) >= min_bucket))
+        lines.append("  session: " + " · ".join(
+            f"{k} {statistics.fmean(v):+.2f}R/{len(v)}"
+            for k, v in sorted(session_buckets.items()) if len(v) >= min_bucket))
+        unique = len(mech_rows)
+        if unique / resolved_signals >= 0.80:
+            lines.append(
+                f"  mechanism memory is fragmented: {unique} names across "
+                f"{resolved_signals} resolved signals. Reuse a prior name only "
+                "when the forced-flow mechanism is genuinely the same; novelty "
+                "does not justify renaming the same idea.")
     if len(cal_hi) >= min_bucket and len(cal_mid) >= min_bucket:
         lines.append(
             f"  calibration: conf>=4 {statistics.fmean(cal_hi):+.2f}R/{len(cal_hi)}"
