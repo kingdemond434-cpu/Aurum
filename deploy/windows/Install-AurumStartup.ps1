@@ -85,7 +85,8 @@ param(
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
                              "--fallback-provider", "codex:gpt-5.6-sol",
                              "--expect-broker", "Fusion",
-                             "--wake-every-bar", "--universe", "--effort", "high"),
+                             "--wake-every-bar", "--universe", "--effort", "high",
+                             "--timeframes", "M5,M15,H1,H4"),
     [switch] $Remove
 )
 

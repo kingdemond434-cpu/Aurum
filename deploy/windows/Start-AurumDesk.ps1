@@ -51,7 +51,8 @@ param(
     [string[]] $DeskArgs = @("--shadow", "--provider", "claudecode:claude-opus-5",
                              "--fallback-provider", "codex:gpt-5.6-sol",
                              "--expect-broker", "Fusion",
-                             "--wake-every-bar", "--universe", "--effort", "high"),
+                             "--wake-every-bar", "--universe", "--effort", "high",
+                             "--timeframes", "M5,M15,H1,H4"),
     # Set by Install-AurumStartup.ps1's scheduled task action. See that script's comment on why
     # -DeskArgs cannot travel through a raw command line as an array: it collided with the array
     # construction operator (",") only meaning something to PowerShell's own language parser, not
