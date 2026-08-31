@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "5 of 22 wakes in 12h were served by the RULE-BASED FALLBACK and 0 got nothing \u2014 23% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
+          "detail": "6 of 23 wakes in 12h were served by the RULE-BASED FALLBACK and 0 got nothing \u2014 26% of decisions did not come from the analyst. The desk is still producing signals, which is why this does not look like an outage anywhere else.",
           "ok": false
         },
         {
           "check": "analyst latency",
-          "detail": "median 193s of 600s budget (32%) over 22 reads",
+          "detail": "median 193s of 600s budget (32%) over 23 reads",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "24.0% recent vs 8.2% prior",
+          "detail": "23.8% recent vs 8.2% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/157 (18%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "28/158 (18%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 27h ago",
+          "detail": "updated 28h ago",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "16 sleeve(s) accruing, published 0.2h ago",
+          "detail": "19 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -128,7 +128,7 @@
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-QQuantGatesCertify', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 2
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.4h old",
+          "detail": "newest row 0.5h old",
           "ok": true
         },
         {
@@ -184,22 +184,22 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.2h ago",
+          "detail": "written 0.1h ago",
           "ok": true
         },
         {
           "check": "ledger integrity",
-          "detail": "310 unique decision(s), no tears",
+          "detail": "311 unique decision(s), no tears",
           "ok": true
         },
         {
           "check": "disk",
-          "detail": "20400MB free",
+          "detail": "20374MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 9 min ago, after a boot 46.6h ago",
+          "detail": "wrote 8 min ago, after a boot 46.9h ago",
           "ok": true
         }
       ],
@@ -228,8 +228,8 @@
       "last": "2026-08-30T23:15:07.464950+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 68,
-      "last": "2026-08-30T23:30:00.863614+00:00"
+      "count": 69,
+      "last": "2026-08-30T23:45:01.789039+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -245,8 +245,8 @@
     }
   },
   "deployed_commit": "97a7ecdf450e",
-  "generated_utc": "2026-08-31T00:00:39.182438+00:00",
-  "last_row_utc": "2026-08-30T23:30:00.863614+00:00",
-  "ledger_rows": 338,
-  "total_faults": 9
+  "generated_utc": "2026-08-31T00:18:22.749222+00:00",
+  "last_row_utc": "2026-08-30T23:45:01.789039+00:00",
+  "ledger_rows": 339,
+  "total_faults": 10
 }
