@@ -295,7 +295,16 @@ class DeskService:
                 opened_utc=datetime.fromisoformat(pr["opened_utc"]),
                 setup=pr.get("setup", "UNKNOWN"))
             sg = dict(raw["signal"])
-            sg["setup"] = Setup(sg["setup"])
+            # setup is now analytics-only after the mechanism-first rewrite; a
+            # persisted signal predating it may carry a value the enum no longer
+            # knows, so restore defensively rather than crash the reload.
+            if isinstance(sg.get("setup"), str):
+                try:
+                    sg["setup"] = Setup(sg["setup"])
+                except ValueError:
+                    sg["setup"] = Setup.OTHER
+            else:
+                sg["setup"] = Setup.OTHER
             sg["brief_as_of"] = datetime.fromisoformat(sg["brief_as_of"])
             sig = CompiledSignal(**sg)
             obs = TradeObserver(pos.direction, pos.entry, pos.current_stop,

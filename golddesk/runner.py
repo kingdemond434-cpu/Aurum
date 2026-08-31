@@ -30,7 +30,8 @@ from pathlib import Path
 from typing import Iterator, Literal, Optional, Protocol, Sequence
 
 from .analyst import (AnalystRead, CompiledSignal, Context, Level, LevelKind,
-                      MarketBrief, Refusal, Setup, Thresholds, compile_signal)
+                      MarketBrief, PathForecast, AdversarialReview, Refusal,
+                      Setup, Thresholds, compile_signal)
 from .costs import CostModel
 from .features import (Bar, StructureState, atr, classify, session_of, swings,
                        visible_swings)
@@ -123,6 +124,36 @@ class MT5BarSource:
 # build_brief — real, no seam
 # --------------------------------------------------------------------------
 
+def _raw_path_lines(bars: Sequence[Bar], i: int, atr: float, n: int = 12) -> list[str]:
+    """The last n closed bars as arithmetic: shape without the picture.
+
+    Body, upper/lower wick, close position, range relative to ATR and net
+    return — the same information a chart carries, in numbers the model can
+    reason over without trusting a renderer.
+    """
+    out: list[str] = []
+    for b in bars[max(0, i - n + 1):i + 1]:
+        rng = b.high - b.low
+        if rng <= 0:
+            continue
+        body = abs(b.close - b.open)
+        lo = min(b.open, b.close)
+        hi = max(b.open, b.close)
+        upper = max(0.0, b.high - hi) / rng * 100.0
+        lower = max(0.0, lo - b.low) / rng * 100.0
+        body_pct = body / rng * 100.0
+        close_pos = (b.close - b.low) / rng * 100.0
+        ret = (b.close / b.open - 1.0) * 100.0 if b.open else 0.0
+        rel = rng / atr if atr > 0 else 0.0
+        out.append(
+            f"{b.ts.strftime('%m-%d %H:%M')}  O {b.open:.2f} H {b.high:.2f} "
+            f"L {b.low:.2f} C {b.close:.2f}  BODY {body_pct:>3.0f}% "
+            f"UPW {upper:>2.0f}% LOWW {lower:>2.0f}% CPP {close_pos:>2.0f}% "
+            f"RNG/ATR {rel:>3.1f} RET {ret:+.2f}%"
+        )
+    return out
+
+
 def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                 sw: Sequence, bid: float, ask: float, tick_age_s: float,
                 htf: Optional[StructureState] = None,
@@ -166,7 +197,8 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
         bid=round(bid, 2), ask=round(ask, 2), spread=round(ask - bid, 2),
         tick_age_s=tick_age_s, atr=round(st.atr, 2), context=ctx, levels=levels,
         trigger_price=None if st.trigger_price is None else round(st.trigger_price, 2),
-        trigger_utc=bars[i].ts, timeline=tuple(timeline))
+        trigger_utc=bars[i].ts, timeline=tuple(timeline),
+        raw_path=tuple(_raw_path_lines(bars, i, st.atr)))
 
 
 # --------------------------------------------------------------------------
@@ -182,12 +214,35 @@ class DeterministicAnalyst:
     """ARM A. The desk's own rules, no model. Not a mock — the baseline itself."""
     name = "A-deterministic"
 
+    @staticmethod
+    def _path(narr: str) -> PathForecast:
+        # Deterministic, therefore easy to calibrate: the rule reads the same
+        # state the way the model does, and its path is a belief the forward
+        # ledger resolves exactly like any model's.
+        return PathForecast(p_plus_half_r=0.65, p_plus_1r=0.50, p_plus_2r=0.35,
+                            p_minus_1r_first=0.40, expected_mfe_r=1.80,
+                            expected_mae_r=0.70, expected_r=1.0,
+                            expected_holding_hours=6.0, path_narrative=narr)
+
+    @staticmethod
+    def _adversarial(mech: str) -> AdversarialReview:
+        return AdversarialReview(
+            thesis=f"rule-based {mech} signal on measured structure",
+            counter_cases="1. the displacement/sweep is noise not order; "
+                          "2. the stop sits inside the next session's range; "
+                          "3. a counter-move arrives before the runner",
+            missing="the model eyes it trades; the rule does not check context",
+            forced="stops beyond the reclaimed/displaced level",
+            timing="fired by the deterministic watcher on structure state",
+            monetization="mean reversion toward the trade origin when forced flow exhausts")
+
     def read(self, b: MarketBrief) -> AnalystRead:
         c = b.context
-        none = AnalystRead(setup=Setup.NO_SETUP, direction="NONE", entry_ref="NONE",
-                           stop_ref="NONE", tp1_ref="NONE", tp2_ref="NONE",
-                           mechanism_name="none", confidence=1, read="no rule matched",
-                           why="n/a", why_not="n/a", invalidation="n/a")
+        none = AnalystRead(action="NO_TRADE", setup=Setup.NO_SETUP, direction="NONE",
+                           entry_ref="NONE", stop_ref="NONE", tp1_ref="NONE",
+                           tp2_ref="NONE", mechanism_name="none", confidence=1,
+                           read="no rule matched", why="n/a", why_not="n/a",
+                           invalidation="n/a")
         highs = [l for l in b.levels if l.kind is LevelKind.SWING_HIGH]
         lows = [l for l in b.levels if l.kind is LevelKind.SWING_LOW]
         if not highs or not lows:
@@ -199,14 +254,20 @@ class DeterministicAnalyst:
             if c.trend_direction == "UP":
                 return AnalystRead(setup=Setup.TREND_CONTINUATION, direction="LONG",
                     entry_ref="MARKET", stop_ref=lows[-1].id, tp1_ref="NONE",
-                    tp2_ref=highs[-1].id, mechanism_name="displacement-continuation", confidence=3,
+                    tp2_ref=highs[-1].id, mechanism_name="displacement-continuation",
+                    setup_tag="displacement-continuation", confidence=3,
+                    path=self._path("displacement resumes to TP2 after a shallow pullback"),
+                    adversarial=self._adversarial("displacement-continuation"),
                     read="displacement with shallow pullback in an uptrend",
                     why="unfilled demand at the displacement origin",
                     why_not="rule-based; no contextual check",
                     invalidation=f"close below {lows[-1].id}")
             return AnalystRead(setup=Setup.TREND_CONTINUATION, direction="SHORT",
                 entry_ref="MARKET", stop_ref=highs[-1].id, tp1_ref="NONE",
-                tp2_ref=lows[-1].id, mechanism_name="displacement-continuation", confidence=3,
+                tp2_ref=lows[-1].id, mechanism_name="displacement-continuation",
+                setup_tag="displacement-continuation", confidence=3,
+                path=self._path("displacement resumes to TP2 after a shallow pullback"),
+                adversarial=self._adversarial("displacement-continuation"),
                 read="displacement with shallow pullback in a downtrend",
                 why="unfilled supply at the displacement origin",
                 why_not="rule-based; no contextual check",
@@ -216,7 +277,10 @@ class DeterministicAnalyst:
             if c.trend_direction != "DOWN":
                 return AnalystRead(setup=Setup.SWING_REVERSAL, direction="LONG",
                     entry_ref="MARKET", stop_ref=lows[-1].id, tp1_ref="NONE",
-                    tp2_ref=highs[-1].id, mechanism_name="sweep-reclaim-trap", confidence=3,
+                    tp2_ref=highs[-1].id, mechanism_name="sweep-reclaim-trap",
+                    setup_tag="sweep-reclaim", confidence=3,
+                    path=self._path("swept stops fire, reclaim holds, price returns to the breakout origin"),
+                    adversarial=self._adversarial("sweep-reclaim-trap"),
                     read="sweep and reclaim of the swing low",
                     why="sellers trapped below the reclaim",
                     why_not="rule-based; no contextual check",
@@ -396,10 +460,13 @@ class ShadowRunner:
                 brief_render=brief.render(), decided_by=by, decision=decision,
                 reason=reason, path_ref=pref, outcome=out))
 
-        if read.setup is Setup.NO_SETUP:
+        if read.is_no_trade():
             self.stats.refusals_model += 1
-            note(DecisionKind.REFUSAL_MODEL, "MODEL", {"setup": "NO_SETUP"},
-                 "analyst: NO_SETUP", "LONG", brief.atr)
+            verdict = "NO_TRADE" if read.action == "NO_TRADE" else "NO_SETUP"
+            note(DecisionKind.REFUSAL_MODEL, "MODEL",
+                 {"setup": read.setup.value, "action": read.action,
+                  "novelty": read.novelty},
+                 f"analyst: {verdict}", "LONG", brief.atr)
             return
 
         res = compile_signal(brief, read, self.thresholds, self.cost_model)

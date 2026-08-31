@@ -14,7 +14,7 @@ Wired by runner.py: build_brief() assembles a MarketBrief from a BarSource,
 call_analyst() needs ANTHROPIC_API_KEY, compile_signal() reads thresholds from
 config. The only host-specific work is the BarSource adapter — see runner.py.
 
-Every call produces a row worth journalling, including NO_SETUP. The refusals
+Every call produces a row worth journalling, including NO_TRADE. The refusals
 are the point: they are the false-negative ledger the charter says the desk
 has six of and needs hundreds.
 """
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -126,6 +127,11 @@ class MarketBrief:
     #: nobody proposed, or computing it twice and letting the two disagree. The states are the
     #: honest thing to show before the read; the ruling happens in `compile_signal` after it.
     blocks: Sequence[str] = field(default_factory=tuple)
+    #: The raw numerical path — the last N closed bars as arithmetic rather than
+    #: pixels. Body/upper-wick/lower-wick percentages, close position within the
+    #: bar, range relative to ATR and net return give the shape a chart carries
+    #: without the picture. Computed by build_brief in runner.py.
+    raw_path: Sequence[str] = field(default_factory=tuple)
 
     @property
     def mid(self) -> float:
@@ -146,6 +152,9 @@ class MarketBrief:
             "MEASURED CONTEXT (deterministic — these are facts, not opinions)",
             self.context.render(),
         ]
+        if self.raw_path:
+            lines += ["", "RAW NUMERICAL PATH (last bars — shape without the picture)"]
+            lines += [f"  {t}" for t in self.raw_path]
         if self.timeline:
             lines += ["", "HOW THIS DEVELOPED (most recent last)"]
             lines += [f"  {t}" for t in self.timeline]
@@ -175,17 +184,95 @@ class Setup(str, Enum):
     SWING_REVERSAL = "SWING_REVERSAL"
     TREND_CONTINUATION = "TREND_CONTINUATION"
     NOVEL = "NOVEL"
-    """A mechanism the desk has not named. Permitted, journalled, and routed to
-    SHADOW ONLY until its cohort accumulates evidence — the analyst is not
-    limited to two named patterns, but a new idea does not get capital on the
-    strength of good prose."""
+    """Legacy value kept for old ledgers only. The desk no longer emits it: a
+    genuinely novel mechanism is filed under OTHER and given a measured,
+    uncertainty-weighted cold start instead of a shadow ban."""
+    OTHER = "OTHER"
+    """The analytics bucket for mechanisms the desk has not yet named. Filing is
+    a POST-HOC action done by the compiler, never a constraint on how the model
+    thinks. Mechanism cohorts are keyed by mechanism_name, not by this label."""
+
+
+class PathForecast(BaseModel):
+    """The analyst's forward calibration surface — a belief, resolved later.
+
+    Each probability is a separate measured binary event over the forward path:
+    `p_plus_1r` is P(hit +1R before the stop IS hit), and so on. They are
+    deliberately not constrained to sum to one: they answer distinct questions.
+    The desk resolves these against what actually happened, both directions,
+    which is what makes `novelty` and `path` falsifiable rather than prose.
+    """
+    p_plus_half_r: Optional[float] = Field(None, ge=0, le=1,
+        description="P(+0.5R reached before -1R)")
+    p_plus_1r: Optional[float] = Field(None, ge=0, le=1,
+        description="P(+1R reached before -1R)")
+    p_plus_2r: Optional[float] = Field(None, ge=0, le=1,
+        description="P(+2R reached before -1R)")
+    p_minus_1r_first: Optional[float] = Field(None, ge=0, le=1,
+        description="P(-1R hits before +1R is reached)")
+    expected_mfe_r: Optional[float] = Field(None,
+        description="Expected maximum favourable excursion in R")
+    expected_mae_r: Optional[float] = Field(None,
+        description="Expected maximum adverse excursion in R")
+    expected_r: Optional[float] = Field(None,
+        description="The analyst's own net-R expectation — their belief, not the "
+                    "desk's measured estimate. Calibrated forward like everything else.")
+    expected_holding_hours: Optional[float] = Field(None,
+        description="Expected holding time in hours before TP2 or exit")
+    path_narrative: Optional[str] = Field(None, max_length=320,
+        description="Plain-language path, e.g. 'grind to TP1, stall, retest entry, TP2'")
+
+    def is_complete(self) -> bool:
+        return all(v is not None for v in (
+            self.p_plus_1r, self.p_plus_2r, self.p_minus_1r_first,
+            self.expected_mfe_r, self.expected_mae_r, self.expected_r))
+
+
+class VisualRegion(BaseModel):
+    """A visual concept on the chart. NEVER a price — the compiler owns prices.
+
+    The model names meaning (`compression shelf`, `last-drive-and-dig`) and
+    places it in a band relative to a reference; the compiler resolves the band
+    to a price zone. A region that carries a number is dropped, not priced.
+    """
+    concept: str = Field(max_length=90)
+    band: Literal["ABOVE", "BELOW", "AT"]
+    reference_ref: str = Field(
+        description='Level id, "CURRENT_PRICE", or "NEAREST". Never a number.')
+    notes: Optional[str] = Field(None, max_length=120)
+
+
+class AdversarialReview(BaseModel):
+    """The mechanism casing. Required on every ACTIONABLE read. Each is short,
+    concrete, and load-bearing — boilerplate is indistinguishable from lying."""
+    thesis: str = Field(max_length=260, description="The mechanism, one sentence.")
+    counter_cases: str = Field(max_length=400,
+        description="At most three DISTINCT ways this specific read is wrong, numbered. "
+                    "'the market might reverse' is not a case.")
+    missing: str = Field(max_length=260,
+        description="What information, if you had it, would change this read.")
+    forced: str = Field(max_length=260,
+        description="Who is forced to act here — the flow that makes price have to move.")
+    timing: str = Field(max_length=260,
+        description="Why now — the trigger, the pending event, the level density.")
+    monetization: str = Field(max_length=260,
+        description="Which side of that forced flow you are paid on.")
+
+    def is_complete(self) -> bool:
+        return bool(self.thesis and self.counter_cases and self.forced
+                    and self.timing and self.monetization)
 
 
 class AnalystRead(BaseModel):
-    """The model's entire output surface. No price fields exist here by design."""
+    """The model's entire output surface. No price fields exist here by design.
+
+    The VERDICT is `action`; `setup` is an optional analytics tag the desk
+    classifies from mechanism, never a constraint on how you think.
+    """
     model_config = {"extra": "forbid"}
 
-    setup: Setup
+    action: Literal["ACTIONABLE", "NO_TRADE"] = "ACTIONABLE"
+    setup: Setup = Setup.OTHER
     direction: Literal["LONG", "SHORT", "NONE"]
     entry_ref: str = Field(description='Level id, or "MARKET" to enter at the live quote.')
     stop_ref: str = Field(description='Level id the stop sits beyond, or "NONE".')
@@ -194,15 +281,91 @@ class AnalystRead(BaseModel):
     mechanism_name: str = Field(max_length=60, description=(
         "Short stable label for the mechanism, e.g. 'failed-breakout-trap'. "
         "Reuse the same label for the same mechanism so cohorts accumulate."))
+    setup_tag: Optional[str] = Field(None, max_length=40, description=(
+        "Optional free-text analytics tag ('failed-breakout-trap', 'asia-sweep-reclaim'). "
+        "The desk always derives its own family label; this is only your phrasing."))
+    novelty: Literal["LOW", "MEDIUM", "HIGH"] = Field(
+        "LOW", description=(
+            "How novel this situation is. Honest uncertainty: HIGH means the desk "
+            "widens its epistemic prior until mechanism_name has history. It is a "
+            "measured data point, never a ban."))
+    entry_intent: Literal["LIMIT", "BREAK", "MARKET", "PULLBACK"] = Field(
+        "MARKET", description="How you would get in: a resting limit, a break trigger, live, "
+                              "or on a pullback into the level. Never a price.")
+    expected_holding_hours: Optional[float] = Field(None,
+        description="Expected holding time in hours before exit.")
+    path: Optional[PathForecast] = Field(None, description="Required on ACTIONABLE.")
+    visual_regions: list[VisualRegion] = Field(default_factory=list,
+        description="Visual concepts in bands. Never include a number.")
+    adversarial: Optional[AdversarialReview] = Field(None,
+        description="Required on ACTIONABLE.")
     confidence: int = Field(ge=1, le=5)
     read: str = Field(max_length=700, description="What price is doing, in plain words.")
     why: str = Field(max_length=500, description="The mechanism. Not the pattern name.")
     why_not: str = Field(max_length=500, description="The strongest case against. Never empty.")
     invalidation: str = Field(max_length=300, description="What would prove this read wrong.")
 
+    def is_no_trade(self) -> bool:
+        """A read is a refusal when the model says so, in any of the spellings
+        the desk has used. The compiler routes on this, never on `setup`."""
+        return self.action == "NO_TRADE" or self.direction == "NONE"
+
 
 ANALYST_SCHEMA = AnalystRead.model_json_schema()
 ANALYST_SCHEMA["additionalProperties"] = False
+
+
+# --------------------------------------------------------------------------
+# Post-hoc analytics classification — the desk's job, not the model's
+# --------------------------------------------------------------------------
+
+def classify_family(read: AnalystRead) -> Setup:
+    """File a read into an analytics family AFTER the mechanism exists.
+
+    The model never thinks in families. An explicit family on the read is
+    honoured; otherwise the mechanism's own words decide the bucket, and a
+    genuinely novel mechanism lands in OTHER with a real cohort keyed on its
+    mechanism_name — the old blanket NOVEL shadow is gone.
+    """
+    if read.setup in (Setup.SWING_REVERSAL, Setup.TREND_CONTINUATION):
+        return read.setup
+    text = f"{read.mechanism_name} {read.setup_tag or ''} {read.why}".lower()
+    if any(k in text for k in ("sweep", "reclaim", "reversal", "trap", "engulf")):
+        return Setup.SWING_REVERSAL
+    if any(k in text for k in ("continuation", "displacement", "breakout",
+                               "retest", "pullback", "resume", "follow-through")):
+        return Setup.TREND_CONTINUATION
+    return Setup.OTHER
+
+
+_PRICE_IN_CONCEPT = re.compile(r"\d+\.\d{2}")
+
+
+def resolve_region(brief: MarketBrief, region: VisualRegion) -> Optional[str]:
+    """Turn a named visual concept + band + reference into a price zone string.
+
+    The model names meaning; the compiler owns the numbers. A region that
+    carries a price is dropped — it is annotation, not load-bearing, and an
+    invented price in a vision field would be a leak of exactly the kind the
+    single hard rule forbids.
+    """
+    if _PRICE_IN_CONCEPT.search(region.concept or ""):
+        log.debug("visual_region dropped (contains a price): %r", region.concept)
+        return None
+    if region.reference_ref == "CURRENT_PRICE":
+        anchor, ref = brief.mid, "price"
+    elif region.reference_ref == "NEAREST":
+        lvl = min((l for l in brief.levels if l.confirmed),
+                  key=lambda l: abs(l.price - brief.mid), default=None)
+        if lvl is None:
+            return None
+        anchor, ref = lvl.price, lvl.id
+    else:
+        lvl = brief.level(region.reference_ref)
+        if lvl is None or not lvl.confirmed:
+            return None
+        anchor, ref = lvl.price, lvl.id
+    return f"{region.concept} {region.band} {ref}@{anchor:.2f}"
 
 
 # --------------------------------------------------------------------------
@@ -222,8 +385,8 @@ reference field, the read is discarded.
 
 ## Refusal is a verdict, not a quota
 
-NO_SETUP is correct when no available trade has positive expected value after \
-costs. It is not a target, a virtue, or a sign of discipline. There is no \
+action NO_TRADE is correct when no available trade has positive expected value \
+after costs. It is not a target, a virtue, or a sign of discipline. There is no \
 quota to fill in either direction: do not suppress a genuinely positive-value \
 opportunity to appear selective, and do not lower your standard to produce \
 activity.
@@ -237,56 +400,106 @@ opportunities exist today, twelve is the right answer. If none exist, zero is.
 You are not being scored on how rarely you fire. You are scored on the net \
 value of everything you did and did not take.
 
-`why_not` is mandatory on every read, including NO_SETUP — on a refusal it \
+`why_not` is mandatory on every read, including NO_TRADE — on a refusal it \
 must say what would make this worth taking, not merely why it looks unclean.
 
-## What actually counts as a setup
+## Mechanism, not family
 
-A setup needs a mechanism, not a pattern name. "Bull flag" is a description; \
-"sellers who chased the sweep are trapped below the reclaim and their stops sit \
-above it" is a mechanism. If you cannot state who is trapped, who must act, or \
-what flow is forced, there is no setup — say NO_SETUP.
-
-Three families exist. Two are named because the desk has traded them; the
-third exists so you are not forced to file a genuine observation under the
-wrong heading.
-
-SWING_REVERSAL — price sweeps a level, fails to hold beyond it, and reclaims. \
-The mechanism is trapped participants. Requires the sweep and the reclaim to \
-both be visible in confirmed structure, not anticipated.
-
-TREND_CONTINUATION — price displaces, retraces into the origin of the \
-displacement, and resumes. The mechanism is unfilled demand at the origin. \
-Requires the displacement to be already complete.
-
-NOVEL — a real, statable mechanism that is neither of the above. Use it when \
-the situation genuinely is something else, not when you want to force a trade \
-that failed the other two. A NOVEL read is journalled and shadowed, never \
-sized, until its mechanism_name has accumulated enough resolved outcomes to \
-be evaluated. You are not being graded on staying inside the two named \
-patterns; you are being graded on whether what you name actually resolves.
+There are no strategy families for you to file into. SWING_REVERSAL and \
+TREND_CONTINUATION are labels the DESK'S COMPILER assigns afterwards for \
+analytics; you never think in them and you are never constrained by them. What \
+you write is a mechanism — a statable story about who is trapped, who must act, \
+and what flow is forced. "Bull flag" is a description; "sellers who chased the \
+sweep are trapped below the reclaim and their stops sit above it" is a \
+mechanism. If you cannot name the forced flow, there is no trade — say \
+action NO_TRADE.
 
 Give every read a mechanism_name and reuse it verbatim for the same mechanism. \
-That label is how the desk discovers, months later, that one of your novel \
-ideas has been quietly working — or quietly not.
+That label is how the desk discovers, months later, that one of your ideas has \
+been quietly working — or quietly not.
+
+## Novelty is a measured uncertainty, never a punishment
+
+If the situation is genuinely something you have not named before, say so \
+plainly with novelty HIGH — an honest unknown is a data point, not a sin, and \
+silently forcing it into a familiar name IS a lie. The desk handles novelty as \
+uncertainty: HIGH novelty widens the cold-start prior until your \
+mechanism_name accumulates real resolved history. That is a slight, transparent \
+charge in exchange for running a trade no one has evidence on — never a shadow \
+and never a ban. Each such read is journalled and its forward path resolved, so \
+the desk learns whether your novel ideas pay, exactly as it learns about \
+anything else.
+
+## Path forecast — beliefs the desk resolves forward
+
+Every ACTIONABLE read must carry a path: what you actually expect to happen, \
+as numbers and a short narrative. Each probability answers a separate \
+binary-forward question and they are NOT constrained to sum to one:
+
+  p_plus_half_r   P(+0.5R is reached before -1R)
+  p_plus_1r       P(+1R is reached before -1R)
+  p_plus_2r       P(+2R is reached before -1R)
+  p_minus_1r_first  P(-1R happens first)
+  expected_mfe_r / expected_mae_r   expected favourable/adverse excursion in R
+  expected_r      your own net-R expectation
+  expected_holding_hours  how long this takes
+
+The desk resolves every one of these against what actually happens, in both \
+directions, so "I expected +1R before the stop" is measured, not forgiven. \
+Calibrate yourself: if p_plus_1r has been 0.6 and +1R has shown up less often \
+than that, move the number down. These beliefs travel with the signal and are \
+scored. Do not make them comfortable; make them honest.
+
+## Visual regions
+
+In visual_regions you may name what the chart's shape means in one band: a \
+concept, a band ABOVE/BELOW/AT, and a reference (a level id, CURRENT_PRICE, or \
+NEAREST). The compiler resolves the band to a price zone. NEVER put a number in \
+a visual_region — any region carrying a price is dropped. Examples of concepts \
+that carry meaning: compression shelf, last-drive-and-dig, wick-rejection \
+neckline, the break-and-retest zone, an unattended pool of stops.
+
+## Adversarial case (required on every ACTIONABLE read)
+
+Before you claim a trade, argue against yourself in structured pieces:
+
+  thesis        the mechanism, one sentence.
+  counter_cases at most three DISTINCT concrete ways THIS read is wrong,
+                numbered. "the market might reverse" is not a case.
+  missing       what information, if you had it, would change this read.
+  forced        WHO is forced to act here — the specific flow that makes price
+                have to move, and when.
+  timing        why now and not an hour ago or an hour from now.
+  monetization  which side of that forced flow you are paid on.
+
+Each field is one or two short sentences. Boilerplate is indistinguishable \
+from lying — a generic casing tells the desk nothing and the forward ledger \
+will find out anyway.
 
 ## The charts
 
-You may be given one or more chart images. They are deliberately unannotated — \
-no drawn levels, no trendlines, no indicators, no labels. That is not an \
-oversight. On the same bar, an annotated render made this desk report "broken \
-major support, retesting from below" while the clean render of the same data \
-reported "range-bound, no clean alignment". The annotations wrote the answer. \
-So you get shape and nothing else.
+You may be given several chart images, including multiple synchronized zooms \
+of the SAME timeframe. They are deliberately unannotated — no drawn levels, no \
+trendlines, no indicators, no labels. That is not an oversight. On the same \
+bar, an annotated render made this desk report "broken major support, retesting \
+from below" while the clean render of the same data reported "range-bound, no \
+clean alignment". The annotations wrote the answer. So you get shape and \
+nothing else.
 
-Use the chart for what a table cannot carry: compression and expansion, wick \
-character, whether bodies are closing at the extremes or the middle, whether a \
-move looks impulsive or grinding.
+Use the close zoom for wick character and whether bodies close at the extremes \
+or the middle; the wide view for where price sits inside its range; the higher \
+timeframes for context. Use the chart for what a table cannot carry: \
+compression and expansion, whether a move looks impulsive or grinding.
 
 Take every number from the LEVELS table. If the chart appears to show a level \
 that is not in the table, it is not a level — the table is the desk's own \
 confirmed structure and the picture is a rendering of the same bars. Where the \
 two seem to disagree, the table wins and you say so in `why_not`.
+
+The RAW NUMERICAL PATH block is the same shape another way: body, upper and \
+lower wick, close position, range relative to ATR, net return, one bar per \
+line. The picture and the numbers must agree, and where they do not, the \
+numbers win.
 
 ## Conditions you must weigh
 
@@ -302,7 +515,9 @@ two seem to disagree, the table wins and you say so in `why_not`.
 
 ## Direction and refs
 
-- setup NO_SETUP -> direction NONE, all refs "NONE", confidence 1.
+- action NO_TRADE -> direction NONE, all refs "NONE", confidence 1.
+- ACTIONABLE is only for a real mechanism you would size yourself. It is not a \
+  reward for writing a clever case — state it, or refuse.
 - Otherwise: stop_ref and target_ref must be real level ids. entry_ref may be \
   "MARKET" if the setup is live now.
 - LONG means stop below entry, target above. SHORT is the mirror. The compiler \
@@ -466,6 +681,16 @@ class CompiledSignal:
     why_not: str
     invalidation: str
     brief_as_of: datetime
+    # -- new contract surface. Beliefs travel with the signal so the forward
+    # ledger can resolve them; none of them gate the trade. --
+    mechanism_name: str = ""
+    setup_tag: Optional[str] = None
+    novelty: Literal["LOW", "MEDIUM", "HIGH"] = "LOW"
+    entry_intent: Literal["LIMIT", "BREAK", "MARKET", "PULLBACK"] = "MARKET"
+    expected_holding_hours: Optional[float] = None
+    path: Optional[PathForecast] = None
+    visual_zones: tuple[str, ...] = ()      # resolved by the compiler
+    adversarial: Optional[AdversarialReview] = None
 
     def to_management_handoff(self) -> dict:
         """Hand to the position/management engine. It owns everything after fill."""
@@ -507,8 +732,10 @@ def compile_signal(
     def refuse(reason: str, by_compiler: bool = True) -> Refusal:
         return Refusal(reason, read, brief.as_of_utc, by_compiler)
 
-    if read.setup is Setup.NO_SETUP or read.direction == "NONE":
-        return refuse("analyst: NO_SETUP", by_compiler=False)
+    # THE VERDICT IS `action`, never a family label. Old reads spell refusal
+    # with direction="NONE"; the new contract spells it action="NO_TRADE".
+    if read.is_no_trade():
+        return refuse("analyst: NO_TRADE", by_compiler=False)
 
     if brief.tick_age_s > thresholds.max_tick_age_s:
         return refuse(f"stale tick ({brief.tick_age_s:.0f}s) — quote not trusted")
@@ -548,12 +775,16 @@ def compile_signal(
         (long and brief.context.trend_direction == "UP")
         or (not long and brief.context.trend_direction == "DOWN")
     )
+    # The family filed is the DESK'S post-hoc classification, never the model's
+    # own constraint. Route advisories are advisory; the key just needs to be
+    # stable so a router row can target a family cohort at all.
+    effective_setup = classify_family(read)
     # NOTE: named `route_verdict`, not `verdict`. It previously shared the name
     # with the expectancy verdict computed below, which silently rebound it and
     # made the final `router_advisories=verdict.advisories` an AttributeError on
     # EVERY signal that got that far — i.e. the compiler could never emit one.
     route_verdict = route({
-        "setup": read.setup.value,
+        "setup": effective_setup.value,
         "trend_health": brief.context.trend_health,
         "trend_direction_vs_trade": "WITH" if with_trend else "AGAINST",
         "session": brief.session,
@@ -614,9 +845,12 @@ def compile_signal(
     # EXPECTANCY GATE. A 1.2R trade at a measured 60% hit rate is +0.26R and is
     # taken; a 3R trade at 20% is -0.20R and is not. Reward-to-risk alone can
     # decide neither, and using it as the gate discarded positive-value trades.
+    # Novelty enters as an epistemic datum: HIGH novelty widens the cold-start
+    # prior (see opportunity.ev_gate) — a measured uncertainty charge, not a ban.
     ev_verdict = ev_gate(rr_tp2, cost_r, read.mechanism_name, cohorts,
                          fallback_min_rr=thresholds.fallback_min_rr,
-                         min_ev_r=thresholds.min_ev_r)
+                         min_ev_r=thresholds.min_ev_r,
+                         novelty_level=read.novelty)
     if not ev_verdict.take:
         return refuse(f"expectancy gate: {ev_verdict.reason}")
 
@@ -636,9 +870,24 @@ def compile_signal(
             f"price ran {drift_r:.2f}R from the trigger at {origin:.2f} — do not chase"
         )
 
+    # ---- The new contract's money fields. An ACTIONABLE read is a thesis, and
+    # thesis discipline means a stated path and a structured adversarial case.
+    # This gate runs LAST so a cheap geometry/refusal verdict keeps priority;
+    # it exists to make the analyst degenerate to refusal instead of drifting
+    # into confident prose without the beliefs the desk resolves forward.
+    if read.adversarial is None or not read.adversarial.is_complete():
+        return refuse("ACTIONABLE read missing its adversarial case")
+    if read.path is None or not read.path.is_complete():
+        return refuse("ACTIONABLE read missing its path forecast")
+
+    # ---- Visual regions -> price zones. The model names meaning; the compiler
+    # locates it. A region carrying an invented price is dropped, never priced.
+    visual_zones = tuple(
+        z for z in (resolve_region(brief, r) for r in read.visual_regions) if z)
+
     return CompiledSignal(
         direction="LONG" if long else "SHORT",
-        setup=read.setup,
+        setup=effective_setup,
         entry=round(entry, 2),
         stop=round(stop, 2),
         tp1=round(tp1, 2),
@@ -659,6 +908,14 @@ def compile_signal(
         why_not=read.why_not,
         invalidation=read.invalidation,
         brief_as_of=brief.as_of_utc,
+        mechanism_name=read.mechanism_name,
+        setup_tag=read.setup_tag,
+        novelty=read.novelty,
+        entry_intent=read.entry_intent,
+        expected_holding_hours=read.expected_holding_hours or read.path.expected_holding_hours,
+        path=read.path,
+        visual_zones=visual_zones,
+        adversarial=read.adversarial,
     )
 
 

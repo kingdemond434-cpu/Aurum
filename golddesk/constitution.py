@@ -135,8 +135,25 @@ REGISTRY: list[Restriction] = [
                 "evidence-based, and demotes itself when evidence weakens"),
     Restriction("entry.novel_shadow", "analyst:ANALYST_SYSTEM", Kind.DISCRETIONARY,
                 "sizing of NOVEL mechanisms before they have history",
-                "exploration/validation boundary; its forgone value MUST be "
-                "measured or it becomes permanent conservatism"),
+                "ABOLISHED (see entry.novelty_uncertainty). The desk no longer "
+                "files reads into fixed families, and a novel mechanism is no "
+                "longer shadowed until it earns visibility. Novelty is now a "
+                "reported uncertainty state (novelty LOW/MEDIUM/HIGH), routed "
+                "through a registered, demotable cold-start charge instead of a "
+                "blanket ban. Entry kept as REMOVED so old ledger rows stay "
+                "attributable",
+                status=Status.REMOVED, review_days=30),
+    Restriction("entry.novelty_uncertainty", "opportunity:ev_gate",
+                Kind.DISCRETIONARY,
+                "a HIGH-novelty mechanism meeting a slightly wider cold-start "
+                "prior while it has no resolved history",
+                "novelty IS uncertainty: the honest response to 'I have not "
+                "seen this' is a modest, transparent widening of the cold-start "
+                "prior, never a ban. It applies only on the fallback path, "
+                "dies the moment the mechanism's cohort exists, is measured on "
+                "the refusal ledger's forward paths, and demotes like any "
+                "restriction if the evidence says it costs more than it saves",
+                review_days=14),
     Restriction("reentry.policy", "policies:ReentryPolicy.evaluate", Kind.DISCRETIONARY,
                 "repeat entries in the prior direction while its context lives",
                 "prevents revenge re-entry; every parameter is a hypothesis"),
@@ -426,8 +443,10 @@ def measure(rows: Sequence[dict], reason_to_id: Optional[dict] = None,
 
 DEFAULT_REASON_MAP = {
     "analyst: NO_SETUP": "analyst.no_setup",
+    "analyst: NO_TRADE": "analyst.no_setup",
     "expectancy gate": "entry.expectancy_gate",
     "no resolved history": "entry.fallback_min_rr",
+    "novelty": "entry.novelty_uncertainty",
     "inverted": "entry.geometry",
     "unconfirmed level": "entry.geometry",
     "spread": "entry.spread_fraction",

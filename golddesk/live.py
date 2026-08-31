@@ -46,7 +46,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Sequence
 
-from .analyst import CompiledSignal, Refusal, Setup, Thresholds, compile_signal
+from .analyst import CompiledSignal, Refusal, Thresholds, compile_signal
 from .costs import CostModel
 from .features import Bar, StructureState, atr, classify, session_of, swings
 from .hypothesis import HypothesisBook
@@ -655,6 +655,20 @@ class LiveDesk:
             except Exception as e:                    # noqa: BLE001
                 log.warning("specialist accountability skipped at %s: %s", ts, e)
 
+        # SELF-FEEDBACK, from the desk's OWN resolved ledger: mechanism
+        # cohorts, refusal blind spots, confidence calibration, novelty
+        # resolution. Only stable evidence (min cohort size) becomes memory;
+        # nothing here can refuse. Rendering it in is a vaccination against
+        # the very mechanism-first world: if peaks-of-order die in forward
+        # time, the next call carries that fact.
+        try:
+            from .lessons import build_lessons
+            lesson_block = build_lessons(ledger_rows)
+            if lesson_block:
+                brief = replace(brief, blocks=tuple(brief.blocks) + (lesson_block,))
+        except Exception as e:                         # evidence cannot halt trading
+            log.warning("lessons block skipped at %s: %s", ts, e)
+
         try:
             imgs = self._render_charts(bars, i)
         except AnalystError as e:
@@ -673,11 +687,14 @@ class LiveDesk:
             log.warning("analyst unavailable at %s: %s", ts, e)
             return
 
-        if pr.read.setup is Setup.NO_SETUP:
+        if pr.read.is_no_trade():
+            verdict = "NO_TRADE" if pr.read.action == "NO_TRADE" else "NO_SETUP"
             self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL, "MODEL",
-                         {"setup": "NO_SETUP", "analyst_read": pr.read.model_dump(),
+                         {"setup": pr.read.setup.value, "action": pr.read.action,
+                          "novelty": pr.read.novelty,
+                          "analyst_read": pr.read.model_dump(),
                           "vision": self.vision.value, "charts_sent": len(imgs),
-                          **pr.stamp()}, "analyst: NO_SETUP", "LONG", brief.atr)
+                          **pr.stamp()}, f"analyst: {verdict}", "LONG", brief.atr)
             return
 
         # Re-entry gate applies ONLY to a proposal repeating the prior trade's
@@ -880,8 +897,16 @@ class LiveDesk:
         mid_name = {15: "M15", 30: "M30", 60: "H1", 120: "H2", 240: "H4",
                     360: "H6", 480: "H8", 720: "H12", 1440: "D1"}.get(
             mid_min, f"{mid_min}min")
+        # SYNCHRONIZED MULTI-ZOOM. The prompt promises "several images, including
+        # multiple synchronized zooms of the SAME timeframe" — so the pack must
+        # deliver exactly that: a close zoom for wick character and body shape,
+        # a wider window at the same resolution for where price sits in its
+        # range, then the aggregated higher timeframes for context. This is the
+        # whole point of the multi-zoom autopsy: the analyst reads shape at 4
+        # resolutions on every wake and the factorial decides if it helps.
         for label, factor, n in ((f"{hname}-context", fac, 90),
                                  (f"{mid_name}-context", mid, 90),
+                                 (f"{self.tf}-zoom", 1, 48),
                                  (f"{self.tf}-entry", 1, 120)):
             if factor < 1:
                 continue
@@ -1037,13 +1062,42 @@ class LiveDesk:
             verb = "sized" if sizing_binds else "would size"
             size_line = (f"\n`SIZE   ` {verb} {alloc.risk_r:.2f}R"
                          + ("" if sizing_binds else " (advisory — risking 1R)"))
+        # THE MODEL'S STATED BELIEFS, printed only when it stated any. These are
+        # forward-calibrated: the ledger resolves them against what happens and
+        # the analyst's own probabilities become its scorecard.
+        p = sig.path
+        path_line = ""
+        if p is not None:
+            bits = []
+            if p.p_plus_1r is not None:
+                bits.append(f"+1R-before-SL {p.p_plus_1r:.0%}")
+            if p.p_minus_1r_first is not None:
+                bits.append(f"SL-first {p.p_minus_1r_first:.0%}")
+            if p.expected_r is not None:
+                bits.append(f"E[r] {p.expected_r:+.2f}R")
+            if p.expected_mfe_r is not None:
+                bits.append(f"E[MFE] {p.expected_mfe_r:.2f}R")
+            if p.expected_mae_r is not None:
+                bits.append(f"E[MAE] {p.expected_mae_r:.2f}R")
+            hold = sig.expected_holding_hours
+            if hold:
+                bits.append(f"hold~{hold:.0f}h")
+            if bits:
+                path_line = "\n`PATH   ` " + " · ".join(bits) + "  _(belief — resolved in ledger)_"
+        vision_line = ""
+        if sig.visual_zones:
+            vision_line = "\n`VISION ` " + "; ".join(sig.visual_zones[:3])
+        meta = f"conf {sig.confidence}/5 · cost {sig.cost_r:.3f}R · breakeven {sig.breakeven_win_rate:.0%}"
+        if sig.novelty and sig.novelty != "LOW":
+            meta += f" · novelty {sig.novelty}"
+        if sig.expected_holding_hours:
+            meta += f" · horizon ~{sig.expected_holding_hours:.0f}h"
         self._notify(
             f"*ENTRY {sig.direction} {brief.symbol}*\n"
             f"`entry  {sig.entry:.2f}`\n`SL     {sig.stop:.2f}`  ({sig.risk:.2f} risk)\n"
             f"`TP1    {sig.tp1:.2f}`\n`TP2    {sig.tp2:.2f}`  ({sig.rr_tp2:.2f}R net)"
-            f"{how}{size_line}{risk_line}\n"
-            f"conf {sig.confidence}/5 · cost {sig.cost_r:.3f}R · "
-            f"breakeven {sig.breakeven_win_rate:.0%}\n\n{sig.read}\n\n"
+            f"{how}{size_line}{risk_line}{path_line}{vision_line}\n"
+            f"{meta}\n\n{sig.read}\n\n"
             f"*Why:* {sig.why}\n*Against:* {sig.why_not}\n*Invalid if:* {sig.invalidation}")
         # THE PICTURE A HUMAN ACTS ON. The text carries the numbers; the chart
         # shows where they sit. This is the Telegram product, drawn from the

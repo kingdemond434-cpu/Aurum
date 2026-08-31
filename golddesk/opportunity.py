@@ -149,12 +149,19 @@ class EVVerdict:
 def ev_gate(rr: float, cost_r: float, mechanism: str,
             cohorts: Optional[dict[str, CohortStat]] = None,
             *, fallback_min_rr: float = 1.5,
-            min_ev_r: float = 0.0) -> EVVerdict:
+            min_ev_r: float = 0.0,
+            novelty_level: Literal["LOW", "MEDIUM", "HIGH"] = "LOW") -> EVVerdict:
     """Take when expected value is positive. Frequency follows from that.
 
     `min_ev_r` is the only economic bar: a trade must add expected value after
     costs. It is NOT a selectivity dial — raising it to look disciplined is
     exactly the behaviour the objective forbids.
+
+    `novelty_level` is an epistemic datum, not a quality judgement. HIGH novelty
+    means the desk is more ignorant, so the cold-start prior widens slightly
+    (see `entry.novelty_uncertainty`). It is a modest, registered, DEMOTABLE
+    charge that dies the moment this mechanism has its own cohort — never a ban,
+    and never applied on the measured-cohort path.
     """
     stat = (cohorts or {}).get(mechanism)
     if stat is not None and stat.n > 0:
@@ -162,9 +169,10 @@ def ev_gate(rr: float, cost_r: float, mechanism: str,
         take = ev > min_ev_r
         note = ("" if stat.informative else
                 f" (thin cohort n={stat.n}, shrunk toward prior)")
+        nov = "" if novelty_level == "LOW" else f" (novelty {novelty_level})"
         return EVVerdict(take, ev, stat.hit_rate_shrunk, "COHORT",
                          f"EV {ev:+.3f}R at measured hit {stat.hit_rate_shrunk:.0%} "
-                         f"on {stat.n} resolved{note}")
+                         f"on {stat.n} resolved{note}{nov}")
 
     # COLD-START UNCERTAINTY PRIOR — not a quality standard.
     #
@@ -172,21 +180,32 @@ def ev_gate(rr: float, cost_r: float, mechanism: str,
     # falls back to requiring enough asymmetry that a below-average hit rate
     # still pays. That is a defensible response to ignorance and an indefensible
     # permanent rule: it blocks real trades on the strength of a guess, and the
-    # trades it blocks are exactly the NOVEL mechanisms the desk needs history
+    # trades it blocks are exactly the novel mechanisms the desk needs history
     # for. It is therefore a DISCRETIONARY restriction like any other, it is
     # registered, its false-negative cost is measured from the refusal ledger's
     # forward paths, and it stops blocking the moment that measurement says it
     # costs more than it saves.
     from .constitution import is_enforcing
     breakeven = (1.0 + cost_r) / (1.0 + rr)
-    meets = rr >= fallback_min_rr
+    req = fallback_min_rr
     enforcing = is_enforcing("entry.fallback_min_rr")
+    # NOVELTY = UNCERTAINTY: a HIGH-novelty mechanism gets a slightly wider
+    # cold-start prior until its own cohort exists. Registered as a separate,
+    # demotable restriction so its cost can be measured against everything
+    # else's. Never blocks a HIGH-novelty read that clears the (higher) bar.
+    nov_adj = {"LOW": 1.0, "MEDIUM": 1.10, "HIGH": 1.25}
+    nov_surcharge, nov_text = 1.0, ""
+    if is_enforcing("entry.novelty_uncertainty"):
+        nov_surcharge = nov_adj.get(novelty_level, 1.0)
+        if nov_surcharge > 1.0:
+            nov_text = f"; {novelty_level} novelty widened prior to {req * nov_surcharge:.2f}"
+    meets = rr >= req * nov_surcharge
     take = meets or not enforcing
     stance = "prior ENFORCING" if enforcing else "prior DEMOTED (advisory only)"
     return EVVerdict(take, float("nan"), breakeven, "COLD_START_PRIOR",
                      f"no resolved history for {mechanism!r}; "
-                     f"R:R {rr:.2f} vs cold-start prior {fallback_min_rr:.2f} "
-                     f"(breakeven hit {breakeven:.0%}) — {stance}")
+                     f"R:R {rr:.2f} vs cold-start prior {req:.2f}"
+                     f"{nov_text} (breakeven hit {breakeven:.0%}) — {stance}")
 
 
 # --------------------------------------------------------------------------

@@ -62,7 +62,7 @@ from typing import Literal, Optional, Sequence
 
 from pydantic import BaseModel, Field, ValidationError
 
-from .analyst import (AnalystRead, CompiledSignal, MarketBrief, Refusal, Setup,
+from .analyst import (AnalystRead, CompiledSignal, MarketBrief, Refusal,
                       Thresholds, compile_signal)
 from .chart import Chart
 from .costs import CostModel
@@ -259,9 +259,9 @@ def compile_universe(brief: MarketBrief, universe: AnalystUniverse,
     """
     out: list[Candidate] = []
     for k, read in enumerate(universe.candidates):
-        if read.setup is Setup.NO_SETUP or read.direction == "NONE":
+        if read.is_no_trade():
             out.append(Candidate(k, read, None, None, None, "n/a",
-                                 "GATED", "analyst returned NO_SETUP in a candidate slot"))
+                                 "GATED", "analyst returned NO_TRADE in a candidate slot"))
             continue
         res = compile_signal(brief, read, thresholds, cost_model, cohorts)
         if isinstance(res, Refusal):
@@ -569,7 +569,7 @@ def as_universe(read: AnalystRead) -> AnalystUniverse:
     is NOT is evidence that only one opportunity existed, and the survey text
     says so rather than letting a downstream reader infer it.
     """
-    cands = [] if read.setup is Setup.NO_SETUP else [read]
+    cands = [] if read.is_no_trade() else [read]
     return AnalystUniverse(
         candidates=cands,
         had_more=False,
