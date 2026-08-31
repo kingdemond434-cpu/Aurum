@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "UNMEASURED \u2014 18 wake(s) in 12h, under 20",
+          "detail": "UNMEASURED \u2014 17 wake(s) in 12h, under 20",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 0s of 600s budget (0%) over 17 reads",
+          "detail": "median 0s of 600s budget (0%) over 16 reads",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "22 sleeve(s) accruing, published 0.1h ago",
+          "detail": "33 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "last run exited 1 \u2014 the desk itself is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 7.7h old",
+          "detail": "newest row 7.9h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "last written 7.7h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "detail": "last written 7.9h ago \u2014 the desk is not persisting state, so a crash loses everything since",
           "ok": false
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "19157MB free",
+          "detail": "19136MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 460 min ago, after a boot 59.2h ago",
+          "detail": "wrote 475 min ago, after a boot 59.4h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "081f1f7b1c94",
-  "generated_utc": "2026-08-31T12:30:14.168332+00:00",
+  "generated_utc": "2026-08-31T12:45:08.115033+00:00",
   "last_row_utc": "2026-08-31T04:48:22.329095+00:00",
   "ledger_rows": 377,
   "total_faults": 10
