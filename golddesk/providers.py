@@ -30,6 +30,33 @@ from .chart import Chart
 log = logging.getLogger(__name__)
 
 
+def strict_output_schema(schema: dict) -> dict:
+    """Return the fully recursive strict-JSON transport form OpenAI requires.
+
+    Pydantic marks only non-default fields required and nested models live in
+    `$defs`. Structured Outputs requires *every* object at every depth to deny
+    extra keys and list every property as required (nullable fields remain
+    nullable). Applying this only at the universe root caused the live GPT
+    analyst to fail before inference as soon as PathForecast was added.
+    """
+    out = json.loads(json.dumps(schema))
+
+    def visit(node):
+        if isinstance(node, dict):
+            props = node.get("properties")
+            if isinstance(props, dict):
+                node["additionalProperties"] = False
+                node["required"] = list(props)
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for value in node:
+                visit(value)
+
+    visit(out)
+    return out
+
+
 @dataclass(frozen=True)
 class ProviderRead:
     read: AnalystRead
@@ -1133,16 +1160,17 @@ class CodexCliAnalyst(AnalystProvider):
         return output_path.read_text(encoding="utf-8")
 
     def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
+        output_schema = strict_output_schema(ANALYST_SCHEMA)
         prompt = (ANALYST_SYSTEM + "\n\nReturn only JSON conforming to this "
                   "schema; do not inspect files or run commands:\n" +
-                  json.dumps(ANALYST_SCHEMA, sort_keys=True) + "\n\n" +
+                  json.dumps(output_schema, sort_keys=True) + "\n\n" +
                   brief.render())
         t0 = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="aurum-codex-analyst-") as td:
             root = Path(td)
             schema_path = root / "analyst-schema.json"
             output_path = root / "answer.json"
-            schema_path.write_text(json.dumps(ANALYST_SCHEMA), encoding="utf-8")
+            schema_path.write_text(json.dumps(output_schema), encoding="utf-8")
             images = []
             for i, chart in enumerate(charts):
                 path = root / f"chart-{i}-{chart.timeframe}.png"
@@ -1171,8 +1199,7 @@ class CodexCliAnalyst(AnalystProvider):
         # runtime model still applies those defaults on ordinary JSON, but the
         # transport rejects that schema before inference. Keep the canonical
         # schema unchanged and make a strict transport copy here.
-        output_schema = json.loads(json.dumps(UNIVERSE_SCHEMA))
-        output_schema["required"] = list(output_schema["properties"])
+        output_schema = strict_output_schema(UNIVERSE_SCHEMA)
         prompt = (universe_system(ANALYST_SYSTEM, MAX_CANDIDATES) +
                   "\n\nReturn only JSON conforming to this schema; do not inspect "
                   "files or run commands:\n" +

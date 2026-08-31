@@ -7,7 +7,7 @@ import pytest
 from golddesk.analyst import Context, MarketBrief
 from golddesk.providers import (
     AnalystError, AnalystProvider, AnalystQuotaError, CodexCliAnalyst, FailoverAnalyst,
-    ProviderRead, build_provider_chain)
+    ProviderRead, build_provider_chain, strict_output_schema)
 
 VALID = {
     "setup": "NO_SETUP", "direction": "NONE", "entry_ref": "NONE",
@@ -181,3 +181,9 @@ def test_codex_universe_and_failover_retain_every_candidate_and_chart():
     assert stamp.usage["charts_sent"] == 1
     assert "--image" in seen["argv"]
     assert set(seen["schema"]["required"]) == set(seen["schema"]["properties"])
+    read_def = seen["schema"]["$defs"]["AnalystRead"]
+    assert read_def["additionalProperties"] is False
+    assert set(read_def["required"]) == set(read_def["properties"])
+    path_def = seen["schema"]["$defs"]["PathForecast"]
+    assert path_def["additionalProperties"] is False
+    assert set(path_def["required"]) == set(path_def["properties"])

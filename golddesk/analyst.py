@@ -538,6 +538,12 @@ numbers win.
   reward for writing a clever case — state it, or refuse.
 - Otherwise: stop_ref and target_ref must be real level ids. entry_ref may be \
   "MARKET" if the setup is live now.
+- entry_intent is executable, not descriptive. MARKET requires entry_ref MARKET. \
+  BREAK means the latest CLOSED bar has already accepted beyond entry_ref in the \
+  proposed direction. PULLBACK means price has returned to entry_ref and the \
+  latest close remains on the thesis side. LIMIT is a genuinely resting order, \
+  not shorthand for entering now. Never call a future "if this breaks/reclaims" \
+  condition ACTIONABLE before that condition has happened.
 - LONG means stop below entry, target above. SHORT is the mirror. The compiler \
   checks this and rejects an inverted structure, so get it right.
 
@@ -785,6 +791,38 @@ def compile_signal(
         return refuse("refs point at an unconfirmed level")
 
     long = read.direction == "LONG"
+
+    # ENTRY TIMING IS PART OF THE THESIS. A directional idea can be right and
+    # the immediate entry wrong; the losing 2026-08-31 short did exactly this,
+    # entering a dense floor while its own prose said liquidation existed only
+    # IF that floor broke. The compiler therefore validates the declared intent
+    # against the frozen closed bar. It does not invent a trigger or direction.
+    if read.entry_intent == "MARKET" and read.entry_ref != "MARKET":
+        return refuse("entry timing: MARKET intent requires entry_ref MARKET; "
+                      "a cited level is a conditional/resting entry")
+    if read.entry_intent != "MARKET" and read.entry_ref == "MARKET":
+        return refuse(f"entry timing: {read.entry_intent} intent requires a level ref")
+    intent_level = None if read.entry_ref == "MARKET" else brief.level(read.entry_ref)
+    if read.entry_intent in ("BREAK", "PULLBACK"):
+        if intent_level is None or not intent_level.confirmed:
+            return refuse(f"entry timing: {read.entry_intent} level is unusable")
+        close = brief.bar_close
+        if close is None:
+            return refuse(f"entry timing: {read.entry_intent} needs the frozen bar close")
+        if read.entry_intent == "BREAK":
+            accepted = close > intent_level.price if long else close < intent_level.price
+            if not accepted:
+                side = "above" if long else "below"
+                return refuse(f"entry timing: BREAK not confirmed — closed {close:.2f}, "
+                              f"needs acceptance {side} {intent_level.id}")
+        else:
+            tolerance = max(brief.spread * 2.0, brief.atr * 0.15)
+            touched = abs(brief.mid - intent_level.price) <= tolerance
+            held = close >= intent_level.price if long else close <= intent_level.price
+            if not touched or not held:
+                side = "above" if long else "below"
+                return refuse(f"entry timing: PULLBACK not confirmed — needs a live retest "
+                              f"and closed hold {side} {intent_level.id}")
 
     # ---- Empirical cohort gate. Runs BEFORE geometry: no amount of clean
     # arithmetic rescues a cohort the evidence says is negative, and the model's

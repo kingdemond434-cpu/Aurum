@@ -205,6 +205,24 @@ class TestStrictGate:
         assert isinstance(out, Refusal)
         assert "hierarchical bias" in out.reason
 
+    def test_market_intent_cannot_enter_a_conditional_level_immediately(self):
+        out = compile_signal(
+            _strong_brief(),
+            _read(entry_ref="L2", entry_intent="MARKET", tp2_ref="L1",
+                  path=_path(), adversarial=_adv()))
+        assert isinstance(out, Refusal)
+        assert "MARKET intent requires entry_ref MARKET" in out.reason
+
+    def test_break_intent_waits_for_a_closed_break(self):
+        from dataclasses import replace
+        brief = replace(_strong_brief(), bar_close=3300.0)
+        out = compile_signal(
+            brief,
+            _read(entry_ref="L1", entry_intent="BREAK", tp2_ref="L1",
+                  path=_path(), adversarial=_adv()))
+        assert isinstance(out, Refusal)
+        assert "BREAK not confirmed" in out.reason
+
 
 # ---------------------------------------------------------------------------
 # 5. Visual-region resolution
