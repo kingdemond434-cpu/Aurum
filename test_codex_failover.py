@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -99,6 +100,14 @@ def test_primary_effort_does_not_change_the_pinned_fallback_effort():
     assert chain.providers[1].effort == "high"
 
 
+def test_claude_timeout_hands_control_to_configured_gpt_fallback():
+    chain = build_provider_chain("claudecode:claude-opus-5",
+                                 ("codex:gpt-5.6-sol",),
+                                 fallback_kw={"effort": "high"}, effort="high")
+    assert chain.providers[0].timeout_s == 240.0
+    assert chain.providers[0].retry_on_timeout is False
+
+
 def test_claude_stays_primary_numeric_while_gpt_retains_fallback_charts():
     class RecordingGood(Good):
         def __init__(self, name):
@@ -118,3 +127,27 @@ def test_claude_stays_primary_numeric_while_gpt_retains_fallback_charts():
     result = FailoverAnalyst([broken, gpt]).read(brief(), charts)
     assert result.provider == "codex"
     assert gpt.seen == charts
+
+
+def test_codex_universe_and_failover_retain_every_candidate_and_chart():
+    from golddesk.universe import AnalystUniverse
+
+    payload = {"candidates": [VALID, VALID], "survey": "both directions checked",
+               "dominant_context": "range edge", "had_more": False}
+    seen = {}
+
+    def runner(argv, prompt):
+        seen["argv"], seen["prompt"] = argv, prompt
+        return json.dumps(payload)
+
+    gpt = CodexCliAnalyst(runner=runner)
+    broken = Broken()
+    broken.name = "claudecode"
+    chart = SimpleNamespace(timeframe="M15", png=b"chart")
+    stamp, universe = FailoverAnalyst([broken, gpt]).survey(brief(), (chart,))
+
+    assert isinstance(universe, AnalystUniverse)
+    assert len(universe.candidates) == 2
+    assert stamp.provider == "codex"
+    assert stamp.usage["charts_sent"] == 1
+    assert "--image" in seen["argv"]

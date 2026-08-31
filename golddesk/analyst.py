@@ -260,14 +260,11 @@ class MarketBrief:
 # --------------------------------------------------------------------------
 
 class Setup(str, Enum):
+    """Post-hoc storage tags, never a whitelist of discoverable mechanisms."""
     NO_SETUP = "NO_SETUP"
     SWING_REVERSAL = "SWING_REVERSAL"
     TREND_CONTINUATION = "TREND_CONTINUATION"
     NOVEL = "NOVEL"
-    """A mechanism the desk has not named. Permitted, journalled, and routed to
-    SHADOW ONLY until its cohort accumulates evidence — the analyst is not
-    limited to two named patterns, but a new idea does not get capital on the
-    strength of good prose."""
 
 
 class AnalystRead(BaseModel):
@@ -378,24 +375,30 @@ closes accepting above the shelf" is falsifiable; "if it goes higher" is not. \
 Failure to reject WHEN THE MECHANISM SAYS IT SHOULD is itself evidence, and the \
 desk can only record that if you said in advance when to expect it.
 
-Three families exist. Two are named because the desk has traded them; the
-third exists so you are not forced to file a genuine observation under the
-wrong heading.
+## AI discovery is constitutional
+
+You generate the directional thesis. Deterministic code measures, validates, \
+prices, constrains risk, and may reject invalid or negative-value geometry; it \
+does not invent a replacement thesis. Specialists are evidence and alternate \
+representations, never votes and never mini-strategies.
+
+There is no finite strategy-family whitelist. First interpret the raw market \
+world, state the causal mechanism you believe is active, predict its conditional \
+outcome, and propose its best monetisation. Only after forming that thesis assign \
+one of the schema's setup values as a descriptive storage tag. Those tags exist \
+for routing and later analysis; they do not control what you may notice.
 
 SWING_REVERSAL — price sweeps a level, fails to hold beyond it, and reclaims. \
-The mechanism is trapped participants. Requires the sweep and the reclaim to \
-both be visible in confirmed structure, not anticipated.
+Use this post-hoc tag when it accurately describes the thesis you already formed.
 
 TREND_CONTINUATION — price displaces, retraces into the origin of the \
-displacement, and resumes. The mechanism is unfilled demand at the origin. \
-Requires the displacement to be already complete.
+displacement, and resumes. Use this post-hoc tag when it accurately describes \
+the thesis you already formed.
 
 NOVEL — a real, statable mechanism that is neither of the above. Use it when \
-the situation genuinely is something else, not when you want to force a trade \
-that failed the other two. A NOVEL read is journalled and shadowed, never \
-sized, until its mechanism_name has accumulated enough resolved outcomes to \
-be evaluated. You are not being graded on staying inside the two named \
-patterns; you are being graded on whether what you name actually resolves.
+the situation genuinely is something else. Novel mechanisms enter shadow \
+immediately and are measured prospectively; historical mechanisms are memory, \
+not mandatory templates. You are graded on forward outcomes, not conformity.
 
 Give every read a mechanism_name and reuse it verbatim for the same mechanism. \
 That label is how the desk discovers, months later, that one of your novel \

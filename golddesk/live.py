@@ -1789,22 +1789,11 @@ class LiveDesk:
                 f"quiet: it is not declining trades, it is not seeing them. "
                 f"Every bar from here is journalled BLIND until it answers.")
 
-    #: Whether an unreachable analyst falls back to the rule-based reader.
-    #:
-    #: ON, because BLIND is the one output guaranteed to be worth nothing. When
-    #: the CLI's login expires the desk currently books BLIND on every bar and
-    #: the operator -- who places every trade by hand on this advisory desk --
-    #: gets silence, which is indistinguishable from a quiet market. A
-    #: rule-based read is worse evidence than a model read and enormously better
-    #: than none.
-    #:
-    #: WHAT KEEPS IT HONEST. The read is stamped provider="deterministic",
-    #: model="rules-v1", degraded=True with the reason, so it never enters the
-    #: analyst's cohort, never counts as an answered wake in analyst_health, and
-    #: is separable in every later analysis. The operator is told once when the
-    #: desk drops to it and once when the analyst returns. It is a FALLBACK, not
-    #: a substitution: the moment the analyst answers, this stops being used.
-    fallback_when_blind: bool = True
+    #: Experimental baseline only; OFF on every production desk. Deterministic
+    #: code may validate and reject an AI proposal but constitutionally cannot
+    #: invent the directional thesis that replaces one. Claude -> GPT is the
+    #: production availability chain; if both fail, record BLIND honestly.
+    fallback_when_blind: bool = False
 
     def _fallback_read(self, brief, stage: str,
                        err: Exception) -> Optional[ProviderRead]:

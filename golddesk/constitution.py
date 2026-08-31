@@ -46,7 +46,22 @@ from typing import Any, Literal, Optional, Sequence
 
 log = logging.getLogger(__name__)
 
-CONSTITUTION_VERSION = "const-2026-08-14-a"
+CONSTITUTION_VERSION = "const-2026-08-31-ai-discovery"
+
+# This boundary is architecture, not prompt flavour. Quant machinery measures
+# and constrains; AI discovers and decides. Tests and operator-facing audits can
+# import this exact declaration instead of inferring the system's purpose from a
+# changing collection of setup tags.
+AI_DISCOVERY_CONSTITUTION = (
+    "AI is the primary source of thesis generation.",
+    "No finite strategy-family whitelist controls what the AI may notice.",
+    "Deterministic code never invents a directional thesis.",
+    "Specialists provide evidence, not votes or trades.",
+    "The compiler may reject invalid or unprofitable proposals but never replaces the AI thesis.",
+    "Historical mechanisms are memory, not mandatory templates.",
+    "Novel mechanisms enter shadow immediately and are measured prospectively.",
+    "AI performance is judged by forward outcomes, not taxonomy conformity.",
+)
 
 
 class Kind(str, Enum):

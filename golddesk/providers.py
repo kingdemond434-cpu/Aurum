@@ -402,10 +402,11 @@ class ClaudeCodeAnalyst(AnalystProvider):
     def __init__(self, model: str = "claude-opus-5", binary: str = "claude",
                  timeout_s: float = DEFAULT_TIMEOUT_S, cwd: Optional[str] = None,
                  billed: Optional[bool] = None, runner: Any = None,
-                 effort: Optional[str] = None):
+                 effort: Optional[str] = None, retry_on_timeout: bool = True):
         self.model, self.binary, self.timeout_s = model, binary, timeout_s
         self.cwd, self._billed, self._runner = cwd, billed, runner
         self.effort = effort
+        self.retry_on_timeout = retry_on_timeout
 
     #: Operator's declaration of how the CLI is paid for: "api" or
     #: "subscription". Set in the environment, because it is a property of the
@@ -778,6 +779,10 @@ class ClaudeCodeAnalyst(AnalystProvider):
                 f"log in once interactively, or use provider 'anthropic:' and "
                 f"pay per token.") from e
         except subprocess.TimeoutExpired as e:
+            if not self.retry_on_timeout:
+                raise AnalystError(
+                    f"claude timed out after {budget}s; handing the frozen read "
+                    "to the configured analyst failover") from e
             # DEGRADE, DO NOT SURRENDER. A timeout discards the whole read and books a refusal,
             # so the desk's answer to "this one was slow" was to learn nothing from that bar at
             # all -- 6 of the last 10 failures on 2026-08-26 were exactly this. A completed
@@ -1131,6 +1136,43 @@ class CodexCliAnalyst(AnalystProvider):
                              "source": "codex exec --ephemeral",
                              "reasoning_effort": self.effort})
 
+    def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
+        """Enumerate the opportunity set through ChatGPT, retaining chart input."""
+        from .universe import (MAX_CANDIDATES, AnalystUniverse, UNIVERSE_SCHEMA,
+                               universe_system)
+        prompt = (universe_system(ANALYST_SYSTEM, MAX_CANDIDATES) +
+                  "\n\nReturn only JSON conforming to this schema; do not inspect "
+                  "files or run commands:\n" +
+                  json.dumps(UNIVERSE_SCHEMA, sort_keys=True) + "\n\n" +
+                  brief.render())
+        t0 = time.monotonic()
+        with tempfile.TemporaryDirectory(prefix="aurum-codex-universe-") as td:
+            root = Path(td)
+            schema_path = root / "universe-schema.json"
+            output_path = root / "answer.json"
+            schema_path.write_text(json.dumps(UNIVERSE_SCHEMA), encoding="utf-8")
+            images = []
+            for i, chart in enumerate(charts):
+                path = root / f"chart-{i}-{chart.timeframe}.png"
+                path.write_bytes(chart.png)
+                images.append(str(path))
+            text = self._invoke(
+                self._argv(str(root), str(schema_path), str(output_path), images),
+                prompt, output_path)
+        dt = (time.monotonic() - t0) * 1000
+        try:
+            uni = AnalystUniverse.model_validate_json(text.strip())
+        except Exception as e:                            # noqa: BLE001
+            raise AnalystError(f"codex returned text that is not a valid "
+                               f"AnalystUniverse: {e}; got {text[:300]!r}") from e
+        head = uni.candidates[0] if uni.candidates else None
+        return ProviderRead(head, self.name, self.model, dt, {
+            "billed": self.billed(), "cost_usd": None,
+            "source": "codex exec --ephemeral",
+            "reasoning_effort": self.effort,
+            "candidates": len(uni.candidates),
+        }), uni
+
 
 class FailoverAnalyst(AnalystProvider):
     """Try providers in order; a valid refusal never triggers failover.
@@ -1170,6 +1212,31 @@ class FailoverAnalyst(AnalystProvider):
                 log.warning("analyst provider %s failed; trying fallback: %s",
                             provider.name, e)
         raise AnalystError("all analyst providers failed: " + " | ".join(errors))
+
+    def survey(self, brief: MarketBrief, charts: Sequence[Chart] = ()):
+        """Fail over the full universe call, not a wrapped single-read call."""
+        errors = []
+        for i, provider in enumerate(self.providers):
+            try:
+                provider_charts = () if provider.name == "claudecode" else charts
+                result, universe = provider.survey(brief, provider_charts)
+                usage = dict(result.usage)
+                usage.update({
+                    "failover_index": i,
+                    "failover_attempts": [p.name for p in self.providers[:i + 1]],
+                    "failover_errors": errors,
+                    "charts_available": len(charts),
+                    "charts_sent": len(provider_charts),
+                })
+                stamp = ProviderRead(result.read, result.provider, result.model,
+                                     result.latency_ms, usage)
+                return stamp, universe
+            except Exception as e:                       # noqa: BLE001
+                errors.append(f"{provider.name}: {type(e).__name__}: {e}")
+                log.warning("analyst provider %s survey failed; trying fallback: %s",
+                            provider.name, e)
+        raise AnalystError("all analyst providers failed survey: " +
+                           " | ".join(errors))
 
     def choose_option(self, system: str, prompt: str,
                       option_ids: Sequence[str]) -> str:
@@ -1219,7 +1286,15 @@ def build_provider(spec: str, **kw) -> AnalystProvider:
 def build_provider_chain(primary_spec: str, fallback_specs: Sequence[str] = (),
                          fallback_kw: Optional[dict] = None,
                          **kw) -> AnalystProvider:
-    providers = [build_provider(primary_spec, **kw)]
+    primary_kw = dict(kw)
+    primary_name = primary_spec.partition(":")[0]
+    if fallback_specs and primary_name == "claudecode":
+        # With a second model available, Claude's old 600s + 240s internal
+        # degraded retry is no longer the failover. Hand the unchanged brief
+        # to GPT while the M15 state is still current.
+        primary_kw.setdefault("timeout_s", 240.0)
+        primary_kw.setdefault("retry_on_timeout", False)
+    providers = [build_provider(primary_spec, **primary_kw)]
     providers.extend(build_provider(spec, **(fallback_kw or {}))
                      for spec in fallback_specs if spec)
     return providers[0] if len(providers) == 1 else FailoverAnalyst(providers)

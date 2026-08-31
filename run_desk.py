@@ -379,8 +379,9 @@ def main() -> int:
                          "(pair it with a low wake rate), it needs `claude` run "
                          "once first to log in, and it reads numeric context. "
                          "With the default Codex fallback, synchronized charts "
-                         "are retained for GPT if Claude fails. 'deterministic' is the "
-                         "rule-based baseline and costs nothing at all.")
+                         "are retained for GPT if Claude fails. 'deterministic' is an "
+                         "evaluation-only baseline; it must not replace a production "
+                         "directional thesis.")
     ap.add_argument("--fallback-provider", default="codex:gpt-5.6-sol",
                     help="local ChatGPT fallback used only after a real primary "
                          "failure; defaults to gpt-5.6-sol at high reasoning")
