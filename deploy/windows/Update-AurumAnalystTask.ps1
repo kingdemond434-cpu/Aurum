@@ -11,7 +11,8 @@
 [CmdletBinding()]
 param(
     [string] $DeskRoot = "C:\Aurum",
-    [string] $TaskName = "AurumSignalDesk"
+    [string] $TaskName = "AurumSignalDesk",
+    [switch] $GptPrimary
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,15 +20,18 @@ $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 $supervisor = Join-Path $DeskRoot "deploy\windows\Start-AurumDesk.ps1"
 if (-not (Test-Path $supervisor)) { throw "supervisor not found at $supervisor" }
 
-$deskArgs = @(
-    "--shadow",
-    "--provider", "claudecode:claude-opus-5",
-    "--fallback-provider", "codex:gpt-5.6-sol",
-    "--expect-broker", "Fusion",
-    "--wake-every-bar",
-    "--universe",
-    "--effort", "high"
-)
+$deskArgs = @("--shadow")
+if ($GptPrimary) {
+    # Temporary operating mode for a known Claude subscription cooldown. Do
+    # not probe a provider that has already reported its reset time on every
+    # bar; route directly to the healthy subscription instead.
+    $deskArgs += @("--provider", "codex:gpt-5.6-sol")
+} else {
+    $deskArgs += @("--provider", "claudecode:claude-opus-5",
+                   "--fallback-provider", "codex:gpt-5.6-sol")
+}
+$deskArgs += @("--expect-broker", "Fusion", "--wake-every-bar",
+               "--universe", "--effort", "high")
 $joined = $deskArgs -join "|"
 $arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden " +
              "-File `"$supervisor`" -DeskRoot `"$DeskRoot`" -DeskArgsJoined `"$joined`""
@@ -40,7 +44,11 @@ Set-ScheduledTask -TaskName $TaskName -Action $action | Out-Null
 
 $installed = Get-ScheduledTask -TaskName $TaskName
 $actual = $installed.Actions[0].Arguments
-if ($actual -notmatch [regex]::Escape("--fallback-provider|codex:gpt-5.6-sol")) {
+if ($GptPrimary) {
+    if ($actual -notmatch [regex]::Escape("--provider|codex:gpt-5.6-sol")) {
+        throw "task action did not retain GPT as primary"
+    }
+} elseif ($actual -notmatch [regex]::Escape("--fallback-provider|codex:gpt-5.6-sol")) {
     throw "task action did not retain the GPT fallback"
 }
 if ($actual -match [regex]::Escape("--numeric-only")) {
@@ -49,6 +57,10 @@ if ($actual -match [regex]::Escape("--numeric-only")) {
 
 Write-Host "UPDATED: $TaskName"
 Write-Host "  principal : $($installed.Principal.UserId) / $($installed.Principal.LogonType)"
-Write-Host "  analyst   : Claude subscription -> ChatGPT subscription (gpt-5.6-sol, high)"
+Write-Host ("  analyst   : " + $(if ($GptPrimary) {
+    "ChatGPT subscription primary (gpt-5.6-sol, high)"
+} else {
+    "Claude subscription -> ChatGPT subscription (gpt-5.6-sol, high)"
+}))
 Write-Host "  charts    : enabled for GPT failover"
 Write-Host "  mode      : shadow (no order placement)"
