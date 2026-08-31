@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "60/67 wakes (90%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "62/69 wakes (90%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 18h ago",
+          "detail": "updated 19h ago",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "34 sleeve(s) accruing, published 0.1h ago",
+          "detail": "34 sleeve(s) accruing, published 0.4h ago",
           "ok": true
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -108,7 +108,7 @@
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / ^Cattached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
+          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: ^Cattached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
           "ok": false
         },
         {
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "183 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "185 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.3h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18709MB free",
+          "detail": "18694MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 69.4h ago",
+          "detail": "wrote 0 min ago, after a boot 69.6h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 183,
-      "error": "codex exited 1: not here at all.\n  EVIDENCE ONLY \u2014 no vote on direction, never overrides structure.\n\nPRIOR CLOSED DECISIONS MOST LIKE THIS STATE\nCausal only: 5 shown from 30 eligible; mean -0.73R, wins 1/5. Similarity is context matching, not a vote or forecast.\n  2026-08-31T04:30  SHORT TREND_CONTINUATION -1.00R  similarity 0.50  mechanism=broken-shelf-liquidation\n  2026-08-31T04:30  LONG  SWING_",
-      "last": "2026-08-31T22:35:01.936186+00:00",
+      "count": 185,
+      "error": "codex exited 1: l.\n  EVIDENCE ONLY \u2014 no vote on direction, never overrides structure.\n\nPRIOR CLOSED DECISIONS MOST LIKE THIS STATE\nCausal only: 5 shown from 21 eligible; mean +0.24R, wins 2/5. Similarity is context matching, not a vote or forecast.\n  2026-08-30T22:15  SHORT NOVEL              +0.25R  similarity 0.83  mechanism=broken-shelf-retest-supply\n  2026-08-30T22:15  LONG  NOVEL             ",
+      "last": "2026-08-31T22:30:04.175329+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "4dfdd0174745",
-  "generated_utc": "2026-08-31T22:45:40.947119+00:00",
-  "last_row_utc": "2026-08-31T22:35:01.936186+00:00",
-  "ledger_rows": 969,
+  "generated_utc": "2026-08-31T23:00:06.449540+00:00",
+  "last_row_utc": "2026-08-31T22:30:04.175329+00:00",
+  "ledger_rows": 987,
   "total_faults": 11
 }
