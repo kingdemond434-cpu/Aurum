@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "47/54 wakes (87%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "49/56 wakes (88%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "20.6% recent vs 14.2% prior",
+          "detail": "23.3% recent vs 13.0% prior",
           "ok": true
         },
         {
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "169 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "171 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18861MB free",
+          "detail": "18852MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 5 min ago, after a boot 64.9h ago",
+          "detail": "wrote 5 min ago, after a boot 65.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 169,
-      "error": "codex exited 1: ity 0.83  mechanism=range-cap-lower-high-fade\n  2026-08-28T12:15  LONG  NOVEL              -1.02R  similarity 0.83  mechanism=single-rejection-high-stop-run\n  2026-08-28T11:45  SHORT NOVEL              +0.18R  similarity 0.83  mechanism=broken-swing-low-trapped-longs-short\n  2026-08-28T11:30  SHORT SWING_REVERSAL     +0.21R  similarity 0.83  mechanism=swept-high-failed-reclaim-shor",
-      "last": "2026-08-31T18:00:00.390269+00:00",
+      "count": 171,
+      "error": "codex exited 1: ity 0.50  mechanism=range-cap-lower-high-fade\n  2026-08-28T12:15  LONG  NOVEL              -1.02R  similarity 0.50  mechanism=single-rejection-high-stop-run\n  2026-08-28T11:45  SHORT NOVEL              +0.18R  similarity 0.50  mechanism=broken-swing-low-trapped-longs-short\n  2026-08-28T11:30  SHORT SWING_REVERSAL     +0.21R  similarity 0.50  mechanism=swept-high-failed-reclaim-shor",
+      "last": "2026-08-31T18:20:00.893114+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "1104fecf062a",
-  "generated_utc": "2026-08-31T18:15:01.513550+00:00",
-  "last_row_utc": "2026-08-31T18:00:00.390269+00:00",
-  "ledger_rows": 835,
+  "generated_utc": "2026-08-31T18:33:34.785193+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 861,
   "total_faults": 10
 }
