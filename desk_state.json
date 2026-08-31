@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "51/58 wakes (88%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "53/60 wakes (88%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "24.4% recent vs 12.6% prior",
+          "detail": "28.6% recent vs 11.6% prior",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 14h ago",
+          "detail": "updated 18h ago",
           "ok": true
         },
         {
@@ -56,11 +56,11 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "34 sleeve(s) accruing, published 0.1h ago",
-          "ok": true
+          "detail": "published 3.2h ago against a 15-minute sync. The numbers in it describe 2026-08-31T18:49:30+00:00, NOT now \u2014 and they stay plausible while stale, which is why nothing else notices.",
+          "ok": false
         }
       ],
-      "faults": 1
+      "faults": 2
     },
     "read_quality": {
       "axis": "read_quality",
@@ -88,17 +88,17 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267014",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -108,36 +108,36 @@
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
+          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / ^Cattached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
           "ok": false
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "enabled, last result 267014",
-          "ok": true
-        },
-        {
-          "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "detail": "last run exited 1 \u2014 the whole learning loop is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: 2026-08-29T20:41:08+00:00   quant pull failed (128): hint: Diverging branches can't be fast-forwarded, you need to either: / Traceback (most recent call last): / return io.open(self, mode, buffering, encoding, errors, newline) / PermissionError: [Errno 13] Permission denied: 'C:\\\\Aurum\\\\state\\\\cycle.log'",
           "ok": false
         },
         {
-          "check": "MT5-Shadow",
+          "check": "MT5-ShadowSync",
           "detail": "enabled, last result 267009",
           "ok": true
         },
         {
+          "check": "MT5-Shadow",
+          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
+        },
+        {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "Aurum-Sync",
-          "detail": "ran and delivered NOTHING (exit 3) \u2014 carries quant's findings into this desk's inbox works, but its SOURCE was absent. UNMEASURED, not 'no new findings'; the break is upstream.",
+          "detail": "enabled, last result 267014",
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     },
     "wiring": {
       "axis": "wiring",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "173 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "176 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.3h old",
+          "detail": "newest row 3.3h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.1h ago",
+          "detail": "written 3.1h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18828MB free",
+          "detail": "18767MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 5 min ago, after a boot 65.4h ago",
+          "detail": "wrote 188 min ago, after a boot 68.7h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 173,
-      "error": "codex exited 1: TION -0.03R  similarity 0.83  mechanism=failed-rebound-buyer-release\n  2026-08-31T12:30  SHORT NOVEL              -1.01R  similarity 0.83  mechanism=cluster-floor-liquidation\n  2026-08-31T12:30  LONG  NOVEL              -1.01R  similarity 0.83  mechanism=prior-high-defender-squeeze\n  2026-08-28T12:30  LONG  TREND_CONTINUATION +0.11R  similarity 0.83  mechanism=origin-shelf-demand-l",
-      "last": "2026-08-31T18:15:07.405765+00:00",
+      "count": 176,
+      "error": "codex exited 1: RT TREND_CONTINUATION -1.00R  similarity 0.67  mechanism=broken-shelf-liquidation\n  2026-08-31T04:30  LONG  SWING_REVERSAL     -1.02R  similarity 0.67  mechanism=failed-shelf-breakdown-trap\n  2026-08-30T23:15  LONG  SWING_REVERSAL     -0.67R  similarity 0.33  mechanism=shelf-break-stop-run\n  2026-08-30T22:45  LONG  SWING_REVERSAL     +0.04R  similarity 0.33  mechanism=swing-low-rec",
+      "last": "2026-08-31T18:45:01.297300+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -235,9 +235,9 @@
       "last": "2026-08-31T12:45:03.301588+00:00"
     }
   },
-  "deployed_commit": "1104fecf062a",
-  "generated_utc": "2026-08-31T18:45:10.979718+00:00",
-  "last_row_utc": "2026-08-31T18:15:07.405765+00:00",
-  "ledger_rows": 871,
-  "total_faults": 10
+  "deployed_commit": "4dfdd0174745",
+  "generated_utc": "2026-08-31T22:05:24.595652+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 906,
+  "total_faults": 12
 }
