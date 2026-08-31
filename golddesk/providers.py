@@ -1066,6 +1066,7 @@ class CodexCliAnalyst(AnalystProvider):
     def _argv(self, workspace: str, schema_path: str, output_path: str,
               image_paths: Sequence[str] = ()) -> list[str]:
         argv = [self.binary, "exec", "--ephemeral", "--sandbox", "read-only",
+                "--disable", "code_mode_host",
                 "--skip-git-repo-check", "--cd", workspace,
                 "--output-schema", schema_path,
                 "--output-last-message", output_path,
@@ -1100,8 +1101,9 @@ class CodexCliAnalyst(AnalystProvider):
         except subprocess.TimeoutExpired as e:
             raise AnalystError(f"codex timed out after {self.timeout_s}s") from e
         if p.returncode != 0:
+            detail = p.stderr or p.stdout or ""
             raise AnalystError(f"codex exited {p.returncode}: "
-                               f"{(p.stderr or p.stdout)[:300]}")
+                               f"{detail[-1500:]}")
         if not output_path.exists():
             raise AnalystError("codex completed without writing its final message")
         return output_path.read_text(encoding="utf-8")
@@ -1140,17 +1142,24 @@ class CodexCliAnalyst(AnalystProvider):
         """Enumerate the opportunity set through ChatGPT, retaining chart input."""
         from .universe import (MAX_CANDIDATES, AnalystUniverse, UNIVERSE_SCHEMA,
                                universe_system)
+        # OpenAI strict structured outputs require every declared property to
+        # appear in `required`, even when Pydantic gives it a default. The
+        # runtime model still applies those defaults on ordinary JSON, but the
+        # transport rejects that schema before inference. Keep the canonical
+        # schema unchanged and make a strict transport copy here.
+        output_schema = json.loads(json.dumps(UNIVERSE_SCHEMA))
+        output_schema["required"] = list(output_schema["properties"])
         prompt = (universe_system(ANALYST_SYSTEM, MAX_CANDIDATES) +
                   "\n\nReturn only JSON conforming to this schema; do not inspect "
                   "files or run commands:\n" +
-                  json.dumps(UNIVERSE_SCHEMA, sort_keys=True) + "\n\n" +
+                  json.dumps(output_schema, sort_keys=True) + "\n\n" +
                   brief.render())
         t0 = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="aurum-codex-universe-") as td:
             root = Path(td)
             schema_path = root / "universe-schema.json"
             output_path = root / "answer.json"
-            schema_path.write_text(json.dumps(UNIVERSE_SCHEMA), encoding="utf-8")
+            schema_path.write_text(json.dumps(output_schema), encoding="utf-8")
             images = []
             for i, chart in enumerate(charts):
                 path = root / f"chart-{i}-{chart.timeframe}.png"

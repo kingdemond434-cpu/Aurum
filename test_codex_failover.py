@@ -138,6 +138,8 @@ def test_codex_universe_and_failover_retain_every_candidate_and_chart():
 
     def runner(argv, prompt):
         seen["argv"], seen["prompt"] = argv, prompt
+        schema_path = argv[argv.index("--output-schema") + 1]
+        seen["schema"] = json.loads(open(schema_path, encoding="utf-8").read())
         return json.dumps(payload)
 
     gpt = CodexCliAnalyst(runner=runner)
@@ -151,3 +153,4 @@ def test_codex_universe_and_failover_retain_every_candidate_and_chart():
     assert stamp.provider == "codex"
     assert stamp.usage["charts_sent"] == 1
     assert "--image" in seen["argv"]
+    assert set(seen["schema"]["required"]) == set(seen["schema"]["properties"])
