@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "UNMEASURED \u2014 19 wake(s) in 12h, under 20",
+          "detail": "UNMEASURED \u2014 18 wake(s) in 12h, under 20",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 0s of 600s budget (0%) over 18 reads",
+          "detail": "median 0s of 600s budget (0%) over 17 reads",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "20.5% recent vs 11.2% prior",
+          "detail": "20.0% recent vs 12.0% prior",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "33 sleeve(s) accruing, published 0.2h ago",
+          "detail": "22 sleeve(s) accruing, published 0.1h ago",
           "ok": true
         }
       ],
@@ -103,7 +103,7 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 7.4h old",
+          "detail": "newest row 7.7h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "last written 7.4h ago \u2014 the desk is not persisting state, so a crash loses everything since",
+          "detail": "last written 7.7h ago \u2014 the desk is not persisting state, so a crash loses everything since",
           "ok": false
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "19170MB free",
+          "detail": "19157MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 445 min ago, after a boot 58.9h ago",
+          "detail": "wrote 460 min ago, after a boot 59.2h ago",
           "ok": true
         }
       ],
@@ -245,7 +245,7 @@
     }
   },
   "deployed_commit": "081f1f7b1c94",
-  "generated_utc": "2026-08-31T12:18:41.307117+00:00",
+  "generated_utc": "2026-08-31T12:30:14.168332+00:00",
   "last_row_utc": "2026-08-31T04:48:22.329095+00:00",
   "ledger_rows": 377,
   "total_faults": 10
