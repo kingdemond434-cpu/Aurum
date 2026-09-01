@@ -33,8 +33,10 @@ from .analyst import (AnalystRead, CompiledSignal, Context, Level, LevelKind,
                       MarketBrief, PathForecast, AdversarialReview, Refusal,
                       Setup, Thresholds, compile_signal)
 from .costs import CostModel
-from .features import (Bar, StructureState, atr, classify, session_of, swings,
-                       visible_swings)
+from .candle_character import block as candle_character_block
+from .features import (Bar, StructureState, atr, classify,
+                       prior_trading_day_window, session_of, session_window,
+                       swings, visible_swings)
 from .ledger import (Bar as LBar, DecisionKind, DecisionRecord, Ledger, PathRef,
                      resolve_forward)
 from .notify import Sink, build_sink
@@ -170,11 +172,19 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                             LevelKind.SWING_HIGH if s.kind == "HIGH" else LevelKind.SWING_LOW,
                             round(s.price, 2), timeframe, i - s.idx, True))
         n += 1
-    day = bars[max(0, i - 24):i + 1]
+    day = session_window(bars, i)
     levels.append(Level(f"L{n}", LevelKind.SESSION_HIGH,
                         round(max(b.high for b in day), 2), timeframe, 0, True)); n += 1
     levels.append(Level(f"L{n}", LevelKind.SESSION_LOW,
                         round(min(b.low for b in day), 2), timeframe, 0, True)); n += 1
+    prior_day = prior_trading_day_window(bars, i)
+    if prior_day:
+        levels.append(Level(f"L{n}", LevelKind.PRIOR_DAY_HIGH,
+                            round(max(b.high for b in prior_day), 2),
+                            timeframe, 0, True)); n += 1
+        levels.append(Level(f"L{n}", LevelKind.PRIOR_DAY_LOW,
+                            round(min(b.low for b in prior_day), 2),
+                            timeframe, 0, True)); n += 1
     if st.trigger_price is not None:
         levels.append(Level(f"L{n}", LevelKind.RECLAIM, round(st.trigger_price, 2),
                             timeframe, 0, True))
@@ -194,7 +204,11 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
         pullback_depth=st.pullback_depth,
         distance_from_session_extreme=st.distance_from_session_extreme)
 
-    blocks = tuple([crossmarket] if crossmarket else ())
+    blocks = []
+    if crossmarket:
+        blocks.append(crossmarket)
+    blocks.append(candle_character_block(bars[:i + 1]))
+    blocks = tuple(blocks)
     return MarketBrief(
         symbol=symbol, as_of_utc=bars[i].ts, session=session_of(bars[i].ts),
         bid=round(bid, 2), ask=round(ask, 2), spread=round(ask - bid, 2),

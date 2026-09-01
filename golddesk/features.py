@@ -15,6 +15,7 @@ import statistics
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional, Sequence
+from zoneinfo import ZoneInfo
 
 
 @dataclass(frozen=True)
@@ -270,7 +271,7 @@ def classify(bars: Sequence[Bar], i: int, sw: Sequence[Swing],
             else "MEDIUM" if depth <= 0.618 else "DEEP")
 
     # --- distance from the session's own extremes
-    day = [x for x in bars[max(0, i - 24):i + 1]]
+    day = session_window(bars, i)
     d_hi, d_lo = max(x.high for x in day), min(x.low for x in day)
     span = max(d_hi - d_lo, 1e-9)
     near = min(abs(b.close - d_hi), abs(b.close - d_lo)) / span
@@ -281,14 +282,47 @@ def classify(bars: Sequence[Bar], i: int, sw: Sequence[Swing],
 
 
 def session_of(ts: datetime) -> str:
-    """UTC -> session. D1 bars open 21:00 UTC (17:00 NY rollover)."""
-    h = ts.astimezone(timezone.utc).hour
-    if 21 <= h or h < 6:
+    """Market session using civil clocks, including London/NY DST.
+
+    Fixed UTC cut-offs are wrong for half the year and especially wrong during
+    the two DST-mismatch weeks. Gold's trading-day rollover follows New York;
+    London and New York opens follow their own local clocks.
+    """
+    london = ts.astimezone(ZoneInfo("Europe/London"))
+    ny = ts.astimezone(ZoneInfo("America/New_York"))
+    lh = london.hour + london.minute / 60
+    nh = ny.hour + ny.minute / 60
+    if 16 <= nh < 17:
+        return "ROLLOVER"
+    if nh >= 17 or lh < 8:
         return "ASIA"
-    if 6 <= h < 12:
+    if nh < 8:
         return "LONDON"
-    if 12 <= h < 16:
+    if lh < 16:
         return "OVERLAP"
-    if 16 <= h < 20:
-        return "NY"
-    return "ROLLOVER"
+    return "NY"
+
+
+def session_window(bars: Sequence[Bar], i: int) -> list[Bar]:
+    """Closed bars belonging to the current contiguous market session."""
+    label = session_of(bars[i].ts)
+    start = i
+    while start > 0 and session_of(bars[start - 1].ts) == label:
+        start -= 1
+    return list(bars[start:i + 1])
+
+
+def trading_day_key(ts: datetime):
+    """New-York rollover trading date (17:00 belongs to the next day)."""
+    ny = ts.astimezone(ZoneInfo("America/New_York"))
+    return (ny.date() + timedelta(days=1)) if ny.hour >= 17 else ny.date()
+
+
+def prior_trading_day_window(bars: Sequence[Bar], i: int) -> list[Bar]:
+    current = trading_day_key(bars[i].ts)
+    prior_keys = [trading_day_key(b.ts) for b in bars[:i + 1]
+                  if trading_day_key(b.ts) < current]
+    if not prior_keys:
+        return []
+    prior = max(prior_keys)
+    return [b for b in bars[:i + 1] if trading_day_key(b.ts) == prior]

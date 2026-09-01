@@ -327,6 +327,7 @@ class LiveDesk:
                  concurrency_ceiling: Optional[int] = None,
                  universe_mode: bool = False,
                  crossmarket_provider=None,
+                 crossmarket_refresh: timedelta = timedelta(minutes=5),
                  calendar=None,
                  regime_history=None,
                  entry_urgency: float = 0.5,
@@ -452,6 +453,7 @@ class LiveDesk:
         # figure does not move between two M15 bars, and pulling four symbols on
         # every wake would put four network round trips in front of a decision.
         self.crossmarket_provider = crossmarket_provider
+        self.crossmarket_refresh = crossmarket_refresh
         self._crossmarket: Optional[str] = None
         self._crossmarket_at = None
         #: Size of the brief handed to the analyst on the last wake. Recorded on
@@ -799,7 +801,7 @@ class LiveDesk:
         self._refresh_crossmarket(ts)
 
         live_tape = []
-        for name in ("M1", "M5", "M15", "H1", "H4"):
+        for name in ("M1", "M5", "M15", "M30", "H1", "H4", "D1"):
             frame = self._live_frames.get(name) or ()
             if not frame:
                 continue
@@ -1013,7 +1015,7 @@ class LiveDesk:
         if self.crossmarket_provider is None:
             return
         if (self._crossmarket_at is not None
-                and now - self._crossmarket_at < self.macro_refresh):
+                and now - self._crossmarket_at < self.crossmarket_refresh):
             return
         self._crossmarket_at = now
         try:

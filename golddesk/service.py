@@ -802,6 +802,16 @@ class DeskService:
         # Keep only the freshest world. Analysing every intermediate close
         # after a slow response is not frequency; it is trading the past.
         old = self._analysis_pending
+        # M5 is the guaranteed subscription-backed cadence. A secondary M1
+        # arm exists to catch structural events between M5 closes, but an M1
+        # packet that has not yet run its local watcher must never evict a known
+        # M5 decision packet while GPT is busy. Fresh M5 may replace queued M1;
+        # queued M5 remains protected from later M1 noise.
+        if (old is not None and old[2] == self.cfg.entry_tf
+                and tf != self.cfg.entry_tf):
+            log.info("analyst busy; kept pending %s packet over secondary %s %s",
+                     old[2], tf, ts)
+            return
         self._analysis_pending = item
         if old is None:
             log.info("analyst busy; retained latest %s packet at %s", tf, ts)

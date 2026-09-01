@@ -150,7 +150,8 @@ def test_it_is_refreshed_on_a_cadence_not_every_wake():
     trips buying a number that cannot move that fast."""
     live = (Path(__file__).parent / "golddesk" / "live.py").read_text(encoding="utf-8")
     i = live.index("def _refresh_crossmarket")
-    assert "self.macro_refresh" in live[i:i + 900]
+    assert "self.crossmarket_refresh" in live[i:i + 900]
+    assert "timedelta(minutes=5)" in live
 
 
 def test_the_module_cannot_influence_a_decision():
