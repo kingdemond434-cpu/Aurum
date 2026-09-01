@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "62/74 wakes (84%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "58/76 wakes (76%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 124s of 600s budget (21%) over 12 reads",
+          "detail": "median 121s of 600s budget (20%) over 18 reads",
           "ok": true
         },
         {
@@ -31,17 +31,17 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "25.0% recent vs 12.4% prior",
+          "detail": "24.4% recent vs 12.4% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "28/191 (15%) \u2014 'deferred: portfolio heat: daily loss -3.19R at limit'. The lever, whatever the rate is doing.",
+          "detail": "29/196 (15%) \u2014 'universe: 0 enumerated, 0 selected'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
           "check": "capture",
-          "detail": "81% of MFE kept over 12 winners",
+          "detail": "80% of MFE kept over 14 winners",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "32 sleeve(s) accruing, published 0.2h ago",
+          "detail": "36 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -67,17 +67,17 @@
       "checks": [
         {
           "check": "calibration",
-          "detail": "UNMEASURED \u2014 0 high-confidence and 23 low-confidence resolved trades; the comparison needs both tails",
+          "detail": "UNMEASURED \u2014 0 high-confidence and 24 low-confidence resolved trades; the comparison needs both tails",
           "ok": true
         },
         {
           "check": "edge",
-          "detail": "-0.321R per trade over 33 resolved (11 wins). The reads are arriving and resolving NEGATIVE \u2014 every gate downstream is tuning noise.",
+          "detail": "-0.251R per trade over 35 resolved (13 wins). The reads are arriving and resolving NEGATIVE \u2014 every gate downstream is tuning noise.",
           "ok": false
         },
         {
           "check": "selection",
-          "detail": "taken trades resolve -0.32R while refusals reached +0.46R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
+          "detail": "taken trades resolve -0.25R while refusals reached +0.46R at best. The analyst is selecting AGAINST itself \u2014 that is not caution, it is being wrong in a direction no win-rate shows.",
           "ok": false
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -137,14 +137,14 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
       "checks": [
         {
           "check": "cohorts",
-          "detail": "31 mechanism(s) loaded from 33 resolved trades",
+          "detail": "31 mechanism(s) loaded from 35 resolved trades",
           "ok": true
         },
         {
@@ -154,7 +154,7 @@
         },
         {
           "check": "excursion",
-          "detail": "7 of 32 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
+          "detail": "7 of 34 closed trades carry ZERO observations and zero excursion SINCE the observer started recording \u2014 its state is being lost again, and stop placement is unanswerable for those. (1 earlier trade(s) predate the fix and are not counted \u2014 their excursion is gone for good)",
           "ok": false
         },
         {
@@ -169,8 +169,8 @@
         },
         {
           "check": "macro",
-          "detail": "3/20 briefs carried macro",
-          "ok": true
+          "detail": "all 20 recent briefs carried MACRO UNMEASURED \u2014 the analyst is reading gold with no DXY, no real yield and no risk proxy",
+          "ok": false
         },
         {
           "check": "spread profile",
@@ -179,8 +179,8 @@
         },
         {
           "check": "notifications",
-          "detail": "75 of 113 sends FAILED \u2014 the desk is deciding into a void and its silence looks like a quiet market",
-          "ok": false
+          "detail": "123 delivered, 121 failed",
+          "ok": true
         },
         {
           "check": "checkpoint",
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18750MB free",
+          "detail": "18751MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote -0 min ago, after a boot 75.9h ago",
+          "detail": "wrote 1 min ago, after a boot 76.2h ago",
           "ok": true
         }
       ],
@@ -219,8 +219,8 @@
       "last": "2026-09-01T05:12:13.594051+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 98,
-      "last": "2026-09-01T05:13:50.818786+00:00"
+      "count": 103,
+      "last": "2026-09-01T05:28:44.594869+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -231,13 +231,13 @@
       "last": null
     },
     "SIGNAL": {
-      "count": 38,
-      "last": "2026-09-01T05:07:10.000326+00:00"
+      "count": 39,
+      "last": "2026-09-01T05:23:08.430928+00:00"
     }
   },
-  "deployed_commit": "7cb44382f907",
-  "generated_utc": "2026-09-01T05:15:42.399978+00:00",
-  "last_row_utc": null,
-  "ledger_rows": 1438,
-  "total_faults": 11
+  "deployed_commit": "39daaf950b12",
+  "generated_utc": "2026-09-01T05:31:16.805573+00:00",
+  "last_row_utc": "2026-09-01T05:28:44.594869+00:00",
+  "ledger_rows": 1478,
+  "total_faults": 10
 }
