@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "130/151 wakes (86%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "130/157 wakes (83%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 123s of 600s budget (20%) over 21 reads",
+          "detail": "median 123s of 600s budget (20%) over 27 reads",
           "ok": true
         },
         {
@@ -31,12 +31,12 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "22.2% recent vs 13.4% prior",
+          "detail": "20.7% recent vs 13.4% prior",
           "ok": true
         },
         {
           "check": "dominant gate",
-          "detail": "29/199 (15%) \u2014 'universe: 0 enumerated, 0 selected'. The lever, whatever the rate is doing.",
+          "detail": "30/205 (15%) \u2014 'universe: 0 enumerated, 0 selected'. The lever, whatever the rate is doing.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "33 sleeve(s) accruing, published 0.2h ago",
+          "detail": "30 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -118,8 +118,8 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.0h old",
+          "detail": "newest row 0.1h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18500MB free",
+          "detail": "18489MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 80.1h ago",
+          "detail": "wrote 1 min ago, after a boot 80.4h ago",
           "ok": true
         }
       ],
@@ -219,8 +219,8 @@
       "last": "2026-09-01T05:12:13.594051+00:00"
     },
     "REFUSAL_MODEL": {
-      "count": 106,
-      "last": "2026-09-01T09:27:16.465662+00:00"
+      "count": 112,
+      "last": "2026-09-01T09:41:54.752766+00:00"
     },
     "REFUSAL_RISK": {
       "count": 0,
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T09:30:12.885214+00:00",
+  "generated_utc": "2026-09-01T09:45:05.905029+00:00",
   "last_row_utc": null,
-  "ledger_rows": 2293,
-  "total_faults": 10
+  "ledger_rows": 2347,
+  "total_faults": 11
 }
