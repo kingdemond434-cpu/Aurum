@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "108/128 wakes (84%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "127/147 wakes (86%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 28h ago",
+          "detail": "updated 29h ago",
           "ok": true
         },
         {
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "286 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "305 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18548MB free",
+          "detail": "18518MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 79.4h ago",
+          "detail": "wrote 1 min ago, after a boot 79.9h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 286,
-      "error": "codex exited 1: MING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.01R; close=EXIT_THESIS\n  2026-08-31T12:30  SHORT NOVEL              -1.01R  similarity 0.67  mechanism=cluster-floor-liquidation\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management",
-      "last": "2026-09-01T08:44:13.962487+00:00",
+      "count": 305,
+      "error": "codex exited 1: ge-extreme-stop-run\n    PAID; MFE +0.81R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-30T13:47  LONG  NOVEL              -1.02R  similarity 0.83  mechanism=unpaid-breakdown-sellers-squeeze\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management",
+      "last": "2026-09-01T09:13:03.951779+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T08:45:51.379232+00:00",
-  "last_row_utc": "2026-09-01T08:44:13.962487+00:00",
-  "ledger_rows": 2078,
+  "generated_utc": "2026-09-01T09:15:35.620461+00:00",
+  "last_row_utc": "2026-09-01T09:13:03.951779+00:00",
+  "ledger_rows": 2249,
   "total_faults": 12
 }
