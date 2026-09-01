@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "209/236 wakes (89%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "213/238 wakes (89%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 128s of 600s budget (21%) over 27 reads",
+          "detail": "median 124s of 600s budget (21%) over 25 reads",
           "ok": true
         },
         {
@@ -46,8 +46,8 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 36h ago",
-          "ok": true
+          "detail": "no new findings for 36h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "ok": false
         },
         {
           "check": "survivors",
@@ -56,11 +56,11 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "35 sleeve(s) accruing, published 0.5h ago",
+          "detail": "35 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
-      "faults": 1
+      "faults": 2
     },
     "read_quality": {
       "axis": "read_quality",
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "432 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "437 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.1h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18131MB free",
+          "detail": "18122MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 86.9h ago",
+          "detail": "wrote 2 min ago, after a boot 87.1h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 432,
-      "error": "codex exited 1:   mechanism=failed-shelf-breakdown-trap\n    PAID; MFE +0.32R / MAE +0.00R; close=EXIT_THESIS\n  2026-09-01T05:07  SHORT TREND_CONTINUATION +1.52R  similarity 0.33  mechanism=broken-shelf-liquidation\n    PAID; MFE +2.54R / MAE +0.00R; close=TARGET\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-01T16:04:13.283083+00:00",
+      "count": 437,
+      "error": "codex exited 1: chanism=origin-shelf-demand-long\n    PAID; MFE +0.11R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-30T22:15  SHORT NOVEL              +0.25R  similarity 0.67  mechanism=broken-shelf-retest-supply\n    PAID; MFE +0.25R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-01T16:26:08.273524+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T16:15:00.820167+00:00",
-  "last_row_utc": "2026-09-01T16:04:13.283083+00:00",
-  "ledger_rows": 3491,
-  "total_faults": 11
+  "generated_utc": "2026-09-01T16:30:04.033296+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 3544,
+  "total_faults": 12
 }
