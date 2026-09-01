@@ -51,7 +51,7 @@ from typing import Any, Optional, Sequence
 
 from .features import Bar, atr, classify, swings, visible_swings
 from .feed import FeedConfig, FeedError, LiveFeed, RealMt5Client
-from .ledger import Ledger
+from .ledger import HORIZONS, Ledger, PathRef, resolve_forward
 from .live import ENTRY_TF, HTF, LiveDesk, Vision, _downsample_path
 from .management import BrokerLimits
 from .notify import build_sink
@@ -238,6 +238,7 @@ class DeskService:
                            (v.isoformat() if hasattr(v, "isoformat") else v))
                        for k, v in t.signal.__dict__.items()},
             "opened_idx": t.opened_idx,
+            "origin_tf": t.origin_tf,
             "mechanism_name": t.mechanism_name,
             "entry_context": t.entry_context,
             # THE WHOLE OBSERVER, not two of its fields.
@@ -362,6 +363,7 @@ class DeskService:
             obs.path = restored
             self.desk.open = OpenTrade(
                 pos, sig, raw.get("opened_idx", 0), obs,
+                origin_tf=raw.get("origin_tf", self.cfg.entry_tf),
                 entry_context=raw.get("entry_context") or {},
                 mechanism_name=raw.get("mechanism_name", "unnamed"),
                 mgmt_log=list(raw.get("mgmt_log") or []))
@@ -702,7 +704,84 @@ class DeskService:
         if tf == self.cfg.entry_tf:
             self.state.last_bar_ts = closed.ts.isoformat()
         self.state.bars_processed += 1
+        if tf == self.cfg.entry_tf:
+            self._resolve_pending_decisions()
         self.checkpoint()
+
+    def _resolve_pending_decisions(self) -> None:
+        """Append mechanically observed forward outcomes for live decisions.
+
+        A decision is resolved only after the longest declared horizon has
+        elapsed and from closed M1 broker bars beginning after its actual model
+        completion time. This keeps refusal accountability causal while giving
+        every timeframe arm the same fine-resolution scoreboard.
+        """
+        pending = self.desk.ledger.unresolved()
+        if not pending:
+            return
+        now = datetime.now(timezone.utc)
+        longest = max(delta for _, delta in HORIZONS)
+        eligible = []
+        for row in pending:
+            dec = row.get("decision") or {}
+            if dec.get("outcome_reference_price") is None:
+                continue                         # legacy row: insufficient fact
+            try:
+                t0 = datetime.fromisoformat(str(row["t0"]))
+                if t0.tzinfo is None:
+                    t0 = t0.replace(tzinfo=timezone.utc)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if now >= t0 + longest:
+                eligible.append((row, t0))
+        if not eligible:
+            return
+
+        oldest = min(t0 for _, t0 in eligible)
+        needed = int(max(0.0, (now - oldest).total_seconds()) // 60) + 30
+        try:
+            bars = list(self.feed.bars("M1", min(10000, max(600, needed))))
+        except Exception as e:
+            log.warning("forward outcome resolver could not read M1: %s", e)
+            return
+        if not bars:
+            return
+        for row, t0 in eligible:
+            if bars[-1].ts < t0 + longest:
+                continue
+            path = [b for b in bars if b.ts >= t0]
+            if not path:
+                continue
+            dec = row.get("decision") or {}
+            ref = float(dec["outcome_reference_price"])
+            risk = dec.get("outcome_risk_price")
+            risk = float(risk) if isinstance(risk, (int, float)) and risk > 0 else None
+            declared = str(dec.get("outcome_direction") or "NONE").upper()
+            long_out = resolve_forward(path, t0, ref, "LONG", risk)
+            short_out = resolve_forward(path, t0, ref, "SHORT", risk)
+            if declared == "SHORT":
+                chosen, opposite, resolved_direction = short_out, long_out, "SHORT"
+            elif declared == "LONG":
+                chosen, opposite, resolved_direction = long_out, short_out, "LONG"
+            else:
+                # A genuine NO_TRADE made no directional claim. Its economic
+                # counterfactual is the larger observable opportunity, labelled
+                # explicitly as hindsight rather than credited as a prediction.
+                lv = long_out.best_achievable_r or 0.0
+                sv = short_out.best_achievable_r or 0.0
+                chosen, opposite, resolved_direction = (
+                    (long_out, short_out, "LONG") if lv >= sv
+                    else (short_out, long_out, "SHORT"))
+            self.desk.ledger.append_raw({
+                "kind": "DECISION_OUTCOME", "decision_id": row["decision_id"],
+                "ts": now.isoformat(), "t0": row["t0"],
+                "resolution": "CLOSED_M1_POST_DECISION",
+                "outcome_direction": resolved_direction,
+                "direction_was_hindsight_for_no_trade": declared == "NONE",
+                "path_ref": asdict(PathRef.of(str(row.get("symbol") or self.cfg.symbol),
+                                               "M1", path)),
+                "outcome": asdict(chosen),
+                "opposite_outcome": asdict(opposite)})
 
     def _run_analysis(self, args: tuple, kwargs: dict, tf: str,
                       ts: datetime) -> None:
@@ -755,7 +834,7 @@ class DeskService:
         if self._live_chart_cache and now - self._live_chart_cached_at < 2.0:
             return self._live_chart_cache
         packet: dict[str, list[Bar]] = {}
-        for tf in ("M1", "M5", "M15", "H1", "H4"):
+        for tf in ("M1", "M5", "M15", "M30", "H1", "H4", "D1"):
             try:
                 packet[tf] = self.feed.live_bars(tf, 120)
             except Exception as e:

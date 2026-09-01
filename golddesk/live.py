@@ -217,6 +217,11 @@ class OpenTrade:
     signal: CompiledSignal
     opened_idx: int
     observer: TradeObserver
+    # The timeframe whose structure created this thesis. Other timeframe arms
+    # may observe the world and propose independent opportunities, but they may
+    # not reinterpret this trade's stop/target path or management state using
+    # incompatible bar indexes and swings.
+    origin_tf: str = ENTRY_TF
     partials: list[tuple[float, float]] = field(default_factory=list)
     #: Set once the TP1 partial has been banked, so it fires exactly once per
     #: trade. Distinct from `partials` because the risk-free partial in
@@ -481,6 +486,8 @@ class LiveDesk:
         self._last_state: Optional[StructureState] = None
         self._last_bars: Optional[Sequence[Bar]] = None
         self._last_idx: int = 0
+        self._last_states: dict[str, StructureState] = {}
+        self._last_indices: dict[str, int] = {}
 
     @property
     def tf(self) -> str:
@@ -659,14 +666,15 @@ class LiveDesk:
             self.last_spread = max(0.0, ask - bid)
         exit_px = (bid if bid is not None else price) if long else (
             ask if ask is not None else price)
+        origin_state = self._last_states.get(t.origin_tf, self._last_state)
         if (exit_px <= pos.current_stop) if long else (exit_px >= pos.current_stop):
             r = pos.r_at(pos.current_stop)
             self._close(ts, r, "PROFITABLE_STOP" if r > 0 else "STOP",
-                        self._last_state, Resolution.TICK_OBSERVED, t=t)
+                        origin_state, Resolution.TICK_OBSERVED, t=t)
             return "EXIT_STOP"
         if (exit_px >= t.signal.tp2) if long else (exit_px <= t.signal.tp2):
             self._close(ts, pos.r_at(t.signal.tp2), "TARGET",
-                        self._last_state, Resolution.TICK_OBSERVED, t=t)
+                        origin_state, Resolution.TICK_OBSERVED, t=t)
             return "EXIT_TARGET"
 
         # TP1 PARTIAL BANK.
@@ -704,9 +712,9 @@ class LiveDesk:
         if wake is None:
             return None
         self.stats.observer_wakes += 1
-        if self._last_state is None:
+        if origin_state is None:
             return "WAKE_NO_STATE"           # no closed-bar context yet
-        acted = self._management_step(ts, price, self._last_state,
+        acted = self._management_step(ts, price, origin_state,
                                       source=f"observer:{'+'.join(x.value for x in wake.triggers)}",
                                       wake=wake, t=t)
         return f"WAKE->{acted}"
@@ -733,9 +741,12 @@ class LiveDesk:
         ts = bars[i].ts
         self.risk.roll(ts)
         self._last_state, self._last_bars, self._last_idx = st, bars, i
+        self._last_states[self.tf] = st
+        self._last_indices[self.tf] = i
 
         for t in list(self.open_trades):
-            self._manage(bars, i, st, intrabar, t)
+            if t.origin_tf == self.tf:
+                self._manage(bars, i, st, intrabar, t)
 
         if len(self.open_trades) >= self.max_concurrent():
             # ONE-POSITION CONSTRAINT — registered as risk.one_position and
@@ -891,15 +902,6 @@ class LiveDesk:
         if decision_as_of is not None:
             brief = replace(brief, as_of_utc=datetime.now(timezone.utc))
 
-        if getattr(pr.read, "action", None) == "NO_TRADE" or pr.read.setup is Setup.NO_SETUP:
-            self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL, "MODEL",
-                         {"setup": pr.read.setup.value,
-                          "action": getattr(pr.read, "action", "NO_TRADE"),
-                          "analyst_read": pr.read.model_dump(),
-                          "vision": self.vision.value, "charts_sent": len(imgs),
-                          **pr.stamp()}, "analyst: NO_TRADE", "LONG", brief.atr)
-            return
-
         # Subscription-backed analysts can think for a minute or more. Never
         # compile a MARKET proposal against the fossil quote they started with:
         # refresh first, reprice the same thesis, and only refuse when the move
@@ -934,6 +936,15 @@ class LiveDesk:
             except Exception as e:                    # refresh failure is explicit
                 self._record_blind(bars, i, brief, ts, "post-read quote refresh", e)
                 return
+
+        if getattr(pr.read, "action", None) == "NO_TRADE" or pr.read.setup is Setup.NO_SETUP:
+            self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL, "MODEL",
+                         {"setup": pr.read.setup.value,
+                          "action": getattr(pr.read, "action", "NO_TRADE"),
+                          "analyst_read": pr.read.model_dump(),
+                          "vision": self.vision.value, "charts_sent": len(imgs),
+                          **pr.stamp()}, "analyst: NO_TRADE", "NONE", brief.atr)
+            return
 
         # Re-entry gate applies ONLY to a proposal repeating the prior trade's
         # direction while its context survives. An opposite-direction read is a
@@ -1217,7 +1228,7 @@ class LiveDesk:
         # structure still uses closed bars only. Every chart is synchronized by
         # being fetched in the same decision packet immediately before the call.
         if self._live_frames:
-            required = ("M1", "M5", "M15", "H1", "H4")
+            required = ("M1", "M5", "M15", "M30", "H1", "H4", "D1")
             missing = [label for label in required
                        if len(self._live_frames.get(label) or ()) < 30]
             if missing:
@@ -1379,7 +1390,7 @@ class LiveDesk:
                        1.0, 0.0, opened_at, sig.setup.value)
         obs = TradeObserver(direction=sig.direction, entry=sig.entry, stop=sig.stop,
                             target=sig.tp2, risk_price=sig.risk, opened=opened_at)
-        self.open_trades.append(OpenTrade(pos, sig, i, obs,
+        self.open_trades.append(OpenTrade(pos, sig, i, obs, origin_tf=self.tf,
                               entry_context=dict(brief.context.__dict__)
                               | {"session": brief.session} | self._trend_ctx(brief),
                               mechanism_name=mech,
@@ -1520,8 +1531,9 @@ class LiveDesk:
         self.stats.mgmt_reconsiderations += 1
 
         o = t.observer
+        current_idx = self._last_indices.get(t.origin_tf, t.opened_idx)
         exc = Excursion(o.mfe_r, o.mae_r, t.t_mfe, t.t_mae, pos.r_at(price),
-                        max(0, self._last_idx - t.opened_idx))
+                        max(0, current_idx - t.opened_idx))
         thesis = ThesisState(
             structure_intact=(st.trend_direction == ("UP" if long else "DOWN")),
             trend_health=st.trend_health, volatility_state=st.volatility_state,
@@ -1531,11 +1543,11 @@ class LiveDesk:
             invalidation_touched=False)
         anchors = []
         if st.swing_low:
-            anchors.append(Anchor("A_SL", "SWING_LOW", st.swing_low.price, self.tf, True))
+            anchors.append(Anchor("A_SL", "SWING_LOW", st.swing_low.price, t.origin_tf, True))
         if st.swing_high:
-            anchors.append(Anchor("A_SH", "SWING_HIGH", st.swing_high.price, self.tf, True))
+            anchors.append(Anchor("A_SH", "SWING_HIGH", st.swing_high.price, t.origin_tf, True))
         if st.trigger_price is not None:
-            anchors.append(Anchor("A_TRG", "RECLAIM", st.trigger_price, self.tf, True))
+            anchors.append(Anchor("A_TRG", "RECLAIM", st.trigger_price, t.origin_tf, True))
 
         spread = self.last_spread if self.last_spread is not None else 0.48
         bid = self.last_bid if self.last_bid is not None else price - spread / 2
@@ -2042,6 +2054,9 @@ class LiveDesk:
         decision.update(decision_stamp(
             getattr(self, "_pending_specialist_report", None)))
         decision["outcome_direction"] = direction
+        decision["outcome_reference_price"] = round(brief.mid, 5)
+        decision["outcome_risk_price"] = risk_price
+        decision["outcome_timeframe"] = self.tf
         gid = gate_id(kind, reason, decision)
         if gid:
             decision["gate_id"] = gid

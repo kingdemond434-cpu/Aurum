@@ -65,5 +65,5 @@ Write-Host ("  analyst   : " + $(if ($GptPrimary) {
     "Claude subscription -> ChatGPT subscription (gpt-5.6-sol, high)"
 }))
 Write-Host "  charts    : enabled for GPT failover"
-Write-Host "  cadence   : every M5 close; each packet sees live M1/M5/M15/H1/H4 charts"
+Write-Host "  cadence   : every M5 close; each packet sees live M1/M5/M15/M30/H1/H4/D1 charts"
 Write-Host "  mode      : shadow (no order placement)"

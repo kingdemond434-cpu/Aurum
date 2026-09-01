@@ -251,10 +251,33 @@ class Ledger:
     def read_all(self) -> list[dict]:
         if not self.path.exists():
             return []
-        return [json.loads(l) for l in self.path.read_text(encoding='utf-8').splitlines() if l.strip()]
+        rows = [json.loads(l) for l in self.path.read_text(encoding='utf-8').splitlines()
+                if l.strip()]
+        # Live decisions are immutable facts written before their forward path
+        # exists. Resolution therefore arrives as a later append-only event.
+        # Materialise that event onto the original row for existing readers;
+        # never rewrite history in place and retain the event itself for audit.
+        updates = {str(r.get("decision_id")): r for r in rows
+                   if r.get("kind") == "DECISION_OUTCOME" and r.get("decision_id")}
+        for row in rows:
+            update = updates.get(str(row.get("decision_id")))
+            if not update or row.get("kind") == "DECISION_OUTCOME":
+                continue
+            row["outcome"] = update.get("outcome")
+            row["path_ref"] = update.get("path_ref")
+            row["resolved_by_event"] = update.get("ts")
+            decision = dict(row.get("decision") or {})
+            if update.get("outcome_direction"):
+                decision["outcome_direction"] = update["outcome_direction"]
+            if update.get("opposite_outcome") is not None:
+                decision["opposite_outcome"] = update["opposite_outcome"]
+            row["decision"] = decision
+        return rows
 
     def unresolved(self) -> list[dict]:
-        return [r for r in self.read_all() if r.get("outcome") is None]
+        return [r for r in self.read_all()
+                if str(r.get("kind", "")).startswith(("SIGNAL", "REFUSAL"))
+                and r.get("outcome") is None]
 
 
 def verify_path_stable(rec: DecisionRecord, bars: Sequence[Bar]) -> tuple[bool, str]:
