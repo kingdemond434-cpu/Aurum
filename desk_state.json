@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "143/173 wakes (83%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "148/178 wakes (83%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "324 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "331 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.0h old",
+          "detail": "newest row 0.1h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18447MB free",
+          "detail": "18426MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 80.9h ago",
+          "detail": "wrote 1 min ago, after a boot 81.1h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 324,
-      "error": "codex exited 1: HESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.75R; close=EXIT_THESIS\n  2026-08-28T12:30  LONG  TREND_CONTINUATION +0.11R  similarity 0.83  mechanism=origin-shelf-demand-long\n    PAID; MFE +0.11R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-01T10:14:13.997736+00:00",
+      "count": 331,
+      "error": "codex exited 1: dation\n    PAID; MFE +2.54R / MAE +0.00R; close=TARGET\n  2026-08-31T04:30  SHORT TREND_CONTINUATION -1.00R  similarity 0.50  mechanism=broken-shelf-liquidation\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.09R / MAE -0.05R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-01T10:26:10.584045+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T10:15:07.149416+00:00",
-  "last_row_utc": "2026-09-01T10:14:13.997736+00:00",
-  "ledger_rows": 2504,
+  "generated_utc": "2026-09-01T10:30:08.263422+00:00",
+  "last_row_utc": "2026-09-01T10:26:10.584045+00:00",
+  "ledger_rows": 2567,
   "total_faults": 11
 }
