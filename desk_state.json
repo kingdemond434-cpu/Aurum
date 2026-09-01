@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "69/89 wakes (78%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "78/98 wakes (80%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "35 sleeve(s) accruing, published 1.1h ago",
+          "detail": "34 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "246 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "255 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18635MB free",
+          "detail": "18619MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 78.2h ago",
+          "detail": "wrote 1 min ago, after a boot 78.4h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 246,
-      "error": "codex exited 1: IS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.09R / MAE -0.05R; close=STOP\n  2026-08-31T04:30  LONG  SWING_REVERSAL     -1.02R  similarity 0.50  mechanism=failed-shelf-breakdown-trap\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management",
-      "last": "2026-09-01T07:28:13.205647+00:00",
+      "count": 255,
+      "error": "codex exited 1: S/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.98R; close=STOP\n  2026-08-28T14:00  LONG  SWING_REVERSAL     -0.04R  similarity 0.50  mechanism=failed-breakdown-trap\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.04R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management",
+      "last": "2026-09-01T07:43:07.908328+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T07:30:20.437362+00:00",
-  "last_row_utc": "2026-09-01T07:28:13.205647+00:00",
-  "ledger_rows": 1718,
+  "generated_utc": "2026-09-01T07:45:12.203930+00:00",
+  "last_row_utc": "2026-09-01T07:43:07.908328+00:00",
+  "ledger_rows": 1799,
   "total_faults": 11
 }
