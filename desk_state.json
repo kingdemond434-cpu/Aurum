@@ -10,17 +10,17 @@
         },
         {
           "check": "analyst answering",
-          "detail": "180/183 wakes (98%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "172/172 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "UNMEASURED \u2014 3 stamped read(s), under 10",
+          "detail": "UNMEASURED \u2014 0 stamped read(s), under 10",
           "ok": true
         },
         {
           "check": "analyst model",
-          "detail": "all reads answered as gpt-5.6-sol",
+          "detail": "no stamped reads in the window",
           "ok": true
         }
       ],
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "19.8% recent vs 14.3% prior",
+          "detail": "18.5% recent vs 15.1% prior",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 41h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 42h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "41 sleeve(s) accruing, published 0.8h ago",
+          "detail": "41 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -108,8 +108,8 @@
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Cycle",
@@ -118,13 +118,13 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": false
         }
       ],
-      "faults": 5
+      "faults": 4
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.8h old",
+          "detail": "newest row 1.1h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.8h ago",
+          "detail": "written 1.0h ago",
           "ok": true
         },
         {
@@ -199,7 +199,7 @@
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 45 min ago, after a boot 92.4h ago",
+          "detail": "wrote 60 min ago, after a boot 92.6h ago",
           "ok": true
         }
       ],
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T21:45:18.144840+00:00",
+  "generated_utc": "2026-09-01T22:00:30.486661+00:00",
   "last_row_utc": "2026-09-01T20:55:59.679295+00:00",
   "ledger_rows": 4005,
-  "total_faults": 13
+  "total_faults": 12
 }
