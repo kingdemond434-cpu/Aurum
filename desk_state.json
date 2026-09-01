@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "135/165 wakes (82%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "143/173 wakes (83%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "316 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "324 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18476MB free",
+          "detail": "18447MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 80.6h ago",
+          "detail": "wrote 1 min ago, after a boot 80.9h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 316,
+      "count": 324,
       "error": "codex exited 1: HESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.75R; close=EXIT_THESIS\n  2026-08-28T12:30  LONG  TREND_CONTINUATION +0.11R  similarity 0.83  mechanism=origin-shelf-demand-long\n    PAID; MFE +0.11R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-01T09:59:06.524519+00:00",
+      "last": "2026-09-01T10:14:13.997736+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T10:00:09.158263+00:00",
-  "last_row_utc": "2026-09-01T09:59:06.524519+00:00",
-  "ledger_rows": 2432,
+  "generated_utc": "2026-09-01T10:15:07.149416+00:00",
+  "last_row_utc": "2026-09-01T10:14:13.997736+00:00",
+  "ledger_rows": 2504,
   "total_faults": 11
 }
