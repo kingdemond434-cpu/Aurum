@@ -140,8 +140,19 @@ def check_analyst_backend(provider_spec: str) -> Check:
                          "and run `codex login`, or disable the fallback")
         try:
             status = subprocess.run([exe, "login", "status"], capture_output=True,
-                                    text=True, timeout=10)
+                                    text=True, timeout=30)
             detail = (status.stdout or status.stderr).strip()
+        except subprocess.TimeoutExpired:
+            # STATUS IS A DIAGNOSTIC, NOT THE ANALYST. On the loaded Windows
+            # VPS this command can take longer than 10s while real `codex exec`
+            # calls still answer successfully. Killing a 24/5 desk because the
+            # diagnostic was slow creates the restart loop it was meant to
+            # prevent. Boot in an explicitly warned state; the provider call
+            # remains the authoritative health check and journals any failure.
+            return Check("analyst backend", False,
+                         f"Codex CLI found at {exe}, but login status timed out; "
+                         "starting provisionally and letting the real analyst "
+                         "call verify the subscription", fatal=False)
         except Exception as e:                         # noqa: BLE001
             return Check("analyst backend", False,
                          f"Codex CLI found at {exe}, but login status failed: {e}")
