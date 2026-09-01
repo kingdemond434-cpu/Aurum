@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "76/79 wakes (96%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "62/65 wakes (95%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "updated 22h ago",
+          "detail": "updated 23h ago",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "36 sleeve(s) accruing, published 0.4h ago",
+          "detail": "36 sleeve(s) accruing, published 1.9h ago",
           "ok": true
         }
       ],
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267014",
           "ok": true
         },
         {
@@ -103,13 +103,13 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
-          "ok": false
+          "detail": "enabled, last result 267014",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Cycle",
@@ -118,8 +118,8 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267014",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 5
+      "faults": 2
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.9h old",
+          "detail": "newest row 2.5h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.8h ago",
+          "detail": "written 2.3h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18893MB free",
+          "detail": "18840MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 45 min ago, after a boot 72.9h ago",
+          "detail": "wrote 139 min ago, after a boot 74.5h ago",
           "ok": true
         }
       ],
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "2999b92b67c1",
-  "generated_utc": "2026-09-01T02:19:16.374359+00:00",
+  "generated_utc": "2026-09-01T03:49:21.928057+00:00",
   "last_row_utc": "2026-09-01T01:20:00.376254+00:00",
   "ledger_rows": 1293,
-  "total_faults": 11
+  "total_faults": 8
 }
