@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "61/81 wakes (75%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "69/89 wakes (78%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "35 sleeve(s) accruing, published 0.8h ago",
+          "detail": "35 sleeve(s) accruing, published 1.1h ago",
           "ok": true
         }
       ],
@@ -88,17 +88,17 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -118,12 +118,12 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     },
     "wiring": {
       "axis": "wiring",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "238 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "246 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.0h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18651MB free",
+          "detail": "18635MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 77.9h ago",
+          "detail": "wrote 1 min ago, after a boot 78.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 238,
-      "error": "codex exited 1: er-high-reclaim-trap\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.75R; close=EXIT_THESIS\n  2026-08-28T12:30  LONG  TREND_CONTINUATION +0.11R  similarity 0.83  mechanism=origin-shelf-demand-long\n    PAID; MFE +0.11R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management",
-      "last": "2026-09-01T07:06:08.755479+00:00",
+      "count": 246,
+      "error": "codex exited 1: IS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.09R / MAE -0.05R; close=STOP\n  2026-08-31T04:30  LONG  SWING_REVERSAL     -1.02R  similarity 0.50  mechanism=failed-shelf-breakdown-trap\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management",
+      "last": "2026-09-01T07:28:13.205647+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T07:21:49.553873+00:00",
-  "last_row_utc": null,
-  "ledger_rows": 1654,
-  "total_faults": 10
+  "generated_utc": "2026-09-01T07:30:20.437362+00:00",
+  "last_row_utc": "2026-09-01T07:28:13.205647+00:00",
+  "ledger_rows": 1718,
+  "total_faults": 11
 }
