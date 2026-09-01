@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "173/202 wakes (86%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "182/209 wakes (87%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 124s of 600s budget (21%) over 29 reads",
+          "detail": "median 128s of 600s budget (21%) over 27 reads",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "30 sleeve(s) accruing, published 0.5h ago",
+          "detail": "30 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     },
     "wiring": {
       "axis": "wiring",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "363 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "372 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18349MB free",
+          "detail": "18317MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 82.1h ago",
+          "detail": "wrote 0 min ago, after a boot 82.4h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 363,
-      "error": "codex exited 1: PAID; MFE +2.43R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-28T12:15  LONG  NOVEL              -1.02R  similarity 0.83  mechanism=single-rejection-high-stop-run\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-01T11:29:04.031084+00:00",
+      "count": 372,
+      "error": "codex exited 1: /TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\n  2026-08-28T11:45  SHORT NOVEL              +0.18R  similarity 0.50  mechanism=broken-swing-low-trapped-longs-short\n    PAID; MFE +0.19R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-01T11:44:04.814261+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T11:30:19.161356+00:00",
-  "last_row_utc": "2026-09-01T11:29:04.031084+00:00",
-  "ledger_rows": 2855,
-  "total_faults": 10
+  "generated_utc": "2026-09-01T11:45:27.305794+00:00",
+  "last_row_utc": "2026-09-01T11:44:04.814261+00:00",
+  "ledger_rows": 2936,
+  "total_faults": 11
 }
