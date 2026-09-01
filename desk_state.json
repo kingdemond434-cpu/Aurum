@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "213/238 wakes (89%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "216/241 wakes (90%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "35 sleeve(s) accruing, published 0.2h ago",
+          "detail": "35 sleeve(s) accruing, published 0.1h ago",
           "ok": true
         }
       ],
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "437 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "440 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.1h old",
+          "detail": "newest row 0.2h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18122MB free",
+          "detail": "18112MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 2 min ago, after a boot 87.1h ago",
+          "detail": "wrote 1 min ago, after a boot 87.4h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 437,
+      "count": 440,
       "error": "codex exited 1: chanism=origin-shelf-demand-long\n    PAID; MFE +0.11R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-30T22:15  SHORT NOVEL              +0.25R  similarity 0.67  mechanism=broken-shelf-retest-supply\n    PAID; MFE +0.25R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-01T16:26:08.273524+00:00",
+      "last": "2026-09-01T16:35:01.332134+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T16:30:04.033296+00:00",
+  "generated_utc": "2026-09-01T16:45:03.094758+00:00",
   "last_row_utc": null,
-  "ledger_rows": 3544,
+  "ledger_rows": 3571,
   "total_faults": 12
 }
