@@ -25,7 +25,7 @@ import base64
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Literal, Optional, Sequence
 
@@ -242,6 +242,40 @@ class VisualRegion(BaseModel):
     notes: Optional[str] = Field(None, max_length=120)
 
 
+class StateChangePrediction(BaseModel):
+    """A belief about the NEXT MARKET STATE, not the next trade.
+
+    This is the desk's prediction engine in its own right: the market state is
+    measurable and continuous, so a forecast of the transition ("compression
+    breaks within ~12 minutes", "auction moves balance -> directional") is a
+    testable belief resolved the same way a path forecast is — against what the
+    desk actually measured next.
+
+    `meter_key` names the deterministic state the desk measured at the moment
+    of the read (e.g. `volatility_state`, `displacement_state`, `sweep_state`).
+    `expected_onset_minutes` bounds how soon; the ledger resolves it at that
+    horizon and books the miss exactly like a price forecast.
+    """
+    current_state: str = Field(max_length=90, description=(
+        "The state now, in one phrase, e.g. 'balance -> narrow'."))
+    transition: str = Field(max_length=90, description=(
+        "The state you expect next, e.g. 'balance -> directional up', "
+        "'compression breaks', 'DXY inverse re-couples'."))
+    meter_key: str = Field(max_length=60, description=(
+        "The deterministic meter this belief is about, e.g. 'volatility_state', "
+        "'displacement_state', 'sweep_state'."))
+    probability: float = Field(ge=0, le=1, description=(
+        "Calibratable probability of the transition (resolved forward)."))
+    expected_onset_minutes: int = Field(ge=1, le=720, description=(
+        "Likely onset in minutes. Booked and resolved at this horizon."))
+    evidence: str = Field(max_length=240, description=(
+        "The measured facts supporting the belief — never the pattern name."))
+
+    def is_complete(self) -> bool:
+        return bool(self.current_state and self.transition and self.meter_key
+                    and self.evidence and self.probability > 0)
+
+
 class AdversarialReview(BaseModel):
     """The mechanism casing. Required on every ACTIONABLE read. Each is short,
     concrete, and load-bearing — boilerplate is indistinguishable from lying."""
@@ -294,6 +328,25 @@ class AnalystRead(BaseModel):
                               "or on a pullback into the level. Never a price.")
     expected_holding_hours: Optional[float] = Field(None,
         description="Expected holding time in hours before exit.")
+    expected_half_life_minutes: Optional[float] = Field(None, ge=1, le=720,
+        description=(
+            "Measured intuition of how fast this idea decays: after this many "
+            "minutes the raw edge is roughly halved. A fast-arriving idea in a "
+            "live market should state 5-20; H4 backdrop ideas 180+. The desk "
+            "stales and invalidates according to it."))
+    requests: list[str] = Field(default_factory=list, max_length=6,
+        description=(
+            "OPTIONAL information you want before finalising. One of: "
+            "'last_call', 'last 30s ticks' / 'm1 close-up', 'refresh dxy', "
+            "'refresh 2y yield', 'gc volume around last move'. The desk "
+            "fulfills what it can and you see the result in this SAME brief. "
+            "Ask at most once per wake; never for prices you should derive from "
+            "levels."))
+    state_change: Optional[StateChangePrediction] = Field(None,
+        description=(
+            "Your belief about the NEXT MARKET STATE (compression break, auction "
+            "transition, volatility expansion...) — before or alongside the "
+            "trade. It is resolved and calibrated like every other belief."))
     path: Optional[PathForecast] = Field(None, description="Required on ACTIONABLE.")
     visual_regions: list[VisualRegion] = Field(default_factory=list,
         description="Visual concepts in bands. Never include a number.")
@@ -475,6 +528,43 @@ Before you claim a trade, argue against yourself in structured pieces:
 Each field is one or two short sentences. Boilerplate is indistinguishable \
 from lying — a generic casing tells the desk nothing and the forward ledger \
 will find out anyway.
+
+## State-change prediction (optional, but prefer it on ACTIONABLE)
+
+Before the trade, say what the MARKET STATE will do next — that is a separate \
+belief from the trade and it is resolved independently:
+
+  current_state          the state now, in one phrase.
+  transition             the state you expect next ("compression breaks",
+                         "balance -> directional up", "volatility expansion").
+  meter_key              the measured meter it is about (volatility_state,
+                         displacement_state, sweep_state, ...).
+  probability            one number 0..1.
+  expected_onset_minutes how soon (1..720).
+  evidence               the measured facts, not the pattern name.
+
+Do not write probabilities you are not willing to be scored on. The desk books \
+this at `expected_onset_minutes` and resolves it against what it measured \
+next, exactly like a path forecast. State transitions are as learnable as \
+entries — and a compression break you predicted at 0.74 is a trade that \
+already told you its timing.
+
+## Requests — you investigate, the desk fetches
+
+If a piece of the pictured reality would change your final call, say so in \
+`requests` (limits: six, short): "last 30s ticks", "m1 close-up", "refresh \
+dxy", "refresh 2y yield", "gc volume around last move". The desk fulfills \
+what it can deterministically and adds a [REQUESTED FOLLOW-UP] block to THIS \
+brief; then you give the FINAL read. Ask at most once — a second request \
+round is not granted, and never request a price you could derive from levels. \
+If nothing is missing, leave it empty.
+
+## Decay — the idea has a shelf life
+
+`expected_half_life_minutes` says how fast YOUR belief loses value. A live \
+microstructure idea stales in minutes; an H4 backdrop idea survives for \
+hours. State it honestly — the desk will not act on-aged ideas and it charges \
+the miss to you.
 
 ## The charts
 
@@ -691,6 +781,10 @@ class CompiledSignal:
     path: Optional[PathForecast] = None
     visual_zones: tuple[str, ...] = ()      # resolved by the compiler
     adversarial: Optional[AdversarialReview] = None
+    state_change: Optional[StateChangePrediction] = None
+    requests_answered: tuple[str, ...] = ()     # which follow-up blocks were fulfilled
+    half_life_minutes: Optional[float] = None   # the read's decay belief, stamped
+    expires_at_utc: Optional[datetime] = None   # computed by the compiler
 
     def to_management_handoff(self) -> dict:
         """Hand to the position/management engine. It owns everything after fill."""
@@ -714,6 +808,21 @@ class Refusal:
     read: Optional[AnalystRead]
     brief_as_of: datetime
     vetoed_by_compiler: bool
+
+
+#: how many half-lives old an idea may be before the desk refuses to fill it
+SIGNAL_EXPIRY_HALF_LIVES = 3.0
+
+
+def _expiry(as_of_utc: datetime, half_life_minutes: Optional[float]) -> Optional[datetime]:
+    """The moment the raw idea stops being fillable, from its own decay belief.
+
+    No stated half-life means a desk-default: the idea is treated as decaying
+    with a 90-minute half-life. The compiler never refuses on this — the LIVE
+    path applies it prior to entry, because only there is "now" meaningful.
+    """
+    hl = half_life_minutes if half_life_minutes else 90.0
+    return as_of_utc + timedelta(minutes=hl * SIGNAL_EXPIRY_HALF_LIVES)
 
 
 def compile_signal(
@@ -916,6 +1025,10 @@ def compile_signal(
         path=read.path,
         visual_zones=visual_zones,
         adversarial=read.adversarial,
+        state_change=read.state_change,
+        requests_answered=() if not read.requests else tuple(read.requests),
+        half_life_minutes=read.expected_half_life_minutes,
+        expires_at_utc=_expiry(brief.as_of_utc, read.expected_half_life_minutes),
     )
 
 

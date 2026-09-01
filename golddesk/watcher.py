@@ -28,8 +28,13 @@ class Event(str, Enum):
 
 
 # Which events are worth paying a model call for. BAR_CLOSE alone is not.
+# VOLATILITY_SHIFT must be here and the audit called it out: a realised-vol
+# step is exactly the "something changed that could change a decision" the
+# watcher exists to detect; suppressing it blinds the analyst to the moment
+# compression breaks.
 WAKING = {Event.SWEEP, Event.RECLAIM, Event.DISPLACEMENT, Event.TREND_FLIP,
-          Event.HEALTH_CHANGE, Event.SESSION_CHANGE, Event.HEARTBEAT}
+          Event.HEALTH_CHANGE, Event.SESSION_CHANGE, Event.VOLATILITY_SHIFT,
+          Event.HEARTBEAT}
 
 
 @dataclass

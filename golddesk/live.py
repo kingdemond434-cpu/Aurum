@@ -40,14 +40,18 @@ management. That is enforced by _notify() below, not by hope.
 from __future__ import annotations
 
 import logging
+from collections import deque
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Sequence
 
+from .acquire import AcquireState, Tick, TickRing
 from .analyst import CompiledSignal, Refusal, Thresholds, compile_signal
+from .attention import AttentionConfig, triage as attention_triage
 from .costs import CostModel
+from .eventbus import EventBus
 from .features import Bar, StructureState, atr, classify, session_of, swings
 from .hypothesis import HypothesisBook
 from .ledger import (Bar as LBar, DecisionKind, DecisionRecord, Ledger, PathRef,
@@ -64,6 +68,25 @@ from .reentry import PriorTrade
 from .runner import RiskLimits, RiskState, build_brief, risk_check
 from .specialists import Council, build_desk_council
 from .watcher import Watcher
+
+
+def _rolling_z(window: Sequence[float], x: float) -> Optional[float]:
+    """Streaming z-score of `x` against a rolling window; None until it is valid."""
+    if len(window) < 40:
+        return None
+    import statistics
+    m = statistics.fmean(window)
+    s = statistics.pstdev(window)
+    if s <= 0:
+        return None
+    return (x - m) / s
+
+
+def _percentile(window: Sequence[float], x: Optional[float]) -> Optional[float]:
+    """Place of `x` inside its own rolling window, as a fraction; None when unreliable."""
+    if x is None or len(window) < 10:
+        return None
+    return sum(1 for v in window if v <= x) / len(window)
 
 log = logging.getLogger(__name__)
 
@@ -211,6 +234,9 @@ class LiveStats:
     exits_managed: int = 0
     hypothesis_vetoes: int = 0
     states_blocked_position_open: int = 0
+    watches: int = 0                  # (#5) wakes skipped by the attention triage
+    deep_modes: int = 0               # (#5) wakes granted maximum reasoning
+    follow_ups: int = 0               # (#1) fulfilled information-request rounds
 
 
 class LiveDesk:
@@ -353,6 +379,21 @@ class LiveDesk:
         self._current_htf_factor: Optional[int] = None
         self._current_htf_name: Optional[str] = None
 
+        # (#1) ACTIVE ACQUISITION: the tick ring the quote stream feeds, plus an
+        # optional cross-market fetcher the caller can attach. Unwired sources
+        # read UNAVAILABLE — nothing invented.
+        self.acquire = AcquireState(tick_ring=TickRing())
+        # (#5) ATTENTION: rolling windows for the triage's z/percentile inputs.
+        self._spread_win: deque = deque(maxlen=240)
+        self._atr_win: deque = deque(maxlen=240)
+        self.attention = AttentionConfig(enabled=True)
+        # (eventbus) cheap always-on sensing. The bus records ticks and events;
+        # the router consults it to force idle states up to a real analysis.
+        self.bus = EventBus()
+        self._last_analysis_ts: Optional[datetime] = None
+        self._wake_plan = None
+        self.memory_window = 2000      # memory scans read the tail, never the whole file
+
     @property
     def tf(self) -> str:
         """The timeframe of the evaluation in progress (or the last one)."""
@@ -488,6 +529,24 @@ class LiveDesk:
         observer never sees anything and continuous observation is a claim
         rather than a fact.
         """
+        if self.acquire.tick_ring is not None:
+            try:
+                self.acquire.tick_ring.push(Tick(
+                    ts=ts,
+                    bid=float(bid) if bid is not None else price,
+                    ask=float(ask) if ask is not None else price))
+            except Exception:                                   # observation may not block
+                pass
+        # The event bus sees every quote regardless of position, so an impulse,
+        # spread burst or level touch can force the next analysis.
+        try:
+            near = []
+            if self._last_state is not None:
+                near = [l for l in (self._last_state.swing_high,
+                                    self._last_state.swing_low) if l is not None]
+            self.bus.emit_tick(price, ts, bid=bid, ask=ask, levels=near)
+        except Exception:                                        # sensing may not block
+            pass
         if not self.open_trades:
             return None
         self.stats.ticks += 1
@@ -611,10 +670,62 @@ class LiveDesk:
         self.last_spread = max(0.0, ask - bid)
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             timeframe=self.tf)
+        # (#5) ADAPTIVE COMPUTE. The watcher already gates "no change"; this
+        # gates "changed but nothing information-rich is happening". Idle wakes
+        # are journalled (scored, with reasons) so the cost of the skip policy
+        # is measured, and they never reach the model or the chart pack. A
+        # triage error MUST degrade to ANALYZE, not to silence.
+        self._atr_win.append(brief.atr)
+        if self.last_spread is not None:
+            self._spread_win.append(self.last_spread)
+        verdict = attention_triage(brief, AttentionConfig(
+            volatility_z=_rolling_z(self._atr_win, brief.atr),
+            spread_pct=_percentile(self._spread_win, self.last_spread),
+            minutes_to_event=None))
+        # (eventbus + router) The watcher gates "no change"; the triage gates
+        # "changed but not information-rich". The EVENT BUS can force an idle
+        # state up to a real analysis (impulse, spread burst, level touch,
+        # volatility step, release), and the router decides which seats matter
+        # for THIS state (DeepFund planner) and which causal branches to probe.
+        # A router/triage error MUST degrade to ANALYZE, never to silence.
+        forced = (self._last_analysis_ts is not None
+                  and self.bus.wake_worthy(self._last_analysis_ts))
+        try:
+            from .planner import plan as wake_plan
+            plan = wake_plan(brief, verdict, forced=forced)
+        except Exception as e:                       # router may never cost a trade
+            log.warning("router failed at %s, degrades to ANALYZE: %s", ts, e)
+            plan = None
+        if plan is None:
+            self._attention_mode = "ANALYZE"
+            self._wake_plan = None
+        else:
+            self._attention_mode = plan.tier
+            self._wake_plan = plan
+        if self._attention_mode == "WATCH":
+            self.stats.watches += 1
+            try:
+                pending = [e.kind.value for e in
+                           self.bus.kinds_since(self._last_analysis_ts)
+                           if self._last_analysis_ts is not None]
+                self.ledger.append_raw({
+                    "kind": "WATCH", "t0": ts.isoformat(),
+                    "symbol": "XAUUSD",
+                    "decision": {"triage_score": verdict.score,
+                                 "reasons": list(verdict.reasons),
+                                 "since_last_analysis": pending},
+                    "decided_by": "POLICY",
+                    "reason": "attention triage: idle wake, no model call made",
+                    "notes": []})
+            except Exception:                                  # journaling must not block
+                log.debug("WATCH row skipped at %s", ts)
+            return
+        if self._attention_mode == "DEEP":
+            self.stats.deep_modes += 1
         # Prior analogues are selected from trades that had already closed at
         # this exact as-of time. The pack reaches the same brief as the charts;
         # an unresolved case is excluded rather than allowed to leak its future.
-        ledger_rows = self.ledger.read_all()
+        ledger_rows = self.ledger.tail(self.memory_window)
         try:
             from .memory_pack import build_memory_pack
             memory_block = build_memory_pack(ledger_rows, brief).render()
@@ -643,8 +754,10 @@ class LiveDesk:
             try:
                 from .specialist_accountability import (
                     earned_brief_block, record_verdicts, scorecards)
+                _plan = self._wake_plan
                 self._pending_specialist_report = self.specialist_council.report(
-                    self._pending_snapshot)
+                    self._pending_snapshot,
+                    keys=tuple(getattr(_plan, "specialists", ())) if _plan else None)
                 record_verdicts(self.ledger, self._pending_snapshot,
                                 self._pending_specialist_report, ledger_rows)
                 block = earned_brief_block(
@@ -669,6 +782,17 @@ class LiveDesk:
         except Exception as e:                         # evidence cannot halt trading
             log.warning("lessons block skipped at %s: %s", ts, e)
 
+        # (#6) FAILURE MEMORY: what recurring failures cost, added as pure
+        # information. It can never refuse — only weigh. It is the reason the
+        # desk answers "have I been here before" with the R the answer cost.
+        try:
+            from .failure_memory import failure_memory_block
+            failure_block = failure_memory_block(ledger_rows)
+            if failure_block:
+                brief = replace(brief, blocks=tuple(brief.blocks) + (failure_block,))
+        except Exception as e:                         # evidence cannot halt trading
+            log.warning("failure-memory block skipped at %s: %s", ts, e)
+
         try:
             imgs = self._render_charts(bars, i)
         except AnalystError as e:
@@ -686,6 +810,7 @@ class LiveDesk:
             self.stats.analyst_errors += 1
             log.warning("analyst unavailable at %s: %s", ts, e)
             return
+        self._last_analysis_ts = ts
 
         if pr.read.is_no_trade():
             verdict = "NO_TRADE" if pr.read.action == "NO_TRADE" else "NO_SETUP"
@@ -696,6 +821,48 @@ class LiveDesk:
                           "vision": self.vision.value, "charts_sent": len(imgs),
                           **pr.stamp()}, f"analyst: {verdict}", "LONG", brief.atr)
             return
+
+        # (#1) ACTIVE ACQUISITION: one bounded follow-up round. If the read asked
+        # for reality the desk can actually produce (ticks, M1 close-up, a
+        # cross-market refresh it has wired), it appends a [REQUESTED FOLLOW-UP]
+        # block and lets the FINAL read — the one that had its questions answered
+        # — replace the first. Read requests are recorded on the compiled signal
+        # so the whole exchange is auditable. A follow-up read may itself refuse;
+        # that is a valid final answer.
+        if getattr(pr.read, "requests", None):
+            try:
+                from .acquire import fulfill_requests, render_follow_up
+                blocks = fulfill_requests(pr.read.requests, self.acquire,
+                                          now=ts)
+                if blocks:
+                    follow_up = render_follow_up(blocks)
+                    brief2 = replace(brief, blocks=tuple(brief.blocks) + (follow_up,))
+                    pr2 = self.provider.read(brief2, imgs)
+                    self.stats.reads += 1
+                    self.stats.follow_ups += 1
+                    try:
+                        pr.read.requests = [label for label, _ in blocks]
+                    except Exception:
+                        pass
+                    if pr2.read.is_no_trade():
+                        verdict = ("NO_TRADE" if pr2.read.action == "NO_TRADE"
+                                   else "NO_SETUP")
+                        self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL,
+                                     "MODEL",
+                                     {"setup": pr2.read.setup.value,
+                                      "action": pr2.read.action,
+                                      "novelty": pr2.read.novelty,
+                                      "requests": list(pr.read.requests),
+                                      "analyst_read": pr2.read.model_dump(),
+                                      "vision": self.vision.value,
+                                      "charts_sent": len(imgs),
+                                      **pr2.stamp()},
+                                     f"analyst after follow-up: {verdict}",
+                                     "LONG", brief.atr)
+                        return
+                    pr = pr2
+            except Exception as e:                 # the request round may never block
+                log.warning("request follow-up unavailable at %s: %s", ts, e)
 
         # Re-entry gate applies ONLY to a proposal repeating the prior trade's
         # direction while its context survives. An opposite-direction read is a
@@ -747,6 +914,57 @@ class LiveDesk:
                          {"declined": res.direction, **pr.stamp()},
                          f"risk: {why}", res.direction, res.risk)
             return
+
+        # (#2) STATE-CHANGE PREDICTION is booked independently of the trade: the
+        # desk records what it said the market state would DO next, so it can be
+        # scored on its own timetable against what was actually measured.
+        try:
+            from .state_change import book_into_ledger
+            book_into_ledger(self.ledger, res, ts)
+        except Exception as e:                      # observation cannot block an entry
+            log.debug("state-change booking skipped at %s: %s", ts, e)
+
+        # (#5) DEEP wakes add a SECOND adversarial look, bounded and advisory:
+        # a genuinely contradicting second pass is journalled and shown, never
+        # granted veto power over the first.
+        if getattr(self, "_attention_mode", None) == "DEEP":
+            try:
+                from .analyst import CompiledSignal
+                branch_block = ""
+                if getattr(self, "_wake_plan", None) and \
+                        getattr(self._wake_plan, "branches", ()):
+                    from .brancher import render_branches
+                    branch_block = "\n\n" + render_branches(self._wake_plan.branches)
+                look_brief = replace(
+                    brief, blocks=tuple(brief.blocks) + (
+                        "[SECOND LOOK]\nA thesis was already compiled: "
+                        f"{res.direction} at {res.entry:.2f}, stop {res.stop:.2f}, "
+                        f"target {res.tp2:.2f}. Attack it with the same standards "
+                        "you just used on your first pass."
+                        f"{branch_block}",
+                    ))
+                pr2 = self.provider.read(look_brief, imgs)
+                self.stats.reads += 1
+                second = pr2.read
+                try:
+                    self.ledger.append_raw({
+                        "kind": "SECOND_LOOK", "t0": ts.isoformat(),
+                        "symbol": "XAUUSD", "decided_by": "MODEL",
+                        "decision": {
+                            "first": {"direction": res.direction,
+                                      "entry": res.entry, "stop": res.stop,
+                                      "tp2": res.tp2},
+                            "second_action": second.action.value,
+                            "second_direction": second.direction,
+                            "second_setup": second.setup.value,
+                            "second_confidence": second.confidence,
+                        },
+                        "reason": "deep-mode second adversarial pass",
+                        "notes": list(second.adversarial) if second.adversarial else []})
+                except Exception:                    # journaling must not block
+                    pass
+            except Exception as e:                   # the second look must not block either
+                log.warning("deep second-look unavailable at %s: %s", ts, e)
 
         self._enter(bars, i, brief, res, pr, len(imgs))
 
@@ -1379,6 +1597,27 @@ class LiveDesk:
                                      else "durable-binding"),
             "reentry_policy": self.active_reentry().version,
             "vision": self.vision.value})
+
+        # (#4) COUNTERFACTUAL REPLAY. The same bars, resolved every other way —
+        # delayed, retested, opposite, tightened, extended, held, re-entered —
+        # all with the identical first-touch walker, all after the fact. This is
+        # how a decision's *prediction* and its *monetisation* are told apart.
+        # Purely derived from what is already stored; it can never change a past.
+        try:
+            from .counterfactual import replay, to_sheet
+            row = {"decision": {
+                "entry": t.signal.entry, "stop": t.signal.stop,
+                "tp2": t.signal.tp2, "direction": t.position.direction,
+                "t0": t.position.opened_utc.isoformat()}}
+            sheet = to_sheet(replay(row, self._last_bars or ()))
+            self.ledger.append_raw({
+                "kind": "COUNTERFACTUAL", "ts": ts.isoformat(),
+                "symbol": "XAUUSD",
+                "entry_t0": t.position.opened_utc.isoformat(),
+                "realised_r": round(total, 4),
+                **sheet})
+        except Exception as e:           # the sheet is review, never required for exit
+            log.debug("counterfactual sheet skipped at %s: %s", ts, e)
 
         self.prior = PriorTrade(
             direction=t.position.direction, exit_reason=reason, realised_r=total,

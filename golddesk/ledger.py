@@ -241,6 +241,50 @@ class Ledger:
             return []
         return [json.loads(l) for l in self.path.read_text().splitlines() if l.strip()]
 
+    def tail(self, n: int = 2000) -> list[dict]:
+        """The last n rows, read without re-parsing the whole file.
+
+        The desk's memory/replay scans are bounded on purpose: every wake re-reads
+        the ledger in on_bar, and over a long backtest a full read_all per wake is
+        quadratic. Reading backwards from the end keeps each wake O(n) regardless
+        of how many rows the simulation has accumulated or how large each row is
+        (rows embeds analyst model dumps, so they grow over time).
+        """
+        if not self.path.exists():
+            return []
+        thr = max(n, 32)
+        block = 1 << 17                     # 128 KiB chunk, grown until enough lines
+        size = self.path.stat().st_size
+        chunks: list[bytes] = []
+        offset = size
+        lines_so_far = 0
+        with self.path.open("rb") as fh:
+            while offset > 0 and lines_so_far < thr:
+                start = max(offset - block, 0)
+                fh.seek(start)
+                chunk = fh.read(offset - start)
+                chunks.append(chunk)
+                lines_so_far += chunk.count(b"\n")
+                offset = start
+        buf = b"".join(reversed(chunks))
+        lines = buf.splitlines()
+        if not lines:
+            return []
+        lines = lines[-n:]
+        if offset > 0:
+            try:
+                json.loads(lines[0])        # back-edge fragment only if this fails
+            except Exception:               # noqa: BLE001
+                lines = lines[1:]
+        out = []
+        for l in lines:
+            if l.strip():
+                try:
+                    out.append(json.loads(l))
+                except Exception:           # noqa: BLE001 — partial line, skip
+                    continue
+        return out
+
     def unresolved(self) -> list[dict]:
         return [r for r in self.read_all() if r.get("outcome") is None]
 

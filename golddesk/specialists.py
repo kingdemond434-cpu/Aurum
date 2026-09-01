@@ -273,17 +273,24 @@ class Council:
     """Every specialist's read on one state. NO consensus method, by design."""
     specialists: list = field(default_factory=list)
 
-    def read(self, snapshot) -> list[SpecialistRead]:
-        """Read every seat independently against one immutable state.
+    def read(self, snapshot, keys: Optional[Sequence[str]] = None,
+             key: Optional[str] = None) -> list[SpecialistRead]:
+        """Read seats against one immutable state.
 
-        Failure isolation belongs here, not in individual implementations.  A
-        third-party specialist cannot be trusted to catch its own exception or
-        to return a valid SpecialistRead, and one broken seat must never blind
-        the other seven or stop the desk.
+        `keys` (default all) lets the planner run only the seats a state needs;
+        this is the DeepFund planner seam — fewer adversarial seats are paying
+        for a read than the information-rich ones. `key` selects exactly one.
+        Failure isolation belongs here: a third-party specialist cannot be
+        trusted to catch its own exception or to return a valid SpecialistRead,
+        and one broken seat must never blind the other seven or stop the desk.
         """
         state_id, content_hash = snapshot.state_id, snapshot.content_hash
         reads: list[SpecialistRead] = []
-        for specialist in self.specialists:
+        sel = [s for s in self.specialists
+               if keys is None or str(getattr(s, "name", "")).lower() in keys
+               or str(getattr(s, "role", "")).lower() in keys
+               or (key and str(getattr(s, "key", getattr(s, "name", ""))).lower() == key.lower())]
+        for specialist in sel:
             name = str(getattr(specialist, "name", type(specialist).__name__))
             role = str(getattr(specialist, "role", ""))
             try:
@@ -305,8 +312,8 @@ class Council:
                           "failure_isolated": True}))
         return reads
 
-    def report(self, snapshot) -> dict:
-        reads = self.read(snapshot)
+    def report(self, snapshot, keys: Optional[Sequence[str]] = None) -> dict:
+        reads = self.read(snapshot, keys=keys)
         live = [r for r in reads if r.available]
         dirs = {r.direction for r in live if r.direction != "FLAT"}
         return {
