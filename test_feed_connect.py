@@ -9,11 +9,11 @@ _warm() calls first) needs the clock to already be known.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from golddesk.feed import FeedError, LiveFeed, FeedConfig
+from golddesk.feed import FeedError, LiveFeed, FeedConfig, ServerClock
 
 
 class FakeClient:
@@ -88,3 +88,19 @@ def test_connect_retries_if_no_tick_is_available_to_measure_the_clock():
                     reconnect_attempts=1, reconnect_backoff_s=0.01))
     with pytest.raises(FeedError):
         feed.connect()
+
+
+def test_network_latency_cannot_change_a_closed_bars_identity():
+    clock = ServerClock()
+    server_1 = datetime(2026, 9, 1, 12, 0, 0)
+    now_1 = datetime(2026, 9, 1, 10, 0, 0, 830000, tzinfo=timezone.utc)
+    assert clock.observe(server_1, now_1)
+    first = clock.to_utc(datetime(2026, 9, 1, 11, 55, 0))
+
+    server_2 = server_1 + timedelta(seconds=1)
+    now_2 = datetime(2026, 9, 1, 10, 0, 1, 170000, tzinfo=timezone.utc)
+    assert clock.observe(server_2, now_2)
+    second = clock.to_utc(datetime(2026, 9, 1, 11, 55, 0))
+
+    assert first == second
+    assert first.microsecond == 0

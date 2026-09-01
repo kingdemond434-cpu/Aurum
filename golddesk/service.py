@@ -1008,7 +1008,11 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
     else:
         profile = SpreadProfile.load(Path(spread_profile_path))
     cost_model = CostModel(spread_profile=profile)
-    if not profile.calibrated:
+    if not profile.calibrated and feed_backend == "mt5":
+        log.info("no static spread profile — compiler uses the connected MT5 "
+                 "terminal's live bid/ask; a calibrated spread distribution "
+                 "is still unavailable for historical simulation")
+    elif not profile.calibrated:
         log.warning("NO SPREAD PROFILE — costs will be taken from the FEED, "
                     "which is not your execution venue. Every expectancy figure "
                     "is priced against a spread you will not pay. Set "

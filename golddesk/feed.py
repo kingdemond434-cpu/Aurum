@@ -117,6 +117,10 @@ class ServerClock:
     def load(self) -> None:
         if self.cache_path and Path(self.cache_path).exists():
             secs = float(Path(self.cache_path).read_text(encoding='utf-8').strip())
+            # Old caches may contain sub-second network-latency jitter. Broker
+            # timezone offsets are civil-clock offsets, so normalise before a
+            # candle can acquire a new identity on every quote refresh.
+            secs = round(secs / 60.0) * 60.0
             self.offset = timedelta(seconds=secs)
             log.info("server clock offset loaded: %+.0fs", secs)
 
@@ -135,7 +139,13 @@ class ServerClock:
         if self.last_seen_server is not None and tick_server_time <= self.last_seen_server:
             return False                       # fossil quote — ignore for timing
         self.last_seen_server = tick_server_time
-        self.offset = now_utc.replace(tzinfo=None) - tick_server_time
+        raw = now_utc.replace(tzinfo=None) - tick_server_time
+        # A broker clock may be UTC+2/UTC+3 and change at DST, but it does not
+        # move by 164ms because one quote crossed the network more slowly.
+        # Keeping that latency fraction shifted every bar stamp on each tick,
+        # defeated duplicate-bar guards, and re-emitted the same signal.
+        seconds = round(raw.total_seconds() / 60.0) * 60.0
+        self.offset = timedelta(seconds=seconds)
         self.measured_at = now_utc
         self._save()
         return True
@@ -143,7 +153,8 @@ class ServerClock:
     def to_utc(self, server_naive: datetime) -> datetime:
         if self.offset is None:
             raise FeedError("server clock not yet measured — no advancing tick seen")
-        return (server_naive + self.offset).replace(tzinfo=timezone.utc)
+        return (server_naive + self.offset).replace(tzinfo=timezone.utc,
+                                                    microsecond=0)
 
     @property
     def known(self) -> bool:

@@ -508,6 +508,9 @@ def main() -> int:
     print(f"  analyst failover : {fallback_label}")
     if args.declared_spread:
         print(f"  COST basis       : your venue, ${args.declared_spread:.2f} declared")
+    elif args.feed == "mt5":
+        print("  COST basis       : live MT5 bid/ask from the connected terminal")
+        print("                     (broker identity verified by --expect-broker)")
     else:
         print(f"  COST basis       : THE FEED — not your execution venue.")
         print(f"                     Every expectancy figure is priced against a")
