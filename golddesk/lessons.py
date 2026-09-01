@@ -55,10 +55,21 @@ def build_lessons(rows: Sequence[dict], *,
     direction_buckets: dict[str, list[float]] = {}
     session_buckets: dict[str, list[float]] = {}
     blind: list[tuple[str, str, str, float]] = []
+    closed_by_entry = {
+        str(r.get("entry_t0")): r for r in rows
+        if r.get("kind") == "TRADE_CLOSED" and r.get("entry_t0")
+    }
 
     for row in rows:
         kind = str(row.get("kind", ""))
-        rr = _first_touch_r(row, target_r, stop_r)
+        # Live SIGNAL rows are written when the decision is made, before a
+        # forward path exists. Learn taken-trade performance from the eventual
+        # TRADE_CLOSED row; use embedded first-touch outcomes only for replay /
+        # historical rows that genuinely carried future bars.
+        close = closed_by_entry.get(str(row.get("t0"))) if kind == "SIGNAL" else None
+        realised = (close or {}).get("realised_r")
+        rr = (float(realised) if isinstance(realised, (int, float)) else
+              _first_touch_r(row, target_r, stop_r))
         if rr is None:
             continue
         read = _read(row)

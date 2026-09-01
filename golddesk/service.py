@@ -692,10 +692,11 @@ class DeskService:
         bid, ask, age = quote if quote is not None else self.feed.quote()
         htf_name, htf_factor = TF_HTF.get(tf, (self.cfg.htf, 16))
         live_frames = self._live_chart_frames()
+        decision_as_of = datetime.now(timezone.utc)
         args = (bars, i, visible_swings(ch["sw"], i), ch["atrs"], htf_state,
                 (bid, ask, age), (f"{tf} close {closed.ts:%Y-%m-%d %H:%M}",))
         kwargs = {"tf": tf, "htf_factor": htf_factor, "htf_name": htf_name,
-                  "live_frames": live_frames}
+                  "live_frames": live_frames, "decision_as_of": decision_as_of}
         self._submit_analysis(args, kwargs, tf, closed.ts)
         self.state.last_bar_tfs[tf] = closed.ts.isoformat()
         if tf == self.cfg.entry_tf:

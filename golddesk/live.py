@@ -720,7 +720,8 @@ class LiveDesk:
                intrabar: Optional[Sequence[tuple[datetime, float]]] = None,
                tf: Optional[str] = None, htf_factor: Optional[int] = None,
                htf_name: Optional[str] = None,
-               live_frames: Optional[dict[str, Sequence[Bar]]] = None) -> None:
+               live_frames: Optional[dict[str, Sequence[Bar]]] = None,
+               decision_as_of: Optional[datetime] = None) -> None:
         self._current_tf = tf or self.entry_tf
         self._current_htf_factor = htf_factor or self.htf_factor
         self._current_htf_name = htf_name or HTF
@@ -802,6 +803,12 @@ class LiveDesk:
                             macro=self._macro,
                             crossmarket=self._crossmarket,
                             timeframe=self.tf, live_tape=live_tape)
+        # A live packet is observed AFTER the bar whose close woke it. The bar
+        # timestamp remains structural evidence; AS_OF is when the complete
+        # quote/chart packet actually existed. Backtests omit decision_as_of and
+        # retain their historical bar clock.
+        if decision_as_of is not None:
+            brief = replace(brief, as_of_utc=decision_as_of)
         ledger_rows = self.ledger.read_all()
         try:
             from .memory_pack import build_memory_pack
@@ -877,6 +884,12 @@ class LiveDesk:
             if pr is None:
                 self._record_blind(bars, i, brief, ts, "read", e)
                 return
+
+        # The actionable decision did not exist until the subscription model
+        # answered. Journal and open from completion time, never from the bar
+        # that happened minutes earlier during inference.
+        if decision_as_of is not None:
+            brief = replace(brief, as_of_utc=datetime.now(timezone.utc))
 
         if getattr(pr.read, "action", None) == "NO_TRADE" or pr.read.setup is Setup.NO_SETUP:
             self._record(bars, i, brief, DecisionKind.REFUSAL_MODEL, "MODEL",
@@ -1086,6 +1099,11 @@ class LiveDesk:
                 return
             from .universe import as_universe
             stamp, uni = fb, as_universe(fb.read)
+
+        # Same live-time contract as the single-read path: the universe becomes
+        # actionable only when the survey has returned.
+        if brief.as_of_utc > bars[i].ts:
+            brief = replace(brief, as_of_utc=datetime.now(timezone.utc))
 
         cands = compile_universe(brief, uni, self.thresholds, self.cost_model,
                                  self.cohorts, shadow=self.shadow)
@@ -1356,10 +1374,11 @@ class LiveDesk:
             cohort_ev_r=(_stat.expected_r(sig.rr_tp2, sig.cost_r)
                          if _stat and _stat.n else None))
 
+        opened_at = sig.brief_as_of
         pos = Position(sig.direction, sig.entry, sig.stop, sig.stop, sig.risk,
-                       1.0, 0.0, bars[i].ts, sig.setup.value)
+                       1.0, 0.0, opened_at, sig.setup.value)
         obs = TradeObserver(direction=sig.direction, entry=sig.entry, stop=sig.stop,
-                            target=sig.tp2, risk_price=sig.risk, opened=bars[i].ts)
+                            target=sig.tp2, risk_price=sig.risk, opened=opened_at)
         self.open_trades.append(OpenTrade(pos, sig, i, obs,
                               entry_context=dict(brief.context.__dict__)
                               | {"session": brief.session} | self._trend_ctx(brief),
@@ -1711,7 +1730,7 @@ class LiveDesk:
         happened.
         """
         from golddesk.snapshot import SnapshotBuilder
-        as_of = bars[i].ts
+        as_of = brief.as_of_utc
         b = SnapshotBuilder(brief.symbol, self.tf, as_of)
         b.add_bars("entry", bars[:i + 1], self.tf, count=40)
         for key, val in (("bid", brief.bid), ("ask", brief.ask),
@@ -1981,7 +2000,8 @@ class LiveDesk:
         # records — the universe path emits one per candidate at the same
         # timestamp, and a colliding id would silently overwrite the very
         # counterfactuals it exists to preserve.
-        did = f"{brief.symbol}-{bars[i].ts.isoformat()}" + (f"-{suffix}" if suffix else "")
+        decision_t0 = brief.as_of_utc
+        did = f"{brief.symbol}-{decision_t0.isoformat()}" + (f"-{suffix}" if suffix else "")
         # FORWARD RESOLUTION WINDOW.
         #
         # This was 61 bars — about fifteen hours on M15 — and that was a quiet,
@@ -2027,10 +2047,19 @@ class LiveDesk:
             decision["gate_id"] = gid
         self.ledger.append(DecisionRecord(
             decision_id=did, kind=kind,
-            t0=bars[i].ts, symbol=brief.symbol,
+            t0=decision_t0, symbol=brief.symbol,
             context=dict(brief.context.__dict__)
             | {"session": brief.session} | self._trend_ctx(brief)
             | snap_keys,
             brief_render=brief.render(), decided_by=by, decision=decision,
-            reason=reason, path_ref=PathRef.of(brief.symbol, self.tf, lb),
-            outcome=resolve_forward(lb, bars[i].ts, bars[i].close, direction, risk_price)))
+            reason=reason,
+            # A live call finishes after the newest closed bar. There is no
+            # forward path yet, so recording that already-closed candle as the
+            # outcome leaks pre-decision movement into training. Leave it
+            # unresolved; an honest unknown is better than a fabricated win or
+            # loss. Historical/backtest calls still resolve normally.
+            path_ref=(None if decision_t0 > lb[-1].ts else
+                      PathRef.of(brief.symbol, self.tf, lb)),
+            outcome=(None if decision_t0 > lb[-1].ts else
+                     resolve_forward(lb, decision_t0, bars[i].close,
+                                     direction, risk_price))))
