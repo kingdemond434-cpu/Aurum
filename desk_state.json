@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "58/76 wakes (76%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "56/74 wakes (76%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "36 sleeve(s) accruing, published 0.2h ago",
+          "detail": "36 sleeve(s) accruing, published 0.4h ago",
           "ok": true
         }
       ],
@@ -93,7 +93,7 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 5
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.0h old",
+          "detail": "newest row 0.3h old",
           "ok": true
         },
         {
@@ -179,7 +179,7 @@
         },
         {
           "check": "notifications",
-          "detail": "123 delivered, 121 failed",
+          "detail": "1 delivered, 0 failed",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18751MB free",
+          "detail": "18739MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 76.2h ago",
+          "detail": "wrote 1 min ago, after a boot 76.4h ago",
           "ok": true
         }
       ],
@@ -235,9 +235,9 @@
       "last": "2026-09-01T05:23:08.430928+00:00"
     }
   },
-  "deployed_commit": "39daaf950b12",
-  "generated_utc": "2026-09-01T05:31:16.805573+00:00",
-  "last_row_utc": "2026-09-01T05:28:44.594869+00:00",
-  "ledger_rows": 1478,
-  "total_faults": 10
+  "deployed_commit": "32a765a30875",
+  "generated_utc": "2026-09-01T05:45:18.514424+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 1494,
+  "total_faults": 12
 }
