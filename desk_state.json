@@ -10,12 +10,12 @@
         },
         {
           "check": "analyst answering",
-          "detail": "219/237 wakes (92%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "221/233 wakes (95%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
           "check": "analyst latency",
-          "detail": "median 123s of 600s budget (21%) over 18 reads",
+          "detail": "median 138s of 600s budget (23%) over 12 reads",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "35 sleeve(s) accruing, published 0.4h ago",
+          "detail": "35 sleeve(s) accruing, published 0.1h ago",
           "ok": true
         }
       ],
@@ -118,13 +118,13 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 0",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 5
+      "faults": 3
     },
     "wiring": {
       "axis": "wiring",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "443 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "445 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.4h old",
+          "detail": "newest row 0.2h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18090MB free",
+          "detail": "18043MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 3 min ago, after a boot 87.9h ago",
+          "detail": "wrote 1 min ago, after a boot 88.1h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 443,
-      "error": "codex exited 1: PAID; MFE +1.88R / MAE -0.46R; close=PROFITABLE_STOP\n  2026-08-27T12:15  LONG  NOVEL              -1.01R  similarity 0.50  mechanism=session-high-short-squeeze\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-01T16:48:31.122909+00:00",
+      "count": 445,
+      "error": "codex exited 1: AID; MFE +0.66R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-28T13:00  LONG  SWING_REVERSAL     -0.32R  similarity 0.67  mechanism=failed-breakdown-reclaim\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.31R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-01T17:16:29.918885+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T17:15:31.715309+00:00",
+  "generated_utc": "2026-09-01T17:30:09.165344+00:00",
   "last_row_utc": null,
-  "ledger_rows": 3598,
-  "total_faults": 13
+  "ledger_rows": 3616,
+  "total_faults": 11
 }
