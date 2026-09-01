@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "34 sleeve(s) accruing, published 0.5h ago",
+          "detail": "34 sleeve(s) accruing, published 0.7h ago",
           "ok": true
         }
       ],
@@ -88,12 +88,12 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "enabled, last result 0",
           "ok": true
         },
         {
@@ -103,8 +103,8 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -137,7 +137,7 @@
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 5
     },
     "wiring": {
       "axis": "wiring",
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.3h old",
+          "detail": "newest row 0.6h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.1h ago",
+          "detail": "written 0.0h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "18216MB free",
+          "detail": "18198MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 5 min ago, after a boot 85.2h ago",
+          "detail": "wrote 3 min ago, after a boot 85.4h ago",
           "ok": true
         }
       ],
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-01T14:30:41.050259+00:00",
-  "last_row_utc": "2026-09-01T14:11:17.876009+00:00",
-  "ledger_rows": 3410,
-  "total_faults": 11
+  "generated_utc": "2026-09-01T14:47:03.958621+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 3418,
+  "total_faults": 12
 }
