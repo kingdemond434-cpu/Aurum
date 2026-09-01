@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from golddesk.notify import (
-    FileSink, HealthTrackingSink, NullSink, build_sink, probe)
+    FileSink, HealthTrackingSink, NullSink, TelegramSink, build_sink, probe)
 
 
 class Dead:
@@ -189,6 +189,47 @@ def test_delivery_can_be_skipped_deliberately(tmp_path):
     (sec / "telegram_chat_id").write_text("123", encoding="utf-8")
     c = run_desk._telegram_check(True, sec, deliver=False)
     assert c.ok and "NOT verified by delivery" in c.detail
+
+
+def test_telegram_retries_broken_markdown_as_plain_text(monkeypatch):
+    calls = []
+
+    class Response:
+        def __init__(self, code, text=""):
+            self.status_code, self.text = code, text
+
+    class Requests:
+        @staticmethod
+        def post(url, **kwargs):
+            calls.append(kwargs)
+            return (Response(400, "Bad Request: can't parse entities")
+                    if len(calls) == 1 else Response(200, "ok"))
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", Requests)
+    sink = TelegramSink("tok", "chat")
+    assert sink.send("mechanism_with_unbalanced_*markdown")
+    assert len(calls) == 2
+    assert calls[0]["json"]["parse_mode"] == "Markdown"
+    assert "parse_mode" not in calls[1]["json"]
+
+
+def test_telegram_suppresses_an_exact_repeated_signal(monkeypatch):
+    calls = []
+
+    class Response:
+        status_code, text = 200, "ok"
+
+    class Requests:
+        @staticmethod
+        def post(url, **kwargs):
+            calls.append(kwargs)
+            return Response()
+
+    monkeypatch.setitem(__import__("sys").modules, "requests", Requests)
+    sink = TelegramSink("tok", "chat")
+    assert sink.send("same signal")
+    assert sink.send("same signal")
+    assert len(calls) == 1
 
 
 def test_not_wanting_telegram_is_not_a_failure(tmp_path):

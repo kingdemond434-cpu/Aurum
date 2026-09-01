@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Optional, Protocol
 from urllib.parse import urlsplit
@@ -102,8 +103,16 @@ class TelegramSink:
     """Live channel. Import of requests is deferred so it is never required."""
     def __init__(self, token: str, chat_id: str, timeout: float = 5.0):
         self.token, self.chat_id, self.timeout = token, chat_id, timeout
+        self._last_text: Optional[str] = None
+        self._last_text_at = 0.0
+        self.duplicate_window_s = 600.0
 
     def send(self, text: str) -> bool:
+        now = time.monotonic()
+        if text == self._last_text and now - self._last_text_at < self.duplicate_window_s:
+            log.warning("suppressed exact duplicate telegram message within %.0fs window",
+                        self.duplicate_window_s)
+            return True
         try:
             import requests  # deferred on purpose
         except ImportError:
@@ -114,9 +123,20 @@ class TelegramSink:
                 f"{api_base()}/bot{self.token}/sendMessage",
                 json={"chat_id": self.chat_id, "text": text, "parse_mode": "Markdown"},
                 timeout=self.timeout)
+            if (r.status_code == 400 and
+                    "can't parse entities" in str(getattr(r, "text", ""))):
+                # Analyst text and open-ended mechanism names may contain
+                # underscores/asterisks that legacy Markdown interprets as an
+                # unterminated entity. Delivery matters more than decoration:
+                # retry the identical message as plain text once.
+                r = requests.post(
+                    f"{api_base()}/bot{self.token}/sendMessage",
+                    json={"chat_id": self.chat_id, "text": text},
+                    timeout=self.timeout)
             if r.status_code != 200:
                 log.warning("telegram %s: %s", r.status_code, r.text[:200])
                 return False
+            self._last_text, self._last_text_at = text, now
             return True
         except Exception as e:                      # never propagate to the loop
             log.warning("telegram send failed: %s", e)
@@ -142,6 +162,16 @@ class TelegramSink:
                       "parse_mode": "Markdown"},
                 files={"photo": (filename, png, "image/png")},
                 timeout=max(self.timeout, 15.0))   # image upload is slower than text
+            if (r.status_code == 400 and
+                    "can't parse entities" in str(getattr(r, "text", ""))):
+                # A multipart body cannot be safely replayed after requests has
+                # consumed it. Send the image again from the immutable bytes,
+                # without Markdown, so the chart is not lost to its caption.
+                r = requests.post(
+                    f"{api_base()}/bot{self.token}/sendPhoto",
+                    data={"chat_id": self.chat_id, "caption": caption[:1024]},
+                    files={"photo": (filename, png, "image/png")},
+                    timeout=max(self.timeout, 15.0))
             if r.status_code != 200:
                 log.warning("telegram photo %s: %s", r.status_code, r.text[:200])
                 return False
