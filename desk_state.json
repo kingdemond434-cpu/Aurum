@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "328/328 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "323/323 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "17.1% recent vs 15.8% prior",
+          "detail": "17.3% recent vs 15.7% prior",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 65h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 66h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "41 sleeve(s) accruing, published 0.2h ago",
+          "detail": "42 sleeve(s) accruing, published 0.1h ago",
           "ok": true
         }
       ],
@@ -164,7 +164,7 @@
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.8h old",
+          "detail": "newest row 1.0h old",
           "ok": true
         },
         {
@@ -184,7 +184,7 @@
         },
         {
           "check": "checkpoint",
-          "detail": "written 0.8h ago",
+          "detail": "written 1.0h ago",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "16182MB free",
+          "detail": "16168MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 46 min ago, after a boot 116.4h ago",
+          "detail": "wrote 61 min ago, after a boot 116.7h ago",
           "ok": true
         }
       ],
@@ -236,7 +236,7 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-02T21:45:21.227820+00:00",
+  "generated_utc": "2026-09-02T22:00:21.747880+00:00",
   "last_row_utc": "2026-09-02T20:58:08.820484+00:00",
   "ledger_rows": 9342,
   "total_faults": 12
