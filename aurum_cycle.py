@@ -62,13 +62,40 @@ LOG = STATE_DIR / "cycle.log"
 
 CYCLE_VERSION = "cycle-2026-08-18-a"
 
+# Set once if the cycle log cannot be written, so the warning prints one time
+# per process instead of once per line. See log().
+_LOG_WRITE_FAILED = False
+
 
 def log(msg: str) -> None:
+    """Write a cycle log line. A failure to log must never end the cycle.
+
+    This function is called before any real work, so an exception here kills the
+    run before line one — which is exactly what happened on the Windows box from
+    2026-08-18 to 2026-09-02: `PermissionError: [Errno 13] state/cycle.log`, no
+    update.log written, and fifteen days in which nothing was learned. Windows
+    does not share an open file the way POSIX does, so any concurrent holder (a
+    second cycle, the watchdog, a tail, an antivirus scanner) makes the append
+    fail, and the loudest symptom of a dead learning loop was a log file.
+
+    The log is a record of the run, not the run. Print and continue.
+    """
     line = f"{datetime.now(timezone.utc).isoformat(timespec='seconds')} {msg}"
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with LOG.open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
     print(line)
+    try:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with LOG.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError as e:
+        # Printed, not raised, and printed only once per process so a locked
+        # file cannot drown the output it is meant to preserve.
+        global _LOG_WRITE_FAILED
+        if not _LOG_WRITE_FAILED:
+            _LOG_WRITE_FAILED = True
+            print(
+                f"cycle.log unwritable ({e.__class__.__name__}: {e}) — "
+                "continuing; stdout is the record for this run"
+            )
 
 
 def _rows(path: Path | None = None, limit: int = 100_000) -> list:
