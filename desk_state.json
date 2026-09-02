@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "289/289 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "287/287 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "42 sleeve(s) accruing, published 0.1h ago",
+          "detail": "42 sleeve(s) accruing, published 0.4h ago",
           "ok": true
         }
       ],
@@ -88,23 +88,23 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "859 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "868 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.0h old",
+          "detail": "newest row 0.1h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "16783MB free",
+          "detail": "16764MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 109.1h ago",
+          "detail": "wrote 0 min ago, after a boot 109.4h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 859,
-      "error": "codex exited 1: ced +0.5R; MFE +0.00R / MAE -0.01R; close=EXIT_THESIS\n  2026-08-31T12:30  SHORT NOVEL              -1.01R  similarity 0.83  mechanism=cluster-floor-liquidation\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-02T14:28:15.409646+00:00",
+      "count": 868,
+      "error": "codex exited 1:  produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\n  2026-08-28T14:15  SHORT NOVEL              -1.01R  similarity 0.50  mechanism=gold-silver-ratio-rotation\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.98R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-02T14:40:17.426804+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-02T14:30:37.331481+00:00",
-  "last_row_utc": "2026-09-02T14:28:15.409646+00:00",
-  "ledger_rows": 7344,
+  "generated_utc": "2026-09-02T14:49:49.615658+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 7433,
   "total_faults": 13
 }
