@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "184/184 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "189/189 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "43 sleeve(s) accruing, published 0.0h ago",
+          "detail": "43 sleeve(s) accruing, published 0.3h ago",
           "ok": true
         }
       ],
@@ -103,13 +103,13 @@
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-VantageSpread', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
-          "ok": true
+          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
+          "ok": false
         },
         {
           "check": "AurumSignalDesk-Cycle",
@@ -123,7 +123,7 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 0",
+          "detail": "enabled, last result 267009",
           "ok": true
         },
         {
@@ -137,7 +137,7 @@
           "ok": false
         }
       ],
-      "faults": 3
+      "faults": 5
     },
     "wiring": {
       "axis": "wiring",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "615 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "622 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.1h old",
+          "detail": "newest row 0.0h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "17447MB free",
+          "detail": "17435MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 98.7h ago",
+          "detail": "wrote 0 min ago, after a boot 98.9h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 615,
-      "error": "codex exited 1:    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\n  2026-09-01T09:46  LONG  SWING_REVERSAL     +2.33R  similarity 0.33  mechanism=failed-shelf-breakdown-trap\n    PAID; MFE +2.36R / MAE -0.18R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-02T03:55:05.718016+00:00",
+      "count": 622,
+      "error": "codex exited 1: produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\n  2026-08-30T23:15  LONG  SWING_REVERSAL     -0.67R  similarity 0.33  mechanism=shelf-break-stop-run\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.66R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-02T04:13:01.018854+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-02T04:03:45.309239+00:00",
-  "last_row_utc": "2026-09-02T03:55:05.718016+00:00",
-  "ledger_rows": 5148,
-  "total_faults": 10
+  "generated_utc": "2026-09-02T04:15:17.023712+00:00",
+  "last_row_utc": "2026-09-02T04:13:01.018854+00:00",
+  "ledger_rows": 5211,
+  "total_faults": 12
 }
