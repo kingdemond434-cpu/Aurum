@@ -11,14 +11,14 @@ import random
 import tempfile
 from pathlib import Path
 
-from golddesk.intake import (budget_note, intake, promote_queue, read_sources,
+from golddesk.intake import (is_gold, budget_note, intake, promote_queue, read_sources,
                              record_day, run)
 from golddesk.promotion import (MIN_VERDICT_TRADES, VERDICT_MIN_TRADES,
                                 Status, load, save, screen, to_shadow)
 
 
 def _rows(n=3):
-    return [{"cell": f"SYM{i}|fam|rr=2.0", "in_sample_sharpe": 1.0 + i * 0.1,
+    return [{"cell": f"XAUUSD|fam{i}|rr=2.0", "in_sample_sharpe": 1.0 + i * 0.1,
              "psr_raw": 0.99, "dsr_deflated": 0.1 * i,
              "n_trials_searched": 3168} for i in range(n)]
 
@@ -71,7 +71,7 @@ def test_deflation_does_not_block_entry():
 def test_queue_order_follows_deflated_sharpe():
     book, _, _, _ = intake(_rows(3), [])
     started = promote_queue(book)
-    assert [c.cell for c in started][0] == "SYM2|fam|rr=2.0"
+    assert [c.cell for c in started][0] == "XAUUSD|fam2|rr=2.0"
 
 
 def test_slots_limit_how_many_start_not_who_is_admitted():
@@ -161,9 +161,9 @@ def test_malformed_source_is_skipped():
 def test_rows_without_a_cell_are_ignored():
     with tempfile.TemporaryDirectory() as d:
         p = Path(d) / "c.json"
-        p.write_text(json.dumps([{"in_sample_sharpe": 1.0}, {"cell": "ok"}]),
-                     "utf-8")
-        assert [r["cell"] for r in read_sources((p,))] == ["ok"]
+        p.write_text(json.dumps([{"in_sample_sharpe": 1.0},
+                                 {"cell": "XAUUSD|fam|rr=2.0"}]), "utf-8")
+        assert [r["cell"] for r in read_sources((p,))] == ["XAUUSD|fam|rr=2.0"]
 
 
 # ------------------------------------------------------------- the daily driver
@@ -209,3 +209,57 @@ def test_budget_is_reported_never_applied():
 
 def test_budget_note_handles_a_dead_book():
     assert "no expectancy" in budget_note([], [-0.4] * 200)
+
+
+# ------------------------------------------------------- gold-only, by charter
+
+def test_non_gold_cells_never_enter_the_book():
+    """The FX crosses that led the shadow book are refused at the door.
+
+    Not merely ignored downstream: a registered cell occupies a slot, accrues
+    forward days and counts as a concurrent test in the book-level promotion
+    correction, so every foreign cell raises the bar the gold cells must clear.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "c.json"
+        p.write_text(json.dumps([
+            {"cell": "NZDJPY|monday_gap|mode=fade,rr=2.5", "in_sample_sharpe": 2.99,
+             "psr_raw": 0.9999, "dsr_deflated": None, "n_trials_searched": 3168},
+            {"cell": "EURCHF|monday_gap|mode=fade,rr=2.0", "in_sample_sharpe": 2.86,
+             "psr_raw": 0.9999, "dsr_deflated": None, "n_trials_searched": 3168},
+            {"cell": "XAUUSD|session_breakout.asia|rr=2.5", "in_sample_sharpe": 1.2,
+             "psr_raw": 0.96, "dsr_deflated": 0.3, "n_trials_searched": 3168},
+        ]), "utf-8")
+        assert [r["cell"] for r in read_sources((p,))] == [
+            "XAUUSD|session_breakout.asia|rr=2.5"]
+        # A caller that explicitly wants everything still can.
+        assert len(read_sources((p,), gold_only=False)) == 3
+
+
+def test_gold_symbol_variants_are_all_admitted():
+    assert is_gold("XAUUSD|fam|rr=2.0")
+    assert is_gold("XAUEUR|fam|rr=2.0")
+    assert is_gold("GC|fam|rr=2.0")
+    assert is_gold("MGC|fam|rr=2.0")
+    assert not is_gold("NZDJPY|fam|rr=2.0")
+    assert not is_gold("EURCHF|fam|rr=2.0")
+    # A bare symbol with no family cannot round-trip into a strategy at all.
+    assert not is_gold("XAUUSD")
+
+
+def test_foreign_cells_already_in_the_book_are_retired():
+    """Filtering intake alone would leave the 77 already registered accruing."""
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "c.json"
+        src.write_text(json.dumps(_rows(1)), "utf-8")
+        bp = Path(d) / "p.json"
+        # Seed a book the old code would have written.
+        src_mixed = Path(d) / "mixed.json"
+        src_mixed.write_text(json.dumps([
+            {"cell": "NZDJPY|monday_gap|mode=fade,rr=2.5", "in_sample_sharpe": 2.99,
+             "psr_raw": 0.9999, "n_trials_searched": 3168}]), "utf-8")
+        book, _ = run(book_path=bp, sources=(src_mixed,), gold_only=False)
+        assert len(book) == 1, "fixture should have seeded a foreign cell"
+        book, text = run(book_path=bp, sources=(src,))
+        assert [c.cell for c in book] == ["XAUUSD|fam0|rr=2.0"]
+        assert "dropped non-gold" in text and "NZDJPY" in text

@@ -163,7 +163,7 @@ def check_analyst_backend(provider_spec: str) -> Check:
 def preflight(symbol: str, want_telegram: bool, secrets: Path,
               feed: str = "mt5", min_stop: float = 0.0,
               declared_spread: float = 0.0,
-              provider_spec: str = "anthropic:claude-opus-5",
+              provider_spec: str = "claudecode:claude-opus-5",
               fallback_provider_spec: str = "",
               expect_broker: str = "") -> list[Check]:
     checks: list[Check] = [assert_no_orders()]
@@ -351,7 +351,7 @@ def main() -> int:
                          "starting — guards against initialize() silently "
                          "attaching to the wrong terminal when more than one "
                          "is installed. mt5 feed only.")
-    ap.add_argument("--provider", default="anthropic:claude-opus-5",
+    ap.add_argument("--provider", default="claudecode:claude-opus-5",
                     help="analyst backend. 'anthropic:<model>' bills per token. "
                          "'claudecode:<model>' runs the same model through the "
                          "Claude Code CLI, which authenticates against a Pro/Max "

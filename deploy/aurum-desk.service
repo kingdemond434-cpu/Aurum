@@ -47,7 +47,7 @@ Environment=CODEX_HOME=/opt/aurum/secrets/codex
 ExecStart=/opt/aurum/.venv/bin/python /opt/aurum/run_desk.py \
     --shadow --feed yahoo --declared-spread 0.45 --min-stop 0.50 \
     --management heuristic --shadow-management \
-    --provider anthropic:claude-opus-5 \
+    --provider claudecode:claude-opus-5 \
     --fallback-provider codex:gpt-5.6-sol
 Restart=always
 RestartSec=10

@@ -97,7 +97,20 @@ class ServiceConfig:
     # points, never from re-deciding a bar already decided. The first entry is
     # the home timeframe (state.last_bar_ts stays keyed to it for checkpoint
     # compatibility); portfolio heat, not the count of arms, governs exposure.
-    timeframes: tuple = ("M15",)
+    # M15 alone woke the desk 96 times a session and left every M5 structure and
+    # every H1 turn unread. These four arms wake it on each of their own closes:
+    # ~288 M5 + 96 M15 + 24 H1 + 6 H4 evaluation points per day rather than 96,
+    # which is what "wake continuously, not just to M15" actually means for a
+    # venue that trades ~23h a day. M1 is deliberately NOT here — it is a
+    # management resolution, and adding it as an entry arm quadruples cost for
+    # bars whose structure the M5 arm already carries.
+    #
+    # THE COST IS REAL AND IT IS NOT ONLY MONEY. Each arm is an independent
+    # decision stream, so this multiplies analyst calls ~4.3x AND multiplies the
+    # trial count the promotion gate must deflate for. Frequency is only worth
+    # it if the analyst answers; with a provider chain that fails, more arms
+    # produce more BLIND bars, not more signals.
+    timeframes: tuple = ("M5", "M15", "H1", "H4")
     # Maximum-frequency management means observing an open position every
     # second by default. Entries remain closed-bar decisions: polling faster
     # cannot create new causal information and must not duplicate a signal.
@@ -738,7 +751,7 @@ class DeskService:
 # --------------------------------------------------------------------------
 
 def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
-                  provider_spec: str = "anthropic:claude-opus-5",
+                  provider_spec: str = "claudecode:claude-opus-5",
                   vision: Vision = Vision.NUMERIC_PLUS_CHARTS,
                   cfg: Optional[ServiceConfig] = None,
                   secrets_dir: str = "secrets",
@@ -854,8 +867,21 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
 
     provider_kw = {"effort": provider_effort} if provider_effort else {}
     primary_name = provider_spec.partition(":")[0]
-    fallbacks = (() if primary_name in {"deterministic", "replay", "codex"}
+    # WHY codex is no longer in the no-fallback set. It used to be, and that is
+    # how 1,030 bars became BLIND with `codex exited 1`: a codex primary was
+    # handed an EMPTY chain, so every CLI non-zero exit was a bar the desk never
+    # read rather than a bar answered by someone else. Only the offline
+    # providers legitimately refuse failover — `deterministic` and `replay` are
+    # meant to be exactly themselves, and silently substituting a live model
+    # would corrupt a replay's whole point.
+    fallbacks = (() if primary_name in {"deterministic", "replay"}
                  else tuple(fallback_provider_specs))
+    # A chain must not fall back to the provider that just failed. Without this,
+    # `--provider codex` picks up the default codex fallback and retries the
+    # same broken CLI, turning one failure into two and reporting a failover
+    # that never changed anything.
+    fallbacks = tuple(s for s in fallbacks
+                      if s.partition(":")[0] != primary_name)
     provider = build_provider_chain(provider_spec, fallbacks,
                                     fallback_kw={"effort": "high"},
                                     **provider_kw)

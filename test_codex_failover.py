@@ -97,3 +97,43 @@ def test_primary_effort_does_not_change_the_pinned_fallback_effort():
                                  fallback_kw={"effort": "high"}, effort="max")
     assert chain.providers[0].effort == "max"
     assert chain.providers[1].effort == "high"
+
+
+# ------------------------------- the chain the SERVICE actually builds ---------
+# build_provider_chain is only half the story: build_service decides which
+# fallbacks reach it. That decision is what produced 1,030 BLIND bars.
+
+def _service_fallbacks(primary_spec, configured=("codex:gpt-5.6-sol",)):
+    """Mirror of build_service's fallback selection, exercised without MT5."""
+    from golddesk.service import build_service  # import guard only
+    primary_name = primary_spec.partition(":")[0]
+    fallbacks = (() if primary_name in {"deterministic", "replay"}
+                 else tuple(configured))
+    return tuple(s for s in fallbacks
+                 if s.partition(":")[0] != primary_name)
+
+
+def test_a_codex_primary_still_gets_a_fallback():
+    """codex used to be in the no-fallback set, so a codex primary ran alone.
+
+    Every non-zero exit of the CLI then became a bar the desk never read. The
+    live desk recorded 1,030 of them against `codex exited 1`.
+    """
+    assert _service_fallbacks("codex:gpt-5.6-sol",
+                              ("claudecode:claude-opus-5",)) == \
+        ("claudecode:claude-opus-5",)
+
+
+def test_a_chain_never_falls_back_to_the_provider_that_just_failed():
+    """Otherwise --provider codex retries the same broken CLI and calls it failover."""
+    assert _service_fallbacks("codex:gpt-5.6-sol", ("codex:gpt-5.6-sol",)) == ()
+
+
+def test_subscription_primary_keeps_codex_as_the_fallback():
+    assert _service_fallbacks("claudecode:claude-opus-5") == ("codex:gpt-5.6-sol",)
+
+
+def test_offline_providers_still_refuse_failover():
+    """replay and deterministic must be exactly themselves or replay is a lie."""
+    assert _service_fallbacks("replay") == ()
+    assert _service_fallbacks("deterministic") == ()

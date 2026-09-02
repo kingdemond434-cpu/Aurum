@@ -54,12 +54,43 @@ DEFAULT_SOURCES = (
 #: many series the daily job carries. None means unbounded.
 MAX_SHADOW: Optional[int] = None
 
+#: Symbols this desk is allowed to carry. Aurum is a GOLD desk: the whole thesis
+#: is that concentrating every hour of study on one market compounds, and a book
+#: led by `NZDJPY|monday_gap` and `EURCHF|monday_gap` is not that desk — it is a
+#: generic cell-search wearing Aurum's name. Those two FX crosses reached the top
+#: of the shadow book on in-sample Sharpe ~2.9 selected from 3,168 trials with
+#: `dsr_deflated: null`, which is what selection looks like, not what edge looks
+#: like, and it cost slots and attention that belong to gold.
+#:
+#: Matching is on the symbol prefix so GC, MGC and any XAU quote all pass.
+GOLD_SYMBOLS = ("XAU", "GC", "MGC", "GOLD")
 
-def read_sources(paths: Sequence[Path] = DEFAULT_SOURCES) -> list:
+
+def is_gold(cell: str) -> bool:
+    """True if the cell's symbol is a gold instrument.
+
+    The symbol is everything before the first `|`. A cell with no `|` cannot be
+    parsed into a strategy at all, so it is not gold and not anything else.
+    """
+    symbol = cell.partition("|")[0].strip().upper()
+    if not symbol or "|" not in cell:
+        return False
+    return any(symbol.startswith(g) for g in GOLD_SYMBOLS)
+
+
+def read_sources(paths: Sequence[Path] = DEFAULT_SOURCES,
+                 gold_only: bool = True) -> list:
     """Every candidate list that exists. Missing files are not an error.
 
     A sweep that has not run yet is the normal state on a fresh install, and
     treating it as a failure would make the daily cycle red for no reason.
+
+    `gold_only` drops non-gold cells at the door rather than registering and
+    then ignoring them. Registering is not free: a cell in the book occupies a
+    shadow slot, accrues forward days, and — the part that actually costs
+    something — counts as a concurrent test in the book-level promotion
+    correction, so carrying 70 FX cells raises the bar every gold cell must
+    clear. Filtering here makes the gold book EASIER to promote from, not harder.
     """
     out = []
     for p in paths:
@@ -70,7 +101,8 @@ def read_sources(paths: Sequence[Path] = DEFAULT_SOURCES) -> list:
         except (json.JSONDecodeError, OSError):
             continue
         if isinstance(rows, list):
-            out.extend(r for r in rows if isinstance(r, dict) and r.get("cell"))
+            out.extend(r for r in rows if isinstance(r, dict) and r.get("cell")
+                       and (not gold_only or is_gold(str(r["cell"]))))
     return out
 
 
@@ -159,11 +191,24 @@ def run(book_path: Path = DEFAULT_BOOK,
         returns: Optional[dict] = None,
         slots: Optional[int] = MAX_SHADOW,
         day: Optional[str] = None,
-        trades: Optional[dict] = None) -> tuple:
-    """One daily pass. Returns (book, summary text)."""
+        trades: Optional[dict] = None,
+        gold_only: bool = True) -> tuple:
+    """One daily pass. Returns (book, summary text).
+
+    `gold_only` is the charter enforced in code. It is a parameter rather than a
+    constant so a migration or an audit can still load the full book, but the
+    default is the desk's actual mandate.
+    """
     book = load(book_path)
+    # Filtering intake only stops NEW non-gold cells; the 77 already registered
+    # would keep accruing days and keep inflating the concurrent-test count for
+    # ever. Drop them from the book too. Nothing is lost that matters: none had
+    # forward evidence, and a cell this desk will never trade cannot earn any.
+    dropped_foreign = [c for c in book if not is_gold(c.cell)] if gold_only else []
+    if dropped_foreign:
+        book = [c for c in book if is_gold(c.cell)]
     before = len(book)
-    rows = read_sources(sources)
+    rows = read_sources(sources, gold_only=gold_only)
     book, added, skipped, rejected = intake(rows, book)
     started = promote_queue(book, slots)
     posted = record_day(book, returns or {},
@@ -181,6 +226,12 @@ def run(book_path: Path = DEFAULT_BOOK,
         f"  moved to shadow   {len(started)}",
         f"  forward days      {posted} posted",
         f"  book              {before} -> {len(book)}",
+    ] + ([
+        f"  dropped non-gold  {len(dropped_foreign)} cell(s) retired from the "
+        f"book: {', '.join(sorted({c.cell.partition('|')[0] for c in dropped_foreign}))}"
+        " — this is a gold desk, and every foreign cell raised the promotion bar"
+        " for the gold ones by counting as a concurrent test",
+    ] if dropped_foreign else []) + [
         "",
         "  " + "  ".join(f"{s.value} {by[s]}" for s in Status),
     ]
