@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "329/329 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "324/324 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "42 sleeve(s) accruing, published 0.0h ago",
+          "detail": "42 sleeve(s) accruing, published 0.3h ago",
           "ok": true
         }
       ],
@@ -118,13 +118,13 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": false
         }
       ],
-      "faults": 4
+      "faults": 6
     },
     "wiring": {
       "axis": "wiring",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "992 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "999 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.0h old",
+          "detail": "newest row 0.1h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "16446MB free",
+          "detail": "16423MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 112.9h ago",
+          "detail": "wrote 1 min ago, after a boot 113.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 992,
-      "error": "codex exited 1: PAID; MFE +1.88R / MAE -0.46R; close=PROFITABLE_STOP\n  2026-08-27T12:15  LONG  NOVEL              -1.01R  similarity 0.50  mechanism=session-high-short-squeeze\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-02T18:13:12.809983+00:00",
+      "count": 999,
+      "error": "codex exited 1: \n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.99R; close=STOP\n  2026-08-28T13:30  LONG  SWING_REVERSAL     +0.65R  similarity 0.50  mechanism=session-low-sweep-reclaim\n    PAID; MFE +0.66R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-02T18:25:24.148649+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-02T18:16:14.220214+00:00",
-  "last_row_utc": "2026-09-02T18:13:12.809983+00:00",
-  "ledger_rows": 8541,
-  "total_faults": 11
+  "generated_utc": "2026-09-02T18:30:09.692913+00:00",
+  "last_row_utc": "2026-09-02T18:25:24.148649+00:00",
+  "ledger_rows": 8604,
+  "total_faults": 13
 }
