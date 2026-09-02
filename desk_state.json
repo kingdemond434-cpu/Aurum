@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "227/227 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "233/233 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 51h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 52h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "46 sleeve(s) accruing, published 0.7h ago",
+          "detail": "43 sleeve(s) accruing, published 0.0h ago",
           "ok": true
         }
       ],
@@ -88,23 +88,23 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-Update",
-          "detail": "last run exited 1 \u2014 pulls and deploys fixes is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: (no update.log \u2014 the task failed BEFORE writing a single line, so it is the interpreter, the working directory or the PATH, not the script's own logic)",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Update', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
@@ -118,12 +118,12 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
           "ok": false
         },
         {
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "700 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "706 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.2h old",
+          "detail": "newest row 0.1h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "17225MB free",
+          "detail": "17213MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 102.4h ago",
+          "detail": "wrote 0 min ago, after a boot 102.7h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 700,
-      "error": "codex exited 1: =failed-shelf-breakdown-trap\n    PAID; MFE +1.87R / MAE -0.18R; close=EXIT_THESIS\n  2026-08-27T11:15  SHORT TREND_CONTINUATION +0.29R  similarity 0.50  mechanism=broken-shelf-retest-supply\n    PAID; MFE +1.88R / MAE -0.46R; close=PROFITABLE_STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-02T07:35:14.103442+00:00",
+      "count": 706,
+      "error": "codex exited 1: ed +0.5R; MFE +0.00R / MAE -0.31R; close=EXIT_THESIS\n  2026-08-27T12:15  LONG  NOVEL              -1.01R  similarity 0.50  mechanism=session-high-short-squeeze\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-02T07:55:13.732381+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-02T07:46:23.700195+00:00",
+  "generated_utc": "2026-09-02T08:06:47.726848+00:00",
   "last_row_utc": null,
-  "ledger_rows": 5921,
+  "ledger_rows": 5975,
   "total_faults": 13
 }
