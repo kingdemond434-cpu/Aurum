@@ -112,6 +112,44 @@ def check_analyst_backend(provider_spec: str) -> Check:
     them per token. Each backend is asked for the thing it uses.
     """
     name = provider_spec.partition(":")[0]
+    if name == "auto":
+        # SAY WHAT IT RESOLVED TO. "auto" that prints "auto" tells an operator
+        # nothing; the whole value is knowing which brains this box actually
+        # has before the night one of them is needed.
+        from golddesk.failover import resolve_auto
+        kept, skipped = resolve_auto()
+        c = check_analyst_backend("chain:" + "+".join(kept))
+        note = ("; NOT AVAILABLE: " + "; ".join(skipped)) if skipped else \
+            "; every configured brain is installed"
+        return Check("analyst chain (auto)", c.ok, c.detail + note)
+    if name == "chain":
+        # A CHAIN IS USABLE IF ITS PRIMARY IS. A dead fallback is a warning, not
+        # a reason to refuse to start: a desk with one working brain is exactly
+        # the desk that ran before failover existed. But the detail names every
+        # link, because "the fallback has never been able to run" is the kind of
+        # fact that stays invisible until the night it matters.
+        parts = [s for s in provider_spec[len("chain:"):].split("+") if s]
+        subs = [check_analyst_backend(s) for s in parts]
+        good = sum(1 for c in subs if c.ok)
+        detail = " | ".join(f"{p}: {'OK' if c.ok else 'UNUSABLE'} — {c.detail}"
+                            for p, c in zip(parts, subs))
+        return Check("analyst chain", bool(subs and subs[0].ok),
+                     f"{good}/{len(subs)} brain(s) usable. {detail}")
+    if name == "codexlocal":
+        import shutil
+        exe = shutil.which(os.environ.get("AURUM_CODEX_BINARY", "").strip()
+                           or "codex")
+        if not exe:
+            return Check("analyst backend", False,
+                         "provider 'codexlocal' needs the Codex CLI on PATH and "
+                         "it is not installed here; set AURUM_CODEX_BINARY if it "
+                         "lives somewhere else")
+        model = os.environ.get("AURUM_CODEX_MODEL", "").strip()
+        return Check("analyst backend", True,
+                     f"codexlocal at {exe}; model "
+                     + (model if model else
+                        "unset, so the CLI's own default is used — set "
+                        "AURUM_CODEX_MODEL to pin one"))
     if name == "deterministic":
         return Check("analyst backend", True,
                      "deterministic rules — no model, no credential, no cost")
@@ -157,6 +195,26 @@ def preflight(symbol: str, want_telegram: bool, secrets: Path,
     # reading the live log line by line. check_analyst_backend proves the
     # provider WORKS; this proves it works for the vision mode it is about to
     # be asked to serve, which is the thing that actually matters at 3am.
+    # THE SAME TRAP, ONE LAYER OUT. A chain whose fallback cannot take images
+    # has no fallback at all in vision mode: the fallback refuses every read
+    # rather than reading a subset, the chain exhausts, and the desk records
+    # BLIND exactly as it did before the second brain was added. The desk still
+    # starts -- the primary is fine and this is a warning -- but a failover
+    # that cannot fire is worth knowing about before the night it is needed,
+    # not after.
+    if provider_spec.startswith("chain:") and not numeric_only:
+        blind = [s for s in provider_spec[len("chain:"):].split("+")
+                 if s.partition(":")[0] in ("claudecode", "codexlocal")
+                 and not os.environ.get("AURUM_CODEX_IMAGE_FLAG", "").strip()]
+        if blind:
+            checks.append(Check(
+                "failover/vision match", False,
+                f"charts are on and {', '.join(blind)} cannot send images, so "
+                f"in vision mode {'they refuse' if len(blind) > 1 else 'it refuses'} "
+                f"every read and the chain exhausts to BLIND -- the failover "
+                f"would never fire. Add --numeric-only, or configure "
+                f"AURUM_CODEX_IMAGE_FLAG.", fatal=False))
+
     if provider_spec.partition(":")[0] == "claudecode" and not numeric_only:
         checks.append(Check(
             "provider/vision match", False,

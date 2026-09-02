@@ -970,6 +970,11 @@ def build_service(*, symbol: str = "XAUUSD", shadow: bool = True,
                     shadow_contextual=shadow_contextual,
                     universe_mode=universe_mode,
                     cohorts=cohorts,
+                    # THE SAME ROWS, for the outcome distribution every signal
+                    # now carries. Passed in rather than re-read at each wake,
+                    # so a restart does not reset what the desk knows about how
+                    # its own trades behave.
+                    resolved_rows=rows,
                     crossmarket_provider=crossmarket_fn,
                     calendar=calendar, regime_history=history,
                     macro_provider=macro_fn,

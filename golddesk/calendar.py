@@ -38,9 +38,11 @@ everything else.
 from __future__ import annotations
 
 import calendar as _cal
+import json
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 log = logging.getLogger(__name__)
@@ -98,8 +100,52 @@ FOMC_DECISIONS: dict[int, tuple[tuple[int, int], ...]] = {
 FOMC_TABLE_ENDS = date(2026, 12, 31)
 
 
+#: AN OFFICIAL RELEASE CALENDAR, when the operator supplies one. The rules below
+#: are exact for NFP, ISM and FOMC, and APPROXIMATE for CPI, PPI and PCE — those
+#: agencies publish their dates and do not follow a clean weekday rule, so
+#: "second Wednesday" is right most months and wrong in some.
+#:
+#: THE FIX IS NOT TO TYPE THE PUBLISHED DATES INTO THIS FILE. That is the same
+#: defect as a hardcoded vendor model id: a claim about somebody else's schedule
+#: that goes stale silently and is wrong in a way nothing tests. So the seam is a
+#: FILE, taken verbatim when present, with the rule as the labelled fallback:
+#:
+#:   config/release_calendar.json
+#:   {"CPI": ["2026-09-10T08:30"], "PPI": [...], "PCE": [...]}
+#:
+#: Times are LOCAL New York and go through the same conversion the rules use, so
+#: a supplied calendar cannot reintroduce the DST error the rules avoid.
+OFFICIAL_CALENDAR = (Path(__file__).resolve().parent.parent
+                     / "config" / "release_calendar.json")
+
+
+def _official(name: str, year: int, month: int,
+              path: Optional[Path] = None) -> Optional[datetime]:
+    """The published datetime for this release in this month, or None.
+
+    Never raises: a missing or malformed file degrades to the rule, which is
+    labelled APPROXIMATE, so the worst case is exactly today's behaviour with
+    the reason on the row.
+    """
+    try:
+        raw = json.loads(Path(path or OFFICIAL_CALENDAR).read_text(encoding="utf-8"))
+        for s in raw.get(name) or []:
+            when = datetime.fromisoformat(str(s))
+            if when.year == year and when.month == month:
+                return _ny(when.date(), when.hour, when.minute)
+    except Exception as e:                                       # noqa: BLE001
+        log.debug("no official calendar entry for %s: %s", name, e)
+    return None
+
+
 def month_events(year: int, month: int) -> list[Event]:
-    """Every scheduled release in one month, derived from its rule."""
+    """Every scheduled release in one month, from its rule or from the calendar.
+
+    A release named in `config/release_calendar.json` is taken from there and
+    the event's `basis` says so — so a brief always states whether the time it
+    is reasoning about was PUBLISHED or GUESSED, in the same sentence as the
+    time itself.
+    """
     out: list[Event] = []
 
     # NFP — first Friday, 08:30 ET. The single most reliable intraday
@@ -112,18 +158,26 @@ def month_events(year: int, month: int) -> list[Event]:
     # the long-run central tendency. Labelled APPROXIMATE so nobody mistakes a
     # heuristic for a timetable.
     cpi = _nth_weekday(year, month, 2, 2)
-    out.append(Event("CPI", _ny(cpi, 8, 30), "HIGH",
-                     "APPROXIMATE — second Wednesday, 08:30 ET; replace with the "
-                     "published BLS date when a feed is wired"))
+    cpi_official = _official("CPI", year, month)
+    out.append(Event("CPI", cpi_official or _ny(cpi, 8, 30), "HIGH",
+                     "PUBLISHED — from config/release_calendar.json"
+                     if cpi_official else
+                     "APPROXIMATE — second Wednesday, 08:30 ET; drop the published "
+                     "BLS dates into config/release_calendar.json to make it exact"))
 
     # PPI — the day after CPI in most months, same rationale and caveat.
-    out.append(Event("PPI", _ny(cpi + timedelta(days=1), 8, 30), "MEDIUM",
-                     "APPROXIMATE — day after CPI, 08:30 ET"))
+    ppi_official = _official("PPI", year, month)
+    out.append(Event("PPI", ppi_official or _ny(cpi + timedelta(days=1), 8, 30),
+                     "MEDIUM",
+                     "PUBLISHED — from config/release_calendar.json"
+                     if ppi_official else "APPROXIMATE — day after CPI, 08:30 ET"))
 
     # PCE — the Fed's preferred inflation measure, released near month end.
     pce = _last_weekday(year, month, 4)
-    out.append(Event("PCE", _ny(pce, 8, 30), "MEDIUM",
-                     "APPROXIMATE — last Friday, 08:30 ET"))
+    pce_official = _official("PCE", year, month)
+    out.append(Event("PCE", pce_official or _ny(pce, 8, 30), "MEDIUM",
+                     "PUBLISHED — from config/release_calendar.json"
+                     if pce_official else "APPROXIMATE — last Friday, 08:30 ET"))
 
     # ISM manufacturing — first business day, 10:00 ET.
     d = date(year, month, 1)

@@ -375,6 +375,7 @@ class LiveDesk:
                  macro_provider=None,
                  macro_refresh: timedelta = timedelta(hours=6),
                  macro_timeout_s: float = 25.0,
+                 resolved_rows: Optional[Sequence[dict]] = None,
                  wake_on_bar_close: bool = False):
         self.provider, self.ledger = provider, ledger
         self.sink = sink or build_sink(None)
@@ -386,6 +387,13 @@ class LiveDesk:
         self.watcher = Watcher(heartbeat=heartbeat, min_gap=min_gap,
                                wake_on_bar_close=wake_on_bar_close)
         self.vision, self.cohorts = vision, cohorts
+        # THE RESOLVED PATHS, for the outcome distribution shown on every
+        # signal. Seeded from the ledger at boot — the same rows that build the
+        # cohorts — so a restart does not reset what the desk knows about how
+        # its own trades behave, and appended to on every close.
+        self._closed_rows: list[dict] = [
+            r for r in (resolved_rows or [])
+            if isinstance(r, dict) and r.get("kind") == "TRADE_CLOSED"]
         self.book = book
         self.obs_heartbeat = observer_heartbeat
         self.shadow_management = shadow_management
@@ -829,6 +837,7 @@ class LiveDesk:
         brief = build_brief(bars, i, st, sw, bid, ask, age, htf_state, timeline,
                             macro=self._macro,
                             crossmarket=self._crossmarket,
+                            precedent=self._precedent(st, htf_state, bars[i].ts),
                             timeframe=ENTRY_TF)
         try:
             self._last_prompt_chars = len(brief.render())
@@ -1073,8 +1082,14 @@ class LiveDesk:
         # that was available. Returning early there would discard precisely the
         # evidence those restrictions are supposed to be reviewed against.
         for c in sel.taken:
+            # THE FAILOVER STAMP TRAVELS. Re-wrapping the candidate without it
+            # would drop, on the universe path only, the one field saying a
+            # different brain produced this read — and the universe path is the
+            # LIVE one, so every fallback signal would have looked in the ledger
+            # exactly like a primary signal.
             pr = ProviderRead(c.read, stamp.provider, stamp.model,
-                              stamp.latency_ms, dict(stamp.usage))
+                              stamp.latency_ms, dict(stamp.usage),
+                              dict(getattr(stamp, "failover", {}) or {}))
             sig = c.compiled
 
             # Re-entry, hypothesis veto and solvency apply PER CANDIDATE. A
@@ -1315,6 +1330,13 @@ class LiveDesk:
                       # It scores; it does not gate.
                       "evidence_balance": self._evidence_balance(sig.direction,
                                                              brief.context),
+                      # THE UNCOMPRESSED STATE, on the row as well as in the
+                      # prompt. A measurement the analyst was shown and the
+                      # ledger did not keep is one no later analysis can group
+                      # by -- and "does efficiency predict realised R" is
+                      # exactly the question ranker.py exists to answer.
+                      "continuous": (brief.continuous.to_dict()
+                                     if brief.continuous is not None else {}),
                       "vision": self.vision.value, "charts_sent": n_charts,
                       "management_policy": self.active_chooser().name,
                       # WHO will manage this position, and on whose authority.
@@ -1371,8 +1393,61 @@ class LiveDesk:
             f"`TP1    {sig.tp1:.2f}`\n`TP2    {sig.tp2:.2f}`  ({sig.rr_tp2:.2f}R net)"
             f"{how}{size_line}{risk_line}\n"
             f"conf {sig.confidence}/5 · cost {sig.cost_r:.3f}R · "
-            f"breakeven {sig.breakeven_win_rate:.0%}\n\n{sig.read}\n\n"
+            f"breakeven {sig.breakeven_win_rate:.0%}\n"
+            f"{self._outcome_line(mech)}\n{sig.read}\n\n"
             f"*Why:* {sig.why}\n*Against:* {sig.why_not}\n*Invalid if:* {sig.invalidation}")
+
+    def _precedent(self, st, htf, ts) -> Optional[str]:
+        """What happened last time the desk stood in a state like this one.
+
+        THE GAP THIS CLOSES. The brief described the present in full and the
+        past not at all. The desk holds a ledger of every state it has traded
+        and what the market then did, and the only part of it that reached the
+        reasoning layer was a scalar coverage score — which cannot say WHICH
+        trades, what happened in them, or where they differ from now.
+
+        Built from the in-memory closed rows, so it costs no ledger read at a
+        decision moment, and wrapped: an enrichment must never cost a signal.
+        """
+        try:
+            from .memory_pack import build as _pack
+            from .runner import context_of
+            from .sessions import session_of
+            pack = _pack(context_of(st, htf, session_of(ts)), self._closed_rows)
+            return pack.render()
+        except Exception as e:                                   # noqa: BLE001
+            log.debug("precedent unavailable: %s", e)
+            return None
+
+    def _outcome_line(self, mechanism: str) -> str:
+        """What trades like this one have actually DONE, on the message itself.
+
+        A confidence of 4/5 tells the operator how sure a model felt. It does
+        not tell them how often this mechanism reaches +1R before the stop, how
+        deep it usually goes against them first, or what the bad tenth looks
+        like — and those are the numbers a person sizing a trade by hand
+        actually needs. All three are in the record already.
+
+        FALLS BACK TO THE DESK-WIDE FIGURE and SAYS SO by printing the label. A
+        mechanism with four resolved trades has no distribution of its own, and
+        showing one would be worse than showing nothing.
+        """
+        try:
+            from .barriers import estimate
+            b = estimate(self._closed_rows, mechanism)
+            if b.verdict == "UNMEASURED":
+                b = estimate(self._closed_rows)
+            if b.verdict == "UNMEASURED":
+                return (f"outcome distribution UNMEASURED ({b.n} resolved) — "
+                        f"this signal is a judgement, not a frequency\n")
+            p1, p2 = b.p_at(1.0), b.p_at(2.0)
+            floor = " floor" if b.n_managed else ""
+            return (f"P(+1R first) {p1:.0%}{floor} · P(+2R) {p2:.0%} · "
+                    f"usual worst drawdown {b.mae_p80:.2f}R · "
+                    f"n={b.n} [{b.label}]\n")
+        except Exception as e:                                   # noqa: BLE001
+            log.debug("outcome distribution unavailable: %s", e)
+            return ""
 
     # -- management --------------------------------------------------------
     def _manage(self, bars, i, st: StructureState,
@@ -1619,7 +1694,7 @@ class LiveDesk:
             f"resolution `{resolution.value}` · {t.observer.ticks} observations"
             f"{flag}")
 
-        self.ledger.append_raw({
+        closed_row = {
             "kind": "TRADE_CLOSED", "ts": ts.isoformat(),
             "entry_t0": t.position.opened_utc.isoformat(),
             "context": t.entry_context, "mechanism_name": t.mechanism_name,
@@ -1655,7 +1730,13 @@ class LiveDesk:
             "management_authority": ("operator" if self._management_override
                                      else "durable-binding"),
             "reentry_policy": self.active_reentry().version,
-            "vision": self.vision.value})
+            "vision": self.vision.value}
+        self.ledger.append_raw(closed_row)
+        # KEPT IN MEMORY TOO, so the outcome distribution on the next signal
+        # includes this trade without re-reading the whole ledger at every wake.
+        # The list is seeded at boot from the same rows that build the cohorts,
+        # so a restart does not reset what the desk knows about its own paths.
+        self._closed_rows.append(closed_row)
 
         self.prior = PriorTrade(
             direction=t.position.direction, exit_reason=reason, realised_r=total,

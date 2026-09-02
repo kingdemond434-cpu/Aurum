@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Optional, Sequence
 
 import anthropic
 from pydantic import BaseModel, Field, ValidationError
@@ -222,6 +222,18 @@ class MarketBrief:
     # as `trend` -- see golddesk/quant_findings.py for the formal absorption
     # record this exists to let a currently-blocked hypothesis test against.
     day_state: Optional[DayState] = None
+    #: THE NUMBERS BEHIND THE LABELS. `context` is semantic — UP / STRONG /
+    #: NORMAL / MEDIUM — and two states carrying the same four words can be
+    #: economically nothing alike: a 3.2-ATR impulse retraced 41% at efficiency
+    #: 0.71 reads identically to a 1.6-ATR impulse retraced 60% at 0.28. The
+    #: desk computed every one of those numbers on its way to the four words and
+    #: then discarded them at the boundary where the reasoning happens.
+    #:
+    #: Both layers now, together. This has no authority of its own — evidence in
+    #: the same standing as every Context field — and it is recorded on the
+    #: SIGNAL row so ranker.py can eventually ask the only question that matters
+    #: about any of these: does it predict realised R.
+    continuous: Optional[Any] = None
 
     @property
     def mid(self) -> float:
@@ -242,6 +254,16 @@ class MarketBrief:
             "MEASURED CONTEXT (deterministic — these are facts, not opinions)",
             self.context.render(),
         ]
+        if self.continuous is not None:
+            # IMMEDIATELY AFTER the labels, not in a distant section. They
+            # describe the same instant and the whole point is that the reader
+            # sees the number beside the word it was compressed into: STRONG
+            # and efficiency 0.28 together say something neither says alone.
+            lines += ["",
+                      "THE SAME STATE, UNCOMPRESSED (raw measurements behind the "
+                      "labels above; zero authority, the compiler still owns "
+                      "every price)",
+                      self.continuous.render()]
         if self.trend is not None:
             lines += ["",
                       "GOLD TREND (ported from the quant desk; sealed external "

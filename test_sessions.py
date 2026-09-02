@@ -267,3 +267,50 @@ def test_a_state_whose_window_holds_no_bars_falls_back_and_labels_it():
         pytest.skip("fixture degenerated once timestamps were frozen")
     assert st.session_basis == "session"    # one instant still lands in a window
     assert st.session_window
+
+
+# ------------------------------------- the calendar can be made exact by a file
+
+def test_an_official_release_date_overrides_the_rule(tmp_path, monkeypatch):
+    """The rule is 'second Wednesday' and the agency does not follow one. The
+    fix is a file the operator supplies — NOT dates typed in from memory, which
+    is a claim about somebody else's schedule that goes stale silently."""
+    import json
+
+    from golddesk import calendar as C
+    p = tmp_path / "release_calendar.json"
+    p.write_text(json.dumps({"CPI": ["2026-09-11T08:30"]}), encoding="utf-8")
+    monkeypatch.setattr(C, "OFFICIAL_CALENDAR", p)
+    cpi = next(e for e in C.month_events(2026, 9) if e.name == "CPI")
+    assert cpi.when_utc.day == 11
+    assert "PUBLISHED" in cpi.basis
+
+
+def test_without_a_file_the_rule_is_used_and_labelled_approximate(monkeypatch):
+    from golddesk import calendar as C
+    monkeypatch.setattr(C, "OFFICIAL_CALENDAR", Path("/nowhere/absent.json"))
+    cpi = next(e for e in C.month_events(2026, 9) if e.name == "CPI")
+    assert "APPROXIMATE" in cpi.basis
+
+
+def test_a_corrupt_calendar_file_degrades_to_the_rule(tmp_path, monkeypatch):
+    from golddesk import calendar as C
+    p = tmp_path / "release_calendar.json"
+    p.write_text("{not json", encoding="utf-8")
+    monkeypatch.setattr(C, "OFFICIAL_CALENDAR", p)
+    cpi = next(e for e in C.month_events(2026, 9) if e.name == "CPI")
+    assert "APPROXIMATE" in cpi.basis
+
+
+def test_a_supplied_date_still_goes_through_the_tz_conversion(tmp_path, monkeypatch):
+    """A file cannot reintroduce the DST error the rules avoid."""
+    import json
+
+    from golddesk import calendar as C
+    p = tmp_path / "release_calendar.json"
+    p.write_text(json.dumps({"CPI": ["2026-01-13T08:30", "2026-07-14T08:30"]}),
+                 encoding="utf-8")
+    monkeypatch.setattr(C, "OFFICIAL_CALENDAR", p)
+    jan = next(e for e in C.month_events(2026, 1) if e.name == "CPI")
+    jul = next(e for e in C.month_events(2026, 7) if e.name == "CPI")
+    assert jan.when_utc.hour == 13 and jul.when_utc.hour == 12

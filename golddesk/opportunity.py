@@ -110,6 +110,12 @@ def resolved_outcomes(rows: Sequence[dict]) -> list[dict]:
                 # rather than defaulted, so a consumer can tell "did not happen"
                 # from "was not recorded".
                 "t_mfe": r.get("t_mfe"), "t_mae": r.get("t_mae"),
+                # WHAT ENDED IT. Carried because "-0.4R" and "-0.4R via
+                # MANAGED_EXIT" support different conclusions: the first reads
+                # as a losing thesis, the second as a thesis closed while it was
+                # still working. The memory pack shows this to the analyst, and
+                # it is what separates a censored MFE from a complete one.
+                "reason": r.get("reason"),
                 "vision": r.get("vision"),
                 "risk_r": r.get("risk_r"), "account_r": r.get("account_r"),
                 "resolution": r.get("resolution"),

@@ -171,6 +171,20 @@ FEATURES: tuple[Feature, ...] = (
             "stop distance in trailing ATR — needs bars"),
     Feature("edge_r", lambda d: _dig(d, "edge_r"), False,
             "the desk's own pre-trade edge estimate — computed after selection"),
+    # ---- THE UNCOMPRESSED STATE (continuous.py). Measured but not yet
+    # scoreable: these are computed while the brief is BUILT, and selection
+    # happens downstream of that with only the candidate in hand. If one of
+    # them turns out to predict realised R it will be reported as MEASURED BUT
+    # UNWIRED, which is the signal to plumb it through — a defect to close
+    # rather than a result to enjoy.
+    Feature("efficiency", lambda d: _dig(d, "continuous", "efficiency"), False,
+            "Kaufman efficiency — 0 chop, 1 a straight line"),
+    Feature("impulse_atr", lambda d: _dig(d, "continuous", "impulse_atr"), False,
+            "the current leg's size in ATR"),
+    Feature("retracement", lambda d: _dig(d, "continuous", "retracement"), False,
+            "how far the leg has given back, 0 to 1"),
+    Feature("vol_z", lambda d: _dig(d, "continuous", "vol_z"), False,
+            "recent bar range against its own longer mean, in sd"),
 )
 
 SCOREABLE = tuple(f.name for f in FEATURES if f.scoreable)

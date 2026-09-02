@@ -530,6 +530,44 @@ def step_cohorts(ctx: dict) -> str:
     return render_all(cohorts)
 
 
+def step_barriers(ctx: dict) -> str:
+    """What the trades DO, not merely which way they pointed.
+
+    The desk's answer to "what is the trade here" is a direction and a
+    confidence out of five, which cannot answer any of the questions that
+    actually decide a position: how often does this reach +1R before the stop,
+    how far does it go against me first, and when does it get there. Every one
+    of those is estimable from rows the desk has been writing and never reading.
+
+    Reports UNMEASURED under its own minimum, and states that every probability
+    is a LOWER BOUND while managed exits are in the sample -- a trade closed by
+    management censors its own upper tail.
+    """
+    from golddesk.barriers import estimate, render_all
+    rows = ctx.get("rows") or []
+    ctx["barriers"] = estimate(rows)
+    return render_all(rows)
+
+
+def step_brains(ctx: dict) -> str:
+    """Two brains are running. How much did each produce, and was it any good?
+
+    A failover chain that is never measured is a silent change of system: some
+    fraction of the desk's signals start coming from a different model under
+    different inputs, and the record says so on a row nobody groups by. This
+    groups by it.
+
+    It will read UNMEASURED for a long time and that is correct -- a fallback
+    fires only during outages, and outages are rare. The volume half is
+    answerable from day one; the expectancy half is not, and the report refuses
+    it rather than printing a mean over three trades.
+    """
+    from golddesk.brain_compare import build
+    rep = build(ctx.get("rows") or [])
+    ctx["brains"] = rep
+    return rep.render()
+
+
 def step_ranker(ctx: dict) -> str:
     """Which recorded feature actually predicts realised R -- re-measured today.
 
@@ -722,7 +760,17 @@ STEPS = (
     # the takes -- so it must be re-measured before anything reasons about how
     # much selection is costing, and it needs the resolved record the two steps
     # above have already loaded.
+    # WHAT THE TRADES DO, next to what they were. Immediately after cohorts
+    # because both read the same resolved rows and this is the half cohorts
+    # cannot express: a hit rate says nothing about how far a winner travelled
+    # against the entry first, or when it got where it was going.
+    ("barriers", step_barriers),
     ("ranker", step_ranker),
+    # WHICH BRAIN PRODUCED WHAT. Next to the ranker because both ask the same
+    # shape of question -- does this input actually change realised R -- and
+    # both must be able to answer UNMEASURED for weeks without that reading as
+    # a failure.
+    ("brains", step_brains),
     ("missed_money", step_missed_money),
     ("mgmt_counterfactual", step_mgmt_counterfactual),
     ("levers", step_levers),

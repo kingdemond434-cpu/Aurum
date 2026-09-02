@@ -158,13 +158,50 @@ def _prior_day_bars(bars: Sequence[Bar], i: int) -> list[Bar]:
     return list(reversed(out))
 
 
+def htf_alignment(st: StructureState,
+                  htf: Optional[StructureState]) -> str:
+    """Does the higher timeframe agree with the entry timeframe?
+
+    Extracted so the memory pack can build its query context with the SAME
+    arithmetic the brief uses. It carries weight 1.3 in `regime.WEIGHTS` — the
+    third-heaviest field there — so a query that quietly omitted it would be
+    comparing on a different metric than the one the desk's novelty score uses,
+    and the two would disagree about which past states resemble this one.
+    """
+    if htf is None or htf.trend_direction == "NONE" or st.trend_direction == "NONE":
+        return "NEUTRAL"
+    return "ALIGNED" if htf.trend_direction == st.trend_direction else "CONFLICTED"
+
+
+def context_of(st: StructureState, htf: Optional[StructureState],
+               session: str) -> dict:
+    """The state as the ledger stores it, for querying the ledger with.
+
+    One shape, built once. A private notion of "the current context" would
+    eventually drift from the one that was written down, and then a memory pack
+    would be retrieving neighbours of a state the desk never recorded.
+    """
+    return {"trend_direction": st.trend_direction,
+            "trend_health": st.trend_health,
+            "trend_maturity": st.trend_maturity,
+            "volatility_state": st.volatility_state,
+            "htf_alignment": htf_alignment(st, htf),
+            "displacement_state": st.displacement_state,
+            "sweep_state": st.sweep_state,
+            "reclaim_state": st.reclaim_state,
+            "pullback_depth": st.pullback_depth,
+            "distance_from_session_extreme": st.distance_from_session_extreme,
+            "session": session}
+
+
 def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                 sw: Sequence, bid: float, ask: float, tick_age_s: float,
                 htf: Optional[StructureState] = None,
                 timeline: Sequence[str] = (), symbol: str = "XAUUSD",
                 timeframe: str = "D1",
                 macro: Optional[MacroContext] = None,
-                crossmarket: Optional[str] = None) -> MarketBrief:
+                crossmarket: Optional[str] = None,
+                precedent: Optional[str] = None) -> MarketBrief:
     """Assemble the analyst brief from deterministic state. Levels get stable ids.
 
     `macro` is optional and defaults to None, which renders as UNMEASURED
@@ -288,12 +325,7 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
                                 round(sess_hi + mult * atr, 2), timeframe, 0,
                                 True, projected=True)); n += 1
 
-    if htf is None:
-        align = "NEUTRAL"
-    elif htf.trend_direction == "NONE" or st.trend_direction == "NONE":
-        align = "NEUTRAL"
-    else:
-        align = "ALIGNED" if htf.trend_direction == st.trend_direction else "CONFLICTED"
+    align = htf_alignment(st, htf)
 
     ctx = Context(
         trend_direction=st.trend_direction, trend_health=st.trend_health,
@@ -341,9 +373,27 @@ def build_brief(bars: Sequence[Bar], i: int, st: StructureState,
               flows_load(FLOWS_CACHE).to_prompt()]
     if crossmarket:
         blocks.append(crossmarket)
+    # PRECEDENT LAST, and the position is deliberate. It is the only block that
+    # is about the PAST rather than the present, and a reasoner reading top-down
+    # should form its own view of the state before being shown what happened the
+    # last time something looked like this. Leading with the analogues invites
+    # matching instead of reading. Passed in rather than built here for the same
+    # reason macro and cross-market are: build_brief is pure and must stay
+    # testable with no ledger.
+    if precedent:
+        blocks.append(precedent)
     blocks = tuple(blocks)
 
+    # THE NUMBERS BEHIND THE LABELS. Wrapped so an enrichment can never cost a
+    # brief: the analyst reasons better with it and must still read without it.
+    try:
+        from .continuous import measure as _continuous
+        cont = _continuous(bars, i, st, sess_hi, sess_lo)
+    except Exception:                                            # noqa: BLE001
+        cont = None
+
     return MarketBrief(
+        continuous=cont,
         symbol=symbol, as_of_utc=bars[i].ts, session=session_of(bars[i].ts),
         bid=round(bid, 2), ask=round(ask, 2), spread=round(ask - bid, 2),
         tick_age_s=tick_age_s, atr=round(st.atr, 2), context=ctx, levels=levels,
@@ -434,7 +484,23 @@ class RiskLimits:
     max_signals_per_day and max_concurrent are gone. Concurrency is governed by
     portfolio heat in opportunity.Heat, which is denominated in risk.
     """
-    max_risk_per_trade_pct: float = 0.5
+    # `max_risk_per_trade_pct` WAS DECLARED HERE AND READ BY NOTHING. It sat in a
+    # dataclass whose own docstring calls its contents RISK INVARIANTS, next to
+    # three fields that really are enforced, so an operator reading this file saw
+    # a half-percent-of-capital cap and had every reason to believe the desk
+    # applied one. It did not: risk_check works in R, and nothing in the package
+    # ever referenced the field.
+    #
+    # Removed rather than wired, and the reason is specific: Aurum HOLDS NO
+    # CAPITAL. A percent-of-capital limit has no denominator here, so wiring it
+    # would mean inventing an account balance to enforce against — which is a
+    # worse defect than the one being fixed. Sizing is denominated in R by
+    # allocation.py, and 1R is the operator's own per-trade risk, chosen on
+    # their side of the wire.
+    #
+    # A declared limit that enforces nothing is not a harmless leftover: it is a
+    # claim the desk cannot cash, in the one file where a reader is least likely
+    # to check.
     max_daily_loss_r: float = 3.0        # advisory on an advisory desk; see below
     max_open_risk_r: float = 2.0         # total R live across all positions
     correlation_haircut: float = 0.65    # same-symbol same-direction overlap

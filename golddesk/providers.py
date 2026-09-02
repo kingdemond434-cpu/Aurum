@@ -35,10 +35,20 @@ class ProviderRead:
     model: str
     latency_ms: float
     usage: dict = field(default_factory=dict)
+    #: WHY THIS BRAIN, when it was not the first choice. Empty on the primary
+    #: path, so the record of an ordinary read is unchanged. When a failover
+    #: produced this read it carries `fallback_from`, `fallback_reason` and
+    #: `chain_position`: a decision made by a different model, possibly without
+    #: charts, must never be indistinguishable in the ledger from one the
+    #: primary made. See failover.py.
+    failover: dict = field(default_factory=dict)
 
     def stamp(self) -> dict:
-        return {"provider": self.provider, "model": self.model,
-                "latency_ms": round(self.latency_ms, 1), "usage": self.usage}
+        d = {"provider": self.provider, "model": self.model,
+             "latency_ms": round(self.latency_ms, 1), "usage": self.usage}
+        if self.failover:
+            d["failover"] = dict(self.failover)
+        return d
 
 
 class AnalystError(RuntimeError):
@@ -1085,18 +1095,53 @@ class ClaudeCodeAnalyst(AnalystProvider):
         return pr, uni
 
 
+def _codex_local(**kw):
+    """Imported lazily: codex_provider imports from here, and a module-level
+    import would close the cycle at import time."""
+    from .codex_provider import CodexLocalAnalyst
+    return CodexLocalAnalyst(**kw)
+
+
 PROVIDERS = {"anthropic": AnthropicAnalyst, "replay": ReplayAnalyst,
              "deterministic": DeterministicProvider,
-             "claudecode": ClaudeCodeAnalyst}
+             "claudecode": ClaudeCodeAnalyst,
+             # A SECOND BRAIN ON THE SAME BOX, for when the first one is out of
+             # allowance. Same brief, same schema, same compiler; see
+             # codex_provider.py and failover.py.
+             "codexlocal": _codex_local}
 
 
 def build_provider(spec: str, **kw) -> AnalystProvider:
-    """spec = 'anthropic:claude-opus-5', 'claudecode:claude-opus-5', or 'replay'.
+    """spec = 'anthropic:claude-opus-5', 'claudecode:claude-opus-5', 'replay',
+    'codexlocal:<model>', or a failover chain.
 
     'claudecode' routes the SAME AnthropicAnalyst through a Claude Code CLI
     client instead of the metered API -- your subscription pays, nothing else
     about the desk changes. Vendor choice is config either way.
+
+    A CHAIN is written 'chain:a+b+c', where each element is an ordinary spec:
+
+        chain:claudecode:claude-opus-5+codexlocal:
+
+    Tried in order until one answers, every one given the identical frozen
+    brief; the answer is stamped with which brain produced it and why the ones
+    before it did not. When all of them are unavailable the chain FAILS rather
+    than reaching for something weaker to keep the cadence up. See failover.py.
     """
+    if spec == "auto":
+        # THE CHAIN THIS BOX CAN ACTUALLY RUN. Probed, not assumed: a link that
+        # is not installed is left out and logged, rather than sitting in the
+        # chain as a step that fails on every single read.
+        from .failover import build_chain, resolve_auto
+        kept, skipped = resolve_auto()
+        if skipped:
+            log.warning("provider 'auto': skipping unusable brain(s) — %s",
+                        "; ".join(skipped))
+        log.info("provider 'auto' resolved to: %s", " -> ".join(kept))
+        return build_chain(kept)
+    if spec.startswith("chain:"):
+        from .failover import build_chain
+        return build_chain([s for s in spec[len("chain:"):].split("+") if s])
     name, _, model = spec.partition(":")
     if name not in PROVIDERS:
         raise ValueError(f"unknown provider {name!r}; have {sorted(PROVIDERS)}")

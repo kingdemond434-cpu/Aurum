@@ -39,6 +39,22 @@ quant's capital vocabulary to Aurum — it was done once and it reads as not kno
   is the only acceptable direction. A demotion that fires in shadow is a bug, not caution.
 - **Partials are DYNAMIC** (`golddesk/partial_policy.py`): banked against live maturity, volatility,
   HTF alignment and TP2 headroom. Never hardcode a fraction.
+- **TWO BRAINS, and the desk switches BOTH WAYS on its own** (`golddesk/failover.py`). Run
+  `--provider auto`: the Claude CLI is primary, a locally installed Codex CLI
+  (`golddesk/codex_provider.py`, `codex exec`, read-only sandbox, no approvals) is the fallback.
+  Same frozen brief, same `AnalystRead` schema, same deterministic compiler — the compiler never
+  learns which brain produced the thesis, which is exactly why a second brain is safe to add. On a
+  quota/auth failure the dead brain is skipped for a SHORT cool-off (10 min for quota) and probed
+  again; the instant the primary answers the desk is back on it, and THAT row is stamped
+  `recovered` with `degraded_seconds`, so the return is in the ledger as well as the departure.
+  **When every brain is unavailable the chain FAILS.** It never reaches for something weaker to
+  keep the cadence up: the frequency order means "do not refuse trades out of timidity", never
+  "produce a signal from an unvalidated brain so the hour has a message in it".
+  `AURUM_CODEX_MODEL` pins the model — there is deliberately NO default model name in the code, a
+  hardcoded one being a claim about a vendor's catalogue that goes stale silently. `step_brains`
+  in the daily cycle groups realised R by brain, says UNMEASURED until the sample supports better,
+  and states that the comparison is NOT controlled — a fallback only ever trades while the primary
+  is down, which correlates with hour, load, session and volatility.
 - **The operator should not be running diagnostic commands.** If a question about the live desk
   cannot be answered from the repo, that is a defect in the publishing, not a reason to ask them.
 
@@ -65,6 +81,25 @@ detects this on the FIRST failure, skips the flag ladder, and alarms with the fi
 interactively on the box as the task's user. No retry, restart or watchdog can clear it.
 
 Everything else self-corrects. 24 checks across five axes, allowlisted remedies in `remediate.py`.
+
+## The measurement modules, and what each REFUSES to say
+
+Every one of them can return UNMEASURED and does. If you are about to add a number, check
+whether one of these already owns the question — a second answer to the same question is how
+this repo gets two numbers nobody reconciles.
+
+| Module | Answers | Refuses until |
+|---|---|---|
+| `ranker.py` | which recorded feature predicts realised R; publishes `state/ranker.json` and votes in `universe._sort_key` | 30 resolved, Holm across the day's tests, the sample's own median `cost_r`, and 3 days at one sign |
+| `barriers.py` | P(+xR before -1R), MFE/MAE, time-to-best, R quantiles — on the Telegram message too | 15 resolved; and every figure is a FLOOR while managed exits are in the sample |
+| `cohort_stats.py` | per-mechanism expectancy with intervals | 8 for a figure, 30 for the word MEASURED |
+| `memory_pack.py` | the k most similar states the desk has TRADED, with what happened and what differs | nothing — but it states it is precedent, NOT a rate, every time it prints |
+| `brain_compare.py` | realised R per analyst brain | 8 per brain; and says the comparison is not controlled |
+| `stop_regime.py` | were stops too tight for the volatility met | 8 stopped trades |
+| `contradiction.py` | measured evidence for vs against a direction | nothing; it scores and never gates |
+| `continuous.py` | the raw numbers behind TREND=UP/HEALTH=STRONG, in the brief and the ledger | nothing; None renders as UNMEASURED, never as 0 |
+| `sessions.py` | clock windows, DST-aware, and extremes over them | a window with no bars returns None, never a substitute range |
+| `absorb_health.py` | is the pipe from quant carrying anything | grades the LAST CYCLE, so it clears the moment it is fixed |
 
 ## Traps this desk has actually fallen into
 
