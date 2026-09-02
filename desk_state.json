@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "329/329 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "331/331 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "15.5% recent vs 16.5% prior",
+          "detail": "15.7% recent vs 16.4% prior",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "42 sleeve(s) accruing, published 0.4h ago",
+          "detail": "42 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -93,12 +93,12 @@
         },
         {
           "check": "AurumSignalDesk-Watchdog",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Watchdog', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "AurumSignalDesk-SelfHeal",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-SelfHeal', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited 1 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": false
         }
       ],
-      "faults": 6
+      "faults": 5
     },
     "wiring": {
       "axis": "wiring",
@@ -159,18 +159,18 @@
         },
         {
           "check": "blind bars",
-          "detail": "1089 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "1096 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.0h old",
+          "detail": "newest row 0.1h old",
           "ok": true
         },
         {
           "check": "macro",
-          "detail": "5/20 briefs carried macro",
-          "ok": true
+          "detail": "all 20 recent briefs carried MACRO UNMEASURED \u2014 the analyst is reading gold with no DXY, no real yield and no risk proxy",
+          "ok": false
         },
         {
           "check": "spread profile",
@@ -194,23 +194,23 @@
         },
         {
           "check": "disk",
-          "detail": "16158MB free",
+          "detail": "16149MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 116.9h ago",
+          "detail": "wrote 0 min ago, after a boot 117.2h ago",
           "ok": true
         }
       ],
-      "faults": 3
+      "faults": 4
     }
   },
   "decisions": {
     "BLIND": {
-      "count": 1089,
-      "error": "codex exited 1:    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\n  2026-09-01T09:46  LONG  SWING_REVERSAL     +2.33R  similarity 0.50  mechanism=failed-shelf-breakdown-trap\n    PAID; MFE +2.36R / MAE -0.18R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-02T22:13:13.502333+00:00",
+      "count": 1096,
+      "error": "codex exited 1: produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\n  2026-08-30T23:15  LONG  SWING_REVERSAL     -0.67R  similarity 0.50  mechanism=shelf-break-stop-run\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.66R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-02T22:27:17.146794+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-02T22:18:35.540393+00:00",
-  "last_row_utc": "2026-09-02T22:13:13.502333+00:00",
-  "ledger_rows": 9414,
+  "generated_utc": "2026-09-02T22:34:41.526860+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 9485,
   "total_faults": 13
 }
