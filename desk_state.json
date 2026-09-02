@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "327/327 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "326/326 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 62h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 63h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "41 sleeve(s) accruing, published 0.2h ago",
+          "detail": "44 sleeve(s) accruing, published 0.1h ago",
           "ok": true
         }
       ],
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "1006 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "1013 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "16397MB free",
+          "detail": "16388MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 113.4h ago",
+          "detail": "wrote 1 min ago, after a boot 113.6h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 1006,
+      "count": 1013,
       "error": "codex exited 1:  MFE +0.22R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-31T12:45  SHORT TREND_CONTINUATION -0.03R  similarity 0.67  mechanism=failed-rebound-buyer-release\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.01R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-02T18:42:04.142592+00:00",
+      "last": "2026-09-02T18:58:09.165621+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-02T18:48:20.504671+00:00",
-  "last_row_utc": "2026-09-02T18:42:04.142592+00:00",
-  "ledger_rows": 8667,
+  "generated_utc": "2026-09-02T19:03:21.914617+00:00",
+  "last_row_utc": "2026-09-02T18:58:09.165621+00:00",
+  "ledger_rows": 8730,
   "total_faults": 12
 }
