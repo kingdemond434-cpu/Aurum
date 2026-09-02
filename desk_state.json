@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "285/285 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "292/292 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "41 sleeve(s) accruing, published 0.2h ago",
+          "detail": "42 sleeve(s) accruing, published 0.0h ago",
           "ok": true
         }
       ],
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "874 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "883 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -169,7 +169,7 @@
         },
         {
           "check": "macro",
-          "detail": "4/20 briefs carried macro",
+          "detail": "13/20 briefs carried macro",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "16742MB free",
+          "detail": "16731MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 109.6h ago",
+          "detail": "wrote 1 min ago, after a boot 109.9h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 874,
-      "error": "codex exited 1: echanism=failed-shelf-breakdown-trap\n    PAID; MFE +1.87R / MAE -0.18R; close=EXIT_THESIS\n  2026-08-30T13:47  SHORT NOVEL              +0.79R  similarity 0.50  mechanism=range-extreme-stop-run\n    PAID; MFE +0.81R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-02T14:55:02.253979+00:00",
+      "count": 883,
+      "error": "codex exited 1: chanism=origin-shelf-demand-long\n    PAID; MFE +0.11R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-30T22:15  SHORT NOVEL              +0.25R  similarity 0.67  mechanism=broken-shelf-retest-supply\n    PAID; MFE +0.25R / MAE +0.00R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-02T15:12:03.099233+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-02T15:00:42.427122+00:00",
-  "last_row_utc": "2026-09-02T14:55:02.253979+00:00",
-  "ledger_rows": 7479,
+  "generated_utc": "2026-09-02T15:15:19.914760+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 7568,
   "total_faults": 12
 }
