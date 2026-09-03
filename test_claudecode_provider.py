@@ -119,10 +119,54 @@ def test_the_argv_pins_the_things_that_cost_money_or_change_behaviour():
 
 # --------------------------------------------------------------- the refusals
 
-def test_charts_raise_rather_than_being_silently_dropped():
-    """A chart arm that ran without charts would poison every comparison."""
-    p = ClaudeCodeAnalyst(runner=fake(json.dumps(VALID_READ)))
-    with pytest.raises(AnalystError, match="cannot send charts"):
+def test_charts_are_spilled_and_read_through_the_one_granted_tool():
+    """The subscription path supports charts; it does not refuse them any more.
+
+    Refusing is what made a --provider claudecode desk look broken: every read
+    raised before reaching the CLI, fell through to codex, and recorded codex's
+    error.
+    """
+    seen: list = []
+    p = ClaudeCodeAnalyst(model="claude-opus-5",
+                          runner=fake(envelope(json.dumps(VALID_READ),
+                                               num_turns=3), seen))
+    p.read(brief(), charts=[Chart(timeframe="M15", png=b"\x89PNG",
+                                  width=800, height=600)])
+    argv, prompt = seen[0]
+    # Read only, nowhere but the spill directory, and turns enough to use it.
+    assert argv[argv.index("--allowed-tools") + 1] == "Read"
+    read_dir = argv[argv.index("--add-dir") + 1]
+    assert int(argv[argv.index("--max-turns") + 1]) >= 3
+    # The prompt has to NAME the files or the model has nothing to open, and the
+    # filename carries the timeframe so a multi-zoom read can tell them apart.
+    assert read_dir in prompt and "chart0-M15.png" in prompt
+
+
+def test_the_numeric_path_keeps_zero_tools_and_one_turn():
+    """Granting Read for charts must not widen the ordinary read's surface."""
+    seen: list = []
+    ClaudeCodeAnalyst(model="claude-opus-5",
+                      runner=fake(json.dumps(VALID_READ), seen)).read(brief())
+    argv, _ = seen[0]
+    assert argv[argv.index("--allowed-tools") + 1] == ""
+    assert argv[argv.index("--max-turns") + 1] == "1"
+    assert "--add-dir" not in argv
+
+
+def test_a_chart_read_answered_in_one_turn_is_refused():
+    """One turn means it never opened the images: a text read in chart clothing."""
+    p = ClaudeCodeAnalyst(runner=fake(envelope(json.dumps(VALID_READ), num_turns=1)))
+    with pytest.raises(AnalystError, match="never opened them"):
+        p.read(brief(), charts=[Chart(timeframe="M15", png=b"\x89PNG",
+                                      width=800, height=600)])
+
+
+def test_a_chart_read_with_no_turn_evidence_is_refused():
+    """Unverifiable is not verified. An envelope with no num_turns cannot be checked."""
+    env = {k: v for k, v in envelope(json.dumps(VALID_READ)).items()
+           if k != "num_turns"}
+    p = ClaudeCodeAnalyst(runner=fake(env))
+    with pytest.raises(AnalystError, match="no num_turns"):
         p.read(brief(), charts=[Chart(timeframe="M15", png=b"\x89PNG",
                                       width=800, height=600)])
 

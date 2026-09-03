@@ -17,12 +17,23 @@ text is `result`, which THEN needs unfencing before it is the JSON this desk's s
 expects. Two decode steps, not one; skipping the outer one silently tries to validate
 the whole envelope against AnalystRead and fails confusingly.
 
-VISION: the desk's own default is `Vision.NUMERIC_ONLY` (see live.py) -- no chart
-images, `brief.render()` text only. This backend covers exactly that path, which is
-what a normal run actually uses. `--allowed-tools ""` means the CLI has no Read
-access to attach a file even if it wanted to, so if a caller ever passes chart
-images (`Vision.WITH_CHARTS`) this REFUSES rather than silently dropping them or
-guessing at an unverified image-attachment mechanism.
+VISION, AND THE BUG THAT MADE THIS PROVIDER LOOK BROKEN. `run_desk.py` defaults to
+`Vision.NUMERIC_PLUS_CHARTS`, not NUMERIC_ONLY -- charts are ON unless you pass
+--numeric-only. This backend used to RAISE on any image, so a desk configured with
+--provider claudecode refused every single read before it ever reached the CLI, fell
+through to the codex fallback, and recorded the FALLBACK's error. That is how 1,030
+bars went BLIND against "codex exited 1" on a box that was correctly logged in: the
+symptom named the wrong provider entirely.
+
+The CLI takes no image on stdin, so charts are now spilled to a temp directory and
+read back with `--allowed-tools Read --add-dir <tmp>`. Read is the only tool granted,
+the temp directory the only place it reaches, and the turn budget covers one
+round-trip per image. The numeric path is unchanged: zero tools, one turn.
+
+A chart read is only BOOKED as one if the envelope shows the tool round-trip
+happened. Answering in one turn means the model never opened the files, and a chart
+arm that silently ran on text would make competition.py's paired comparison and
+budget.py's "does the chart arm pay for itself" question return confident fiction.
 
 ONE-TIME SETUP, before this can run at all
     1. npm install -g @anthropic-ai/claude-code
@@ -34,15 +45,18 @@ USE
     from golddesk.analyst import call_analyst
     from golddesk.claude_code_analyst import ClaudeCodeAnalyst
 
-    read = call_analyst(brief, client=ClaudeCodeAnalyst())   # charts=() only
+    read = call_analyst(brief, client=ClaudeCodeAnalyst())   # charts supported
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 
@@ -82,15 +96,41 @@ class _Messages:
     def __init__(self, parent: "ClaudeCodeAnalyst"):
         self._p = parent
 
+    @staticmethod
+    def _spill(images: list, into: Path) -> list:
+        """Write each base64 image block to a real file. Returns their paths.
+
+        A block whose payload does not decode is dropped rather than written as
+        a corrupt PNG the model would silently fail to open — but the count of
+        written files is what the turn check below is measured against, so a
+        dropped image cannot masquerade as a read one.
+        """
+        out = []
+        for i, blk in enumerate(images):
+            src = blk.get("source") or {}
+            if src.get("type") != "base64" or not src.get("data"):
+                continue
+            ext = str(src.get("media_type", "image/png")).partition("/")[2] or "png"
+            p = into / f"chart{i}.{ext}"
+            try:
+                p.write_bytes(base64.b64decode(src["data"]))
+            except (ValueError, TypeError, OSError):
+                continue
+            out.append(p)
+        return out
+
+    @staticmethod
+    def _chart_note(paths: list) -> str:
+        if not paths:
+            return ""
+        listing = "\n".join(f"  {p}" for p in paths)
+        return ("\n\nCHARTS. Read every one of these image files before you answer. "
+                "They are the visual half of this read and the numeric brief above "
+                "is not a substitute for them:\n" + listing)
+
     def create(self, *, model: str, max_tokens: int, system=None,
                output_config=None, messages, **_ignored) -> _Response:
-        images_present = any(
-            b.get("type") == "image" for b in messages[0]["content"])
-        if images_present:
-            raise _CLIError(
-                "ClaudeCodeAnalyst was sent chart images, but -p --allowed-tools \"\" "
-                "has no Read access to attach a file. Run with Vision.NUMERIC_ONLY "
-                "(the desk's default) or use the hosted API path for vision.")
+        images = [b for b in messages[0]["content"] if b.get("type") == "image"]
 
         brief_text = "\n\n".join(
             b["text"] for b in messages[0]["content"] if b.get("type") == "text")
@@ -104,14 +144,47 @@ class _Messages:
                 "\n\nOutput ONLY a single JSON object, no prose, no markdown fence, "
                 f"validating exactly against this schema:\n{json.dumps(schema)}")
 
-        prompt = f"{brief_text}{schema_note}"
-        envelope = self._p._invoke(sys_text, prompt, model)
+        # CHARTS. The CLI takes no image on stdin, so they are spilled to a temp
+        # directory and READ back through the one tool this call is allowed. That
+        # is the whole reason the tool surface is not empty on this path.
+        #
+        # This used to raise instead, which is why a subscription desk running
+        # the default Vision.NUMERIC_PLUS_CHARTS refused 100% of reads before it
+        # ever reached the CLI — not a login problem, not a quota problem, a
+        # payload the provider could not accept.
+        with tempfile.TemporaryDirectory(prefix="aurum-charts-") as tmp:
+            paths = self._spill(images, Path(tmp))
+            prompt = f"{brief_text}{self._chart_note(paths)}{schema_note}"
+            envelope = self._p._invoke(sys_text, prompt, model,
+                                       read_dir=(tmp if paths else None),
+                                       n_images=len(paths))
 
         if envelope.get("is_error") or envelope.get("subtype") not in (None, "success"):
             raise _CLIError(f"claude reported failure: {envelope.get('subtype')}")
         if envelope.get("permission_denials"):
             raise _CLIError(
                 f"claude wanted a tool it does not have: {envelope['permission_denials']}")
+
+        # A CHART ARM THAT RAN WITHOUT CHARTS IS WORSE THAN ONE THAT FAILED. It
+        # would make competition.py's paired comparison and budget.py's "does the
+        # chart arm pay for itself" question return confident fiction, so the
+        # read is only trusted if the transcript shows the tool round-trip that
+        # reading an image requires. One turn means it answered from the text
+        # alone. An envelope that does not report turns at all cannot be checked,
+        # and unverifiable is not verified.
+        if images:
+            turns = envelope.get("num_turns")
+            if turns is None:
+                raise _CLIError(
+                    "charts were sent but the envelope reports no num_turns, so "
+                    "there is no evidence the CLI read them. Refusing rather than "
+                    "booking a chart read that may have been text-only; run with "
+                    "--numeric-only to use this provider without charts.")
+            if int(turns) <= 1:
+                raise _CLIError(
+                    f"charts were sent but the CLI answered in {turns} turn(s), so "
+                    "it never opened them. The read would be text-only wearing a "
+                    "chart arm's label.")
 
         text = self._p._unfence(str(envelope.get("result") or ""))
         if not text:
@@ -140,16 +213,32 @@ class ClaudeCodeAnalyst:
             env.pop("ANTHROPIC_AUTH_TOKEN", None)
         return env
 
-    def _argv(self, system_prompt: str, model: str) -> list[str]:
-        return [self.binary, "-p", "--output-format", "json",
-                "--model", model, "--system-prompt", system_prompt,
-                "--allowed-tools", "", "--max-turns", "1"]
+    def _argv(self, system_prompt: str, model: str, read_dir: Optional[str] = None,
+              n_images: int = 0) -> list[str]:
+        """The numeric path keeps ZERO tools and one turn; only charts widen it.
 
-    def _invoke(self, system_prompt: str, prompt: str, model: str) -> dict:
+        `read_dir` grants Read, and only Read, and only inside the temp directory
+        the charts were spilled to — never the repository, never the network. The
+        turn budget has to cover one round-trip per image plus the final answer,
+        because a Read that runs out of turns returns a text-only read wearing a
+        chart arm's label.
+        """
+        argv = [self.binary, "-p", "--output-format", "json",
+                "--model", model, "--system-prompt", system_prompt]
+        if read_dir:
+            argv += ["--allowed-tools", "Read", "--add-dir", read_dir,
+                     "--max-turns", str(2 + n_images)]
+        else:
+            argv += ["--allowed-tools", "", "--max-turns", "1"]
+        return argv
+
+    def _invoke(self, system_prompt: str, prompt: str, model: str,
+                read_dir: Optional[str] = None, n_images: int = 0) -> dict:
+        argv = self._argv(system_prompt, model, read_dir, n_images)
         if self._runner is not None:
-            return self._runner(self._argv(system_prompt, model), prompt)
+            return self._runner(argv, prompt)
         try:
-            p = subprocess.run(self._argv(system_prompt, model), input=prompt,
+            p = subprocess.run(argv, input=prompt,
                                env=self._env(), capture_output=True, text=True,
                                timeout=self.timeout_s)
         except FileNotFoundError as e:

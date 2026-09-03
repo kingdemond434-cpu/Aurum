@@ -401,14 +401,23 @@ class ClaudeCodeAnalyst(AnalystProvider):
         s = s.split("\n", 1)[1] if "\n" in s else ""
         return s.rsplit("```", 1)[0].strip() if "```" in s else s.strip()
 
-    def _argv(self) -> list[str]:
-        return [self.binary, "-p",
+    def _argv(self, read_dir: Optional[str] = None,
+              n_images: int = 0) -> list[str]:
+        argv = [self.binary, "-p",
                 "--output-format", "json",
                 "--model", self.model,
                 "--effort", self.effort,
-                "--system-prompt", ANALYST_SYSTEM,
-                "--allowed-tools", "",
-                "--max-turns", "1"]
+                "--system-prompt", ANALYST_SYSTEM]
+        # CHARTS WIDEN THE TOOL SURFACE, AND NOTHING ELSE DOES. Read is the only
+        # tool granted, the spill directory the only place it reaches, and the
+        # turn budget covers one round-trip per image plus the answer. The
+        # numeric path keeps zero tools and one turn exactly as before.
+        if read_dir:
+            argv += ["--allowed-tools", "Read", "--add-dir", read_dir,
+                     "--max-turns", str(2 + n_images)]
+        else:
+            argv += ["--allowed-tools", "", "--max-turns", "1"]
+        return argv
 
     def _env(self) -> dict:
         """The child's environment.
@@ -424,12 +433,13 @@ class ClaudeCodeAnalyst(AnalystProvider):
             env.pop("ANTHROPIC_AUTH_TOKEN", None)
         return env
 
-    def _invoke(self, prompt: str) -> dict:
+    def _invoke(self, prompt: str, read_dir: Optional[str] = None,
+                n_images: int = 0) -> dict:
         if self._runner is not None:                  # injected for tests
-            return self._runner(self._argv(), prompt)
+            return self._runner(self._argv(read_dir, n_images), prompt)
         import shutil
         import subprocess
-        argv = self._argv()
+        argv = self._argv(read_dir, n_images)
         # On Windows, a global npm install of the CLI is a .CMD shim, and
         # CreateProcess only resolves .EXE/.COM by bare name -- it silently
         # can't find "claude" even though it is on PATH. Resolving to the
@@ -460,17 +470,36 @@ class ClaudeCodeAnalyst(AnalystProvider):
                                f"{p.stdout[:300]!r}") from e
 
     def read(self, brief: MarketBrief, charts: Sequence[Chart] = ()) -> ProviderRead:
-        if charts:
-            raise AnalystError(
-                f"{self.name!r} cannot send charts: the CLI takes no image input. "
-                f"Run the chart arm on provider 'anthropic:' or pass no charts — "
-                f"silently dropping them would make every chart-vs-text "
-                f"comparison meaningless.")
+        # THIS USED TO RAISE ON ANY CHART, AND THAT IS WHY THE DESK LOOKED BLIND.
+        # run_desk.py defaults to Vision.NUMERIC_PLUS_CHARTS, so a box configured
+        # with --provider claudecode refused 100% of reads here, before the CLI
+        # was ever launched, fell through to the codex fallback and recorded
+        # CODEX's error. 1,030 bars went BLIND against "codex exited 1" on a
+        # machine whose Claude login was fine.
+        #
+        # The CLI still takes no image on stdin. The charts are written to a
+        # temp directory and read back through Read, which is the only tool this
+        # call is granted and only inside that directory.
         prompt = (self._SCHEMA_INSTRUCTION.format(
             schema=json.dumps(ANALYST_SCHEMA)) + "\n" + brief.render())
 
         t0 = time.monotonic()
-        env = self._invoke(prompt)
+        if charts:
+            with tempfile.TemporaryDirectory(prefix="aurum-charts-") as tmp:
+                paths = []
+                for i, c in enumerate(charts):
+                    fp = Path(tmp) / f"chart{i}-{c.timeframe}.png"
+                    fp.write_bytes(c.png)
+                    paths.append(fp)
+                listing = "\n".join(f"  {q}" for q in paths)
+                env = self._invoke(
+                    prompt + "\n\nCHARTS. Read every one of these image files "
+                    "before you answer. They are the visual half of this read and "
+                    "the numeric brief above is not a substitute for them:\n"
+                    + listing,
+                    read_dir=tmp, n_images=len(paths))
+        else:
+            env = self._invoke(prompt)
         dt = (time.monotonic() - t0) * 1000
 
         if env.get("is_error") or env.get("subtype") not in (None, "success"):
@@ -479,6 +508,24 @@ class ClaudeCodeAnalyst(AnalystProvider):
         if env.get("permission_denials"):
             raise AnalystError(f"claude was denied a permission it wanted: "
                                f"{env['permission_denials']}")
+        # A CHART READ IS ONLY BOOKED AS ONE IF THE IMAGES WERE ACTUALLY OPENED.
+        # Reading a file costs a tool round-trip, so a one-turn answer means the
+        # model replied from the numeric brief alone. Booking that as a chart
+        # read would make competition.py's chart-vs-text comparison and
+        # budget.py's "does the chart arm pay for itself" question return
+        # confident fiction. Unverifiable is not verified.
+        if charts:
+            turns = env.get("num_turns")
+            if turns is None:
+                raise AnalystError(
+                    "charts were sent but the envelope reports no num_turns, so "
+                    "there is no evidence the CLI opened them; refusing rather "
+                    "than booking a possibly text-only read as a chart read")
+            if int(turns) <= 1:
+                raise AnalystError(
+                    f"charts were sent but claude answered in {turns} turn(s), so "
+                    f"it never opened them — that is a text read wearing a chart "
+                    f"arm's label")
         text = self._unfence(str(env.get("result") or ""))
         if not text:
             raise AnalystError("claude returned an empty result")
