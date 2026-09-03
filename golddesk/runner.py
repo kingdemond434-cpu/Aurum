@@ -285,6 +285,23 @@ class DeterministicAnalyst:
                     why="sellers trapped below the reclaim",
                     why_not="rule-based; no contextual check",
                     invalidation=f"close below {lows[-1].id}")
+            # THE MISSING HALF. Until now a confirmed sweep+reclaim in a DOWN
+            # trend fell through to NO_SETUP, so this mechanism could only ever
+            # go long: 72 qualifying states across 2019-2026 were discarded and
+            # all 48 signals in the walk-forward record are LONG. The trap is
+            # symmetric — buyers above a swept high are trapped exactly as
+            # sellers below a swept low are — so the one-sided version was an
+            # incomplete implementation, not a directional thesis.
+            return AnalystRead(setup=Setup.SWING_REVERSAL, direction="SHORT",
+                entry_ref="MARKET", stop_ref=highs[-1].id, tp1_ref="NONE",
+                tp2_ref=lows[-1].id, mechanism_name="sweep-reclaim-trap",
+                setup_tag="sweep-reclaim", confidence=3,
+                path=self._path("swept stops fire, reclaim holds, price returns to the breakout origin"),
+                adversarial=self._adversarial("sweep-reclaim-trap"),
+                read="sweep and reclaim of the swing high",
+                why="buyers trapped above the reclaim",
+                why_not="rule-based; no contextual check",
+                invalidation=f"close above {highs[-1].id}")
         return none
 
 

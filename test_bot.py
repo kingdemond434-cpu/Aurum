@@ -286,3 +286,39 @@ def test_empty_credential_files_do_not_build_a_bot(tmp_path):
     (s / "telegram_token").write_text("")
     (s / "telegram_chat_id").write_text("")
     assert B.build_bot(s) is None
+
+
+# ---------------------------------- the sweep-reclaim trap is symmetric -------
+
+def test_sweep_reclaim_can_go_short():
+    """It could only go LONG, which is why all 48 backtest signals were LONG.
+
+    72 states across 2019-2026 met sweep+reclaim with trend DOWN and fell
+    through to NO_SETUP. The trap is symmetric: buyers above a swept high are
+    trapped exactly as sellers below a swept low are.
+    """
+    from golddesk.runner import DeterministicAnalyst
+    from golddesk.analyst import Setup
+
+    class _Ctx:
+        displacement_state = "NONE"
+        trend_direction = "DOWN"
+        pullback_depth = "NONE"
+        sweep_state = "CONFIRMED"
+        reclaim_state = "CONFIRMED"
+
+    class _Lvl:
+        def __init__(self, i, kind): self.id, self.kind = i, kind
+
+    from golddesk.analyst import LevelKind
+
+    class _Brief:
+        context = _Ctx()
+        levels = [_Lvl("L1", LevelKind.SWING_HIGH), _Lvl("L2", LevelKind.SWING_LOW)]
+
+    r = DeterministicAnalyst().read(_Brief())
+    assert r.setup is Setup.SWING_REVERSAL
+    assert r.direction == "SHORT"
+    # Geometry: stop ABOVE on a short, target BELOW. Refs, not prices.
+    assert r.stop_ref == "L1" and r.tp2_ref == "L2"
+    assert "above" in r.invalidation
