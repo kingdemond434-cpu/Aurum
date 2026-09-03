@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "349/349 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "353/353 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "14.3% recent vs 16.8% prior",
+          "detail": "14.8% recent vs 16.6% prior",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "42 sleeve(s) accruing, published 0.6h ago",
+          "detail": "42 sleeve(s) accruing, published 0.2h ago",
           "ok": true
         }
       ],
@@ -118,13 +118,13 @@
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "enabled, last result 0",
-          "ok": true
+          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "enabled, last result 267009",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "1146 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "1154 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.0h old",
+          "detail": "newest row 0.1h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "16065MB free",
+          "detail": "16054MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 118.7h ago",
+          "detail": "wrote 0 min ago, after a boot 119.2h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 1146,
-      "error": "codex exited 1:  MFE +0.25R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-30T22:15  LONG  NOVEL              -0.29R  similarity 0.83  mechanism=prior-day-low-flush-recovery\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.29R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-02T23:58:08.453791+00:00",
+      "count": 1154,
+      "error": "codex exited 1: TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.31R; close=EXIT_THESIS\n  2026-08-27T11:15  SHORT TREND_CONTINUATION +0.29R  similarity 0.50  mechanism=broken-shelf-retest-supply\n    PAID; MFE +1.88R / MAE -0.46R; close=PROFITABLE_STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-03T00:25:40.023762+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-03T00:02:18.204078+00:00",
+  "generated_utc": "2026-09-03T00:32:14.651257+00:00",
   "last_row_utc": null,
-  "ledger_rows": 9935,
+  "ledger_rows": 10007,
   "total_faults": 13
 }
