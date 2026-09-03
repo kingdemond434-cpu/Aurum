@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "353/353 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "354/354 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "14.8% recent vs 16.6% prior",
+          "detail": "15.4% recent vs 16.4% prior",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "42 sleeve(s) accruing, published 0.2h ago",
+          "detail": "42 sleeve(s) accruing, published 0.0h ago",
           "ok": true
         }
       ],
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "1154 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "1162 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.1h old",
+          "detail": "newest row 0.0h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "16054MB free",
+          "detail": "16018MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 0 min ago, after a boot 119.2h ago",
+          "detail": "wrote 0 min ago, after a boot 119.4h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 1154,
-      "error": "codex exited 1: TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.31R; close=EXIT_THESIS\n  2026-08-27T11:15  SHORT TREND_CONTINUATION +0.29R  similarity 0.50  mechanism=broken-shelf-retest-supply\n    PAID; MFE +1.88R / MAE -0.46R; close=PROFITABLE_STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-03T00:25:40.023762+00:00",
+      "count": 1162,
+      "error": "codex exited 1: -trap\n    PAID; MFE +0.05R / MAE +0.00R; close=EXIT_THESIS\n  2026-08-30T22:45  SHORT TREND_CONTINUATION -1.00R  similarity 0.67  mechanism=session-low-stop-run\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-03T00:42:15.755636+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-03T00:32:14.651257+00:00",
+  "generated_utc": "2026-09-03T00:45:28.004403+00:00",
   "last_row_utc": null,
-  "ledger_rows": 10007,
+  "ledger_rows": 10079,
   "total_faults": 13
 }
