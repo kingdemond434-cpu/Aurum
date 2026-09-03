@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "18.2% recent vs 15.8% prior",
+          "detail": "19.0% recent vs 15.6% prior",
           "ok": true
         },
         {
@@ -46,7 +46,7 @@
         },
         {
           "check": "quant inbox",
-          "detail": "no new findings for 70h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
+          "detail": "no new findings for 71h and NO transport heartbeat to say whether it ran. UNMEASURED which of the two it is \u2014 a broken link and a quiet quant desk look identical from the file's age alone.",
           "ok": false
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "42 sleeve(s) accruing, published 0.4h ago",
+          "detail": "42 sleeve(s) accruing, published 0.9h ago",
           "ok": true
         }
       ],
@@ -88,7 +88,7 @@
       "checks": [
         {
           "check": "AurumSignalDesk",
-          "detail": "enabled, last result 267009",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
@@ -108,36 +108,36 @@
         },
         {
           "check": "AurumSignalDesk-VantageSpread",
-          "detail": "last run exited 1 \u2014 execution-venue spread is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately. / attached terminal reports 'Fusion Markets Pty Ltd / FusionMarkets-Live', which does not look like 'vantage'. Refusing: a profile measured on the wrong venue is worse than none, because it retires the UNCALIBRATED warning while still being wrong. Pass --expect-broker to override deliberately.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-VantageSpread', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "AurumSignalDesk-Cycle",
-          "detail": "last run exited 1 \u2014 the whole learning loop is firing and FAILING, which no restart fixes.  ITS OWN LOG SAYS: PermissionError: [Errno 13] Permission denied: 'C:\\\\Aurum\\\\state\\\\cycle.log' / Traceback (most recent call last): / return io.open(self, mode, buffering, encoding, errors, newline) / PermissionError: [Errno 13] Permission denied: 'C:\\\\Aurum\\\\state\\\\cycle.log'",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'AurumSignalDesk-Cycle', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "MT5-ShadowSync",
-          "detail": "last run exited 1 \u2014 publishes shadow_health.json -- the ONLY window this desk has into whether quant is accruing evidence is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-ShadowSync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "MT5-Shadow",
-          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-Shadow', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         },
         {
           "check": "MT5-QQuantGatesCertify",
-          "detail": "enabled, last result 0",
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'MT5-QQuantGatesCertify', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
           "ok": true
         },
         {
           "check": "Aurum-Sync",
-          "detail": "last run exited 1 \u2014 carries quant's findings into this desk's inbox is firing and FAILING, which no restart fixes.",
-          "ok": false
+          "detail": "UNMEASURED \u2014 could not read the task (Command '['schtasks', '/Query', '/TN', 'Aurum-Sync', '/FO', 'CSV', '/V']' timed out after 60 seconds). Not the same as healthy.",
+          "ok": true
         }
       ],
-      "faults": 6
+      "faults": 1
     },
     "wiring": {
       "axis": "wiring",
@@ -159,7 +159,7 @@
         },
         {
           "check": "blind bars",
-          "detail": "1231 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "1247 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
@@ -169,8 +169,8 @@
         },
         {
           "check": "macro",
-          "detail": "all 20 recent briefs carried MACRO UNMEASURED \u2014 the analyst is reading gold with no DXY, no real yield and no risk proxy",
-          "ok": false
+          "detail": "14/20 briefs carried macro",
+          "ok": true
         },
         {
           "check": "spread profile",
@@ -194,23 +194,23 @@
         },
         {
           "check": "disk",
-          "detail": "15688MB free",
+          "detail": "15671MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 121.4h ago",
+          "detail": "wrote 0 min ago, after a boot 121.9h ago",
           "ok": true
         }
       ],
-      "faults": 4
+      "faults": 3
     }
   },
   "decisions": {
     "BLIND": {
-      "count": 1231,
-      "error": "codex exited 1:   mechanism=failed-shelf-breakdown-trap\n    PAID; MFE +0.32R / MAE +0.00R; close=EXIT_THESIS\n  2026-09-01T05:07  SHORT TREND_CONTINUATION +1.52R  similarity 0.50  mechanism=broken-shelf-liquidation\n    PAID; MFE +2.54R / MAE +0.00R; close=TARGET\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-03T02:43:06.253976+00:00",
+      "count": 1247,
+      "error": "codex exited 1: produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\n  2026-08-30T23:15  LONG  SWING_REVERSAL     -0.67R  similarity 0.50  mechanism=shelf-break-stop-run\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE -0.66R; close=EXIT_THESIS\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-03T03:13:07.202662+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-03T02:45:26.703789+00:00",
-  "last_row_utc": "2026-09-03T02:43:06.253976+00:00",
-  "ledger_rows": 10692,
-  "total_faults": 14
+  "generated_utc": "2026-09-03T03:23:24.125776+00:00",
+  "last_row_utc": null,
+  "ledger_rows": 10844,
+  "total_faults": 8
 }
