@@ -10,7 +10,7 @@
         },
         {
           "check": "analyst answering",
-          "detail": "363/363 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
+          "detail": "362/362 wakes (100%) got NO answer in the last 12h. The MOST RECENT wake answered, so this is a rate over a window containing a RESOLVED outage \u2014 not a desk that is blind now.",
           "ok": true
         },
         {
@@ -31,7 +31,7 @@
       "checks": [
         {
           "check": "signal rate",
-          "detail": "17.8% recent vs 15.8% prior",
+          "detail": "18.2% recent vs 15.8% prior",
           "ok": true
         },
         {
@@ -56,7 +56,7 @@
         },
         {
           "check": "shadow evidence",
-          "detail": "42 sleeve(s) accruing, published 0.2h ago",
+          "detail": "42 sleeve(s) accruing, published 0.4h ago",
           "ok": true
         }
       ],
@@ -123,8 +123,8 @@
         },
         {
           "check": "MT5-Shadow",
-          "detail": "enabled, last result 267009",
-          "ok": true
+          "detail": "last run exited -2147020576 \u2014 quant's forward-evidence run is firing and FAILING, which no restart fixes.",
+          "ok": false
         },
         {
           "check": "MT5-QQuantGatesCertify",
@@ -137,7 +137,7 @@
           "ok": false
         }
       ],
-      "faults": 5
+      "faults": 6
     },
     "wiring": {
       "axis": "wiring",
@@ -159,12 +159,12 @@
         },
         {
           "check": "blind bars",
-          "detail": "1223 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
+          "detail": "1231 bar(s) the analyst never answered on \u2014 these are NOT refusals and no gate earns credit for them",
           "ok": true
         },
         {
           "check": "ledger growth",
-          "detail": "newest row 0.1h old",
+          "detail": "newest row 0.0h old",
           "ok": true
         },
         {
@@ -194,12 +194,12 @@
         },
         {
           "check": "disk",
-          "detail": "15706MB free",
+          "detail": "15688MB free",
           "ok": true
         },
         {
           "check": "came back after boot",
-          "detail": "wrote 1 min ago, after a boot 121.2h ago",
+          "detail": "wrote 1 min ago, after a boot 121.4h ago",
           "ok": true
         }
       ],
@@ -208,9 +208,9 @@
   },
   "decisions": {
     "BLIND": {
-      "count": 1223,
-      "error": "codex exited 1: PAID; MFE +1.88R / MAE -0.46R; close=PROFITABLE_STOP\n  2026-08-27T12:15  LONG  NOVEL              -1.01R  similarity 0.67  mechanism=session-high-short-squeeze\n    THESIS/TIMING FAILURE \u2014 never produced +0.5R; MFE +0.00R / MAE +0.00R; close=STOP\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
-      "last": "2026-09-03T02:26:12.544607+00:00",
+      "count": 1231,
+      "error": "codex exited 1:   mechanism=failed-shelf-breakdown-trap\n    PAID; MFE +0.32R / MAE +0.00R; close=EXIT_THESIS\n  2026-09-01T05:07  SHORT TREND_CONTINUATION +1.52R  similarity 0.50  mechanism=broken-shelf-liquidation\n    PAID; MFE +2.54R / MAE +0.00R; close=TARGET\nDo not learn 'trade less' from a loss: distinguish wrong direction/timing from a profitable path that management gave back.\nThe determinis",
+      "last": "2026-09-03T02:43:06.253976+00:00",
       "stage": "survey",
       "why": {}
     },
@@ -236,8 +236,8 @@
     }
   },
   "deployed_commit": "93e8fc01ae25",
-  "generated_utc": "2026-09-03T02:30:24.811537+00:00",
-  "last_row_utc": "2026-09-03T02:26:12.544607+00:00",
-  "ledger_rows": 10620,
-  "total_faults": 13
+  "generated_utc": "2026-09-03T02:45:26.703789+00:00",
+  "last_row_utc": "2026-09-03T02:43:06.253976+00:00",
+  "ledger_rows": 10692,
+  "total_faults": 14
 }
